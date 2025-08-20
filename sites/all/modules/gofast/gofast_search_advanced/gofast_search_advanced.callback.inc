@@ -41,11 +41,39 @@ function gofast_search_advanced_menu() {
     'access arguments' => array('access content'),
     'access callback' => 'user_access',
   );
+
+  $items['search/advanced/history/clear/selected/confirm'] = array(
+    'page callback' => 'gofast_search_advanced_history_clear_selected_confirm',
+    'type' => MENU_CALLBACK,
+    'access arguments' => array('access content'),
+    'access callback' => 'user_access',
+  );
   
   $items['search/advanced/filter/column'] = array(
     'page callback' => 'gofast_search_advanced_filter_column',
     'type' => MENU_CALLBACK,
     'access arguments' => array('access content'),
+    'access callback' => 'user_access',
+  );
+
+  $items['search/advanced/export_to_csv'] = array(
+    'page callback' => 'gofast_search_advanced_export_to_csv',
+    'type' => MENU_CALLBACK,
+    'access arguments' => array('access content'),
+    'access callback' => 'user_access',
+  );
+
+  $items['search/advanced/retrieve_export_file'] = array(
+    'page callback' => 'gofast_search_advanced_retrieve_export_file',
+    'type' => MENU_CALLBACK,
+    'access arguments' => array('access content'),
+    'access callback' => 'user_access',
+  );
+
+  $items['search/advanced/contextual_actions'] = array(
+    "page callback" => "gofast_search_advanced_get_entities_contextual_actions",
+    "type" => MENU_CALLBACK,
+    "access arguments" => array("access content"),
     'access callback' => 'user_access',
   );
 
@@ -75,30 +103,44 @@ function gofast_search_advanced_search_query(){
   $categories = $_GET['categories'];
   $search_name = $_GET['name'];
   $options = json_decode($_GET['options'],TRUE);
-
+  
+  $insert_history = $_GET['insertHistory'];
+  $is_export = $_GET["export"] ?: false;
+  if(!empty($_GET['sort'])){
+    $insert_history = "false";
+  }
   if(empty($pagination["page"])) $pagination["page"] = GOFAST_PAGINATION_PAGE_DEFAULT;
   if(empty($pagination["perpage"])) $pagination["perpage"] = GOFAST_PAGINATION_PERPAGE_DEFAULT;
-
+  // Get all first GOFAST_EXPORT_RESULTS_MAX_SIZE results for the export
+  if($is_export){
+    $_GET['pagination']["page"] = 1;
+    $pagination["perpage"] = GOFAST_EXPORT_RESULTS_MAX_SIZE;
+    $_GET['pagination']["perpage"] = GOFAST_EXPORT_RESULTS_MAX_SIZE;
+  }
   $filters_authorized = gofast_search_advanced_get_search_advanced_filters();
   // Get all filters authorized
   $all_filters = array();
 
-  foreach($filters_authorized as $name => $filter){
-    $all_filters = array_merge($all_filters, $filter['filters']);
+  foreach($filters_authorized as $name => $filter_authorized){
+    // We need to remove all filters who dont have solr field
+    foreach ($filter_authorized['filters'] as $key => $filter) {
+      if($filter['type'] == 'separator' || !$filter['solr_field']){
+        unset($filter_authorized['filters'][$key]);
+      }
+    }
+    $all_filters = array_merge($all_filters, $filter_authorized['filters']);
   }
-
   // Rewrite key with solr field
   $index = 0;
-  $tagify_filters = array();
   foreach($all_filters as $key => $filter){
-    if($filter['search_column_hidden']){
-      unset($all_filters[$key]);
-      $index++;
-      continue;
-    }
     // If it's a tagify filter add it to a specific array
-    if($filter['type'] == 'tagify'){
-      $tagify_filters[] = $filter['solr_field'];
+    if($filter['type'] == 'tagify' && $options[$filter['solr_field']]){
+      $filter_solr_field = $filter["solr_field"]; 
+      $options[$filter_solr_field]["raw_value"] = $options[$filter_solr_field]["value"];
+      $tags = json_decode($options[$filter_solr_field]["value"], true);
+      $options[$filter_solr_field]["value"] = array_map(function($tag){
+        return $tag["value"];
+      } ,$tags);
     }
     if(isset($filter['solr_field']) && $filter['solr_field'] != $key){
       // Insert the filter at the same place in the array
@@ -107,7 +149,6 @@ function gofast_search_advanced_search_query(){
     }
     $index++;
   }
-
   $filters = array();
 
   //Get nid from spaces
@@ -131,8 +172,13 @@ function gofast_search_advanced_search_query(){
     
     // Store the history filters
     $history_filters[$name]['operator'] = $curr_operator;
-    $history_filters[$name]['value'] = $curr_value;
-    if(isset($all_filters[$name]) && !empty($curr_value)){
+    // If it's a tagify field, we want to store the tagify object
+    if($all_filters[$name]["type"] == "tagify"){
+      $history_filters[$name]['value'] = $option_value['raw_value'];
+    } else {
+      $history_filters[$name]['value'] = $curr_value;
+    }
+    if(isset($all_filters[$name]) && $curr_value != ""){
       // If it'a date operator we need to format the date
       switch ($curr_operator) {
         case 'between':
@@ -165,29 +211,15 @@ function gofast_search_advanced_search_query(){
       $filters[$name]['value'] = $curr_value;
     }
   }
-  gofast_search_advanced_history_save($search_name, $query, $history_filters);
-  
-  // Check for tagify filters
-  foreach($tagify_filters as $tagify_filter){
-    if(isset($filters[$tagify_filter])){
-      $tagify_values = json_decode($filters[$tagify_filter]['value'], TRUE);
-      $filters[$tagify_filter]['value'] = array();
-      foreach($tagify_values as $key => $tagify_value){
-
-        // Convert $filters[$tagify_filter] to an array if it's not
-        if(!is_array($filters[$tagify_filter])){
-          $filters[$tagify_filter] = array($filters[$tagify_filter]);
-        }
-        // Replace $filters[$tagify_filter] by an array with all values
-        $filters[$tagify_filter]['value'][$key] = $tagify_value['value'];
-      }
-    }
+  // If the initHistory is set to false, then dont insert the history
+  if ($insert_history != "false") {
+    gofast_search_advanced_history_save($search_name, $query, $history_filters);
   }
+  
   // Search function from gofast_search module
   $results = gofast_search_query($query, $filters);
   // Store some values in variables to reaffect later
   $nb_results = $results['results'];
-
   // Keep only data we want
   $results = array_map(function($result) use ($all_filters) {
     $filtered_result = array();
@@ -206,10 +238,6 @@ function gofast_search_advanced_search_query(){
           $filtered_result[$filter['']] = '';
         }
       }
-      
-      // add the path to the result to prevent path display in table
-      $filtered_result['path'] = $result['fields']['path'];
-      
       return $filtered_result;
     }, $results);
 
@@ -238,13 +266,26 @@ function gofast_search_advanced_search_query(){
     }
     $results[$key] = $result;
   }
+  if($is_export) {
+    return $results;
+  }
+  
   // Send data to keen datatable
   $kt_results['data'] = $results;
   $kt_results['meta']['total'] = $nb_results;
-  $kt_results['meta']["sort"]="desc";
+  if(isset($_GET["sort"])){
+    $kt_results['meta']["sort"]["field"] = $_GET["sort"]["field"];
+    $kt_results['meta']["sort"]["sort"] = $_GET["sort"]["sort"];
+  }
   $kt_results['meta']["page"] = $pagination["page"];
-  $kt_results['meta']["pages"]= $kt_results['meta']['total'] / $pagination["perpage"];
-  $kt_results['meta']["perpage"]= $pagination["perpage"];
+  $kt_results['meta']["pages"] = $kt_results['meta']['total'] / $pagination["perpage"];
+  $kt_results['meta']["perpage"] = $pagination["perpage"];
+  $kt_results["filters"]["query"] = $query;
+  $kt_results["filters"]["spaces"] = $spaces;
+  $kt_results["filters"]["categories"] = $categories;
+  $kt_results["filters"]["options"] = $options;
+  $kt_results["filters"]["insert_history"] = false;
+  $kt_results["filters"]["globalOperator"] = $_GET["globalOperator"];
   print json_encode($kt_results); exit;
 }
 
@@ -258,7 +299,7 @@ function gofast_search_advanced_search_history(){
 
   $account = user_load($user->uid);
 
-  $json_history = $account->field_search_history[LANGUAGE_NONE][0]['value'];
+  $json_history = $account->search_advanced_history[LANGUAGE_NONE][0]['value'];
   $search_history = json_decode($json_history, true);
 
   if(empty($search_history)){
@@ -266,17 +307,9 @@ function gofast_search_advanced_search_history(){
   }
 
   // Reverse array to get the last search first
-  $search_history = array_reverse($search_history);
+  $search_history = array_values(array_reverse($search_history));
 
-
-  // Send data to keen datatable
-  $kt_results['data'] = $search_history;
-  $kt_results['meta']['total'] = count($search_history);
-  $kt_results['meta']["sort"]="desc";
-  $kt_results['meta']["page"] = $pagination["page"];
-  $kt_results['meta']["pages"]= $kt_results['meta']['total'] / $pagination["perpage"];
-  $kt_results['meta']["perpage"]= $pagination["perpage"];
-  print json_encode($kt_results); exit;
+  print json_encode($search_history); exit;
 }
 
 
@@ -329,6 +362,15 @@ function gofast_search_advanced_history_clear_confirm($js){
 }
 
 /**
+ * Callback for advanced search history clear selected confirm
+ */
+function gofast_search_advanced_history_clear_selected_confirm(){
+  $body = drupal_get_form('gofast_search_advanced_history_clear_confirm_form');
+  print json_encode(drupal_render($body));
+  exit;
+}
+
+/**
  * Callback for get search column filter template
  */
 function gofast_search_advanced_filter_column(){
@@ -359,4 +401,129 @@ function gofast_search_advanced_filter_column(){
   $content = theme('gofast_search_advanced_filters_columns', array('columns' => $columns_result));
   // Send data to keen datatable
   print json_encode($content); exit;
+}
+// Convert search result to csv file
+function gofast_search_advanced_export_to_csv(){
+  set_time_limit(0);
+  /** PHPSpreadSheet */
+  require_once libraries_get_path('phpspreadsheet').'/vendor/autoload.php';
+  $fid = rand(0, getrandmax());
+  
+  print $fid;
+  fastcgi_finish_request();
+
+  $filename = "export_search_".$fid.".csv";
+  $_GET["export"] = true;
+
+  $results = gofast_search_advanced_search_query();
+
+  $all_metadata = gofast_search_advanced_declare_all_metadatas();
+  
+  $used_metadatas = [];
+  // Get all metadata that are in at least 1 result
+  foreach($results as $result){
+    $used_metadatas = array_unique(array_merge($used_metadatas, array_keys($result)));
+  }
+
+  // Get metadata values of used metadata
+  $metadata_to_export = array_filter($all_metadata, function($metadata) use($used_metadatas){
+    return in_array($metadata["solr_field"], $used_metadatas);
+  });
+
+  // Create new PHPExcel object
+  $objPHPExcel = new \PhpOffice\PhpSpreadsheet\Spreadsheet();
+  $objPHPExcel->getActiveSheet()->setTitle(t("Search Results", array(), array('context' => 'gofast:gofast_advanced_search')));
+  $objPHPExcel->setActiveSheetIndex(0);
+  
+  $column = "A";
+  $line = 1;
+
+  // Make columns headers with metadata title
+  foreach($metadata_to_export as $metadata){
+    if(empty($metadata["title"]) || !isset($metadata["solr_field"])){
+      continue;
+    }
+    // Store all solr_field of metadata to export
+    $metadata_keys[] = $metadata["solr_field"];
+    $objPHPExcel->getActiveSheet()->SetCellValue($column . $line, $metadata["title"]);
+    $column++;
+  }
+  
+  // Loop through each results to add
+  foreach($results as $result){
+    $column = "A";
+    $line++;
+    // Loop through each metadata to export
+    foreach($metadata_keys as $metadata_key){
+      $value = "";
+      // If metadata value is an array, format it to json
+      if(is_array($result[$metadata_key])){
+        $value_array = [];
+        foreach($result[$metadata_key] as $metadata_value) {
+          if(is_string($metadata_value)){
+            $value_array[] = $metadata_value;
+          } else {
+            if ($metadata_value["label"]){
+              $value_array[] = $metadata_value["label"];
+            } else if($metadata_value["title"]) {
+              $value_array[] = $metadata_value["title"];
+            }
+          }
+        }
+        // Don't format to json if only one value
+        if(count($value_array) > 1){
+          $value = json_encode($value_array, JSON_UNESCAPED_UNICODE);
+        } else {
+          $value = $value_array[0];
+        }
+      } else {
+        $value = $result[$metadata_key];
+      }
+      // Add value to the 
+      $objPHPExcel->getActiveSheet()->SetCellValue($column . $line, $value);
+      $column++;
+    }
+  }
+  
+  $objWriter = new \PhpOffice\PhpSpreadsheet\Writer\Csv($objPHPExcel);
+  $file_path = "/var/www/d7/sites/default/files/export_search/$filename";
+  $objWriter->save($file_path);
+}
+
+function gofast_search_advanced_retrieve_export_file(){
+  $fid = $_GET["fid"];
+  $filename = "export_search_".$fid.".csv";
+  $file = '/var/www/d7/sites/default/files/export_search/'.$filename;
+
+  if (file_exists($file)) {
+    header('Content-Description: File Transfer');
+    header('Content-Type: text/csv');
+    header('Content-Disposition: attachment; filename="' . basename($file) . '"');
+    header('Expires: 0');
+    header('Cache-Control: must-revalidate');
+    header('Pragma: public');
+    header('Content-Length: ' . filesize($file));
+    ob_clean();
+    flush();
+  
+    readfile($file);
+    exit;
+  } else {
+    print "Waiting";
+    exit;
+  }
+}
+
+function gofast_search_advanced_cleanup_export_files_cron(){
+  $dir = "/var/www/d7/sites/default/files/export_search";
+  $files = scandir($dir);
+
+  foreach ($files as $file) {
+    if ($file != "." && $file != "..") {
+      $filePath = $dir . DIRECTORY_SEPARATOR . $file;
+      if (is_file($filePath)) {
+        unlink($filePath);
+      }
+    }
+  }
 }

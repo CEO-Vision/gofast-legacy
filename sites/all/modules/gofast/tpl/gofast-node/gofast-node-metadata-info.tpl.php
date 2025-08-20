@@ -5,11 +5,11 @@
     </div>
   <?php endif; ?>
 
-  <div class="row font-size-sm gofast_metadata_infotab" id="document__infotab">
+  <div class="row font-size-sm gofast_metadata_infotab" id="<?= gofast_og_is_space($node_obj) ? "space__infotab" : "document__infotab" ?>">
     <?php foreach ($node_infos as $key => $node) : ?>
       <?php if (!empty($node['title'])) : ?>
         <?php if ($node['order'] != '') : ?>
-        <div id="gofast_metadata_field_<?= $key ?>"class="gofast_metadata_field col-xxl-6 d-flex justify-content-between align-items-center document__editable order-<?php echo $node['order'] ?>">
+        <div id="gofast_metadata_field_<?= $key ?>"class="gofast_metadata_field <?= !gofast_og_is_space($node_obj) ? "col-xxl-6" : "col-xxl-12" ?> d-flex justify-content-between align-items-center document__editable order-<?php echo $node['order'] ?>">
           <div class="font-weight-bolder flex-shrink-0 my-auto">
             <span><?php print $node["title"] ?> :</span>
           </div>
@@ -19,7 +19,7 @@
               <?php if ($node['type'] == 'rating') : ?>
                 <a class=" p-2 document__editable--label text-truncate" id="" title="<?php print $node['info'] ?>"><?php echo $node['info']; ?></a>
               <?php elseif ($node['type'] != 'language') : ?>
-                <a class="btn btn-hover-light btn-sm p-2 document__editable--label text-truncate<?= isset($node['disabled']) ? " disabled" : "" ?>" id="" title="<?php print $node['info'] ?>"><?php echo $node['info']; ?></a>
+                <a data-toggle="tooltip" data-placement="top" class="btn btn-hover-light btn-sm p-2 document__editable--label text-truncate<?= isset($node['disabled']) ? " disabled" : "" ?>" id="" title="<?php print $node['tooltip'] ?: "" ?>"><?php echo $node['info']; ?></a>
               <?php endif ?>
               <?php if ($node['type'] == 'select') : ?>
                 <!-- Begin select type  -->
@@ -50,6 +50,7 @@
                 <?php endif; ?>   
                 <!-- End select type  -->
               <?php endif ?>
+              <?php if ($node['after']) echo $node['after'] ?>
               <?php if ($node['type'] == 'rating') : ?>
                 <!-- Begin ranking type  -->
                 <div class="p-2">

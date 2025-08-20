@@ -247,7 +247,7 @@
           if($('.form-item-submit-message') != undefined){
             $('#modal-footer #edit-submit').after('<div class="form-item form-type-textfield form-item-submit-message"><i class="fas fa-exclamation-triangle mr-2" style="color:#FFA800"></i>'+ Drupal.t('Please select at least one role') +'</div>');
           }
-        }else{
+        }else if(e.target.type == "checkbox"){
           $('.og-roles-force-single .form-checkbox:checked:not(#' + e.target.id + ')').prop('checked', false);
           $('.form-submit').prop('disabled', false);
           $('.form-submit').removeClass('disabled');
@@ -846,5 +846,12 @@ Drupal.behaviors.gofast_og_grid_ztree = {
 
   }
 
+  Gofast.og.nodeIsSpace = function(node, includePrivateSpace = true){
+    const spaceTypes = ["group", "organisation", "extranet", "public"];
+    if(includePrivateSpace){
+      spaceTypes.push("private_space");
+    }
+    return spaceTypes.includes(node.type);
+  }
 
 })(jQuery, Gofast, Drupal);

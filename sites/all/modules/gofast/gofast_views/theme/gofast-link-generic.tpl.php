@@ -5,10 +5,17 @@
     <?php
     print '<a ';
 
+    $on_click_impl = $onClick;
+    // Override onclick with implementation to prevent any other handler from applying
+    // if link is disabled.
+    if ($disabled) {
+      $on_click_impl = 'event.preventDefault();event.stopImmediatePropagation()';
+    }
+
     print 'class="navi-link ' . $link_class .' '. (!empty($disabled) ? "disabled" : "").'" '
       . 'id="' . $link_id . '" '
       . (isset($href) ? 'href="' . $href . '" ' : '')
-      . (isset($onClick) ? 'onClick="' . $onClick . '" ' : '')
+      . (isset($on_click_impl) ? 'onClick="' . $on_click_impl . '" ' : '')
       . (isset($alt) ? 'alt="' . $alt . '" ' : '')
       . (isset($target) ? 'target="' . $target . '" ' : '')
       . (isset($title) ? 'title="' . $title . '" ' : '')

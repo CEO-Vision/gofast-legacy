@@ -1426,9 +1426,7 @@
                             classes: "btn btn-success",
                             async action() {
                                 $("#gofast_over_content").removeClass('tour-processed');
-                                await Gofast.tour.sequences.actionsToAwait([
-                                    () => Gofast.tour.components.fakeCursor.destroy(),
-                                ], 1000);
+                                Gofast.tour.components.fakeCursor.destroy(),
                                 Gofast.tour.currentInstance.complete();
                             }
                         }
@@ -1649,6 +1647,17 @@
                         attachTo: {
                             element: '#gofastSearchSortBy',
                             on: 'bottom'
+                        },
+                        beforeShowPromise: function() {
+                            return new Promise(function(resolve) {
+                              const searchPageProcessedInterval = setInterval(function() {
+                                if ($('#gofastSearchSortBy').length == 0) {
+                                    return;
+                                }
+                                clearInterval(searchPageProcessedInterval);
+                                resolve();
+                            }, 250);
+                            });
                         },
                         when: {
                             show: async function () {
@@ -2120,7 +2129,7 @@
                         title: Drupal.gft("title.tour.document.simplified-doc-side-content-step", {}, { context: "gofast_technical:gofast_tour" }),
                         text: Drupal.gft("text.tour.document.simplified-doc-side-content-step", {}, { context: "gofast_technical:gofast_tour" }),
                         attachTo: {
-                            element: ".sideContent",
+                            element: "#side-content-container .sideContent",
                             on: "left"
                         },
                         beforeShowPromise: function() {
@@ -2925,7 +2934,7 @@
                 return;
             }
             if (this.currentPageTour(true) === false) {
-                Gofast.toast("No tour is available for this page.", "info");
+              Gofast.toast(Drupal.t("No tour is available for this page.", {}, {context: "gofast:gofast_tour"}), "info");
             }
         },
         launchEssentialTour: function (e) {

@@ -239,16 +239,8 @@ function gofast_kanban_form_comment_node_task_form_alter(&$form, &$form_state) {
 
 
   $comment = $form_state['comment'];
-
-//themed form
-  $form['#theme'] = array('kanban_comment_form');
-  $form['#action'] = '/kanban/task/' . $comment->nid . '/add/comment';
-
   $form['#attributes']['data-taskId'] = $comment->nid;
 
-
-//keep only ajax modal action
-  unset($form['actions']);
 }
 
 /**
@@ -393,8 +385,7 @@ function gofast_kanban_get_task_details_json($task_id){
     $task_status_tid = $task->field_state[LANGUAGE_NONE][0]['tid'];
     $task_status = i18n_taxonomy_localize_terms(taxonomy_term_load($task_status_tid))->name;
     if (!empty($task->field_date[LANGUAGE_NONE][0]['value'])) {
-        $date = new DateTime($task->field_date[LANGUAGE_NONE][0]['value']);
-        $deadline_date = $date->getTimestamp();
+        $deadline_date = $task->field_date[LANGUAGE_NONE][0]['value'];
     }
     else{
          $deadline_date =0;
@@ -402,6 +393,7 @@ function gofast_kanban_get_task_details_json($task_id){
     $task_details['created_date'] =  $task->created;
     $task_details['deadline'] =  $deadline_date;
     $task_details['status'] = array('value' => $task_status, 'tid' => $task_status_tid);
+    $task_details['task_color'] = $task->field_task_color[LANGUAGE_NONE][0]['value'];
    
     $is_admin= FALSE;
     $is_contributor= FALSE;
@@ -411,6 +403,7 @@ function gofast_kanban_get_task_details_json($task_id){
     $task_details['canEdit'] = gofast_kanban_access($task, 'update', $user); //add edit move
     $task_details['canDelete'] = gofast_kanban_access($task, 'delete', $user); 
     $task_details['canComment'] = gofast_kanban_access($task, 'update', $user) || gofast_kanban_task_can_comment($task->nid, $user);
+    $task_details['canDuplicate'] = $is_admin || $is_contributor;
 
     $properties_u = ['uid','mail','firstname','lastname','picture']; 
     $task_details['responsible']=NULL;
@@ -430,6 +423,12 @@ function gofast_kanban_get_task_details_json($task_id){
             $task_details['members'][] =  $u;
         }
     }
+    
+    $task_details['logo']=FALSE;
+    if (isset($task->field_logo_uri[LANGUAGE_NONE][0]['value'])) {
+      $task_details['logo'] = file_create_url($task->field_logo_uri[LANGUAGE_NONE][0]['value']);
+    }
+    
     $task_details['description']=isset($task->body['und'][0]['value']) ? $task->body['und'][0]['value'] : '';
     $task_details['documents']=array();
     foreach( $task->field_target_link['und'] as $k => $v){
@@ -442,7 +441,18 @@ function gofast_kanban_get_task_details_json($task_id){
             );
         }
     }
-   
+
+    $task_details['tags']=array();
+    foreach($task->field_tags[LANGUAGE_NONE] as $k => $v){
+      $term = taxonomy_term_load($v["tid"]);
+      $task_details['tags'][] = [
+        "tid" => $term->tid,
+        "vid" => $term->vid,
+        "name" => $term->name,
+        "value" => $term->tid,
+      ];
+    }
+
     $members = $task->field_members[LANGUAGE_NONE];
     $checklists_entities = reset(gofast_kanban_get_task_checklists_raw($task->nid, TRUE));
     $task_details['tasks']=array(); 
@@ -502,29 +512,11 @@ function gofast_kanban_enrich_task(&$task_detail,$is_admin,$is_contributor){
     }
     $task_detail['column_index'] = node_load($task_detail['nid'])->field_column_index['und'][0]['value'];
     $task_detail['canEdit'] = gofast_kanban_access($task_detail['nid'], 'update', $user);   
-    $task_detail['canDelete'] = gofast_kanban_access($task_detail['nid'], 'delete', $user); 
+    $task_detail['canDelete'] = gofast_kanban_access($task_detail['nid'], 'delete', $user);
+    $task_detail['canDuplicate'] = $is_admin || $is_contributor;
     
 }
 
-
-/**
- * Search task for the given kanban
- * @param type $kanban
-
- * @param string $filter 
- * @return type
- */
-function gofast_kanban_search_tasks($kanban, $filter ){
-    $query = new EntityFieldQuery();
-    $query->entityCondition('entity_type' , 'node')
-        ->entityCondition('bundle', 'task')
-        ->propertyCondition('status', 1)
-        ->fieldCondition('field_board', 'target_id', $kanban->nid)
-        ->propertyCondition('title', '%'.$filter.'%' , 'like'); 
-    $results = $query->execute();
-   
-    return isset($results) && is_array($results['node']) ? array_keys($results['node']) : array();
-}
 /**
  *
  * @param type $node
@@ -590,14 +582,13 @@ function gofast_kanban_task_update($nid){
       'label' => array('filter' => FILTER_UNSAFE_RAW),
       'person-in-charge' => array('filter' => FILTER_VALIDATE_INT),
       'deadline' =>  array('filter' => FILTER_VALIDATE_INT),
-      // 'members' =>  array('filter' => FILTER_SANITIZE_ENCODED, 'flags' => FILTER_FORCE_ARRAY),
       'members' =>  array('filter' => FILTER_UNSAFE_RAW),
       'attachements' =>  array('filter' => FILTER_UNSAFE_RAW),
-      // 'attachements' =>  array('filter' => FILTER_SANITIZE_ENCODED, 'flags' => FILTER_FORCE_ARRAY),
-      // 'labels' =>  array('filter' => FILTER_SANITIZE_ENCODED, 'flags' => FILTER_FORCE_ARRAY),
       'description' =>  array('filter' => FILTER_UNSAFE_RAW),
       'content-visibility' =>  array('filter' => FILTER_UNSAFE_RAW),
-      'status' =>  array('filter' => FILTER_VALIDATE_INT)
+      'status' =>  array('filter' => FILTER_VALIDATE_INT),
+      'color' => array('filter' => FILTER_UNSAFE_RAW),
+      'tags' => array('filter' => FILTER_UNSAFE_RAW),
   );
   $post_variable = filter_input_array(INPUT_POST, $args, FALSE);
 
@@ -649,17 +640,7 @@ function gofast_kanban_task_update($nid){
     }
     $node_wrapper->save();
 
-//  } elseif (isset($post_variable['labels']) && !empty($post_variable['labels'])) {
-//    $$node_wrapper->field_labels->set($post_variable['labels']);
-//    $node_wrapper->save();
-//
   } elseif (isset($post_variable['description']) ) {
-
-//watchdog('gofast_kanban','description = '.$post_variable['description'], array(), WATCHDOG_DEBUG);
-
-    //Filters HTML content that is not in the following array. Removes HTML attributes like style - (GOFAST-6551 activating ACF (see commit on features) to keep a protection against XSS)
-    //$desc_allowed_tags = array('a', 'em', 'strong', 'u', 'blockquote', 'img', 'ul', 'ol', 'span', 'p', 's');
-    //$node_wrapper->body->set(array('value' =>  filter_xss($post_variable['description'], $desc_allowed_tags)));
 
     $decodeData = json_decode($post_variable['description']);
     
@@ -679,7 +660,60 @@ function gofast_kanban_task_update($nid){
 
     $node_wrapper->field_state->set(!empty($post_variable['status'])? $post_variable['status'] : NULL);
     $node_wrapper->save();
+  } elseif (isset($post_variable['color']) ) {
 
+    $node_wrapper->field_task_color->set($post_variable['color']);
+    $node_wrapper->save();
+  } elseif (isset($post_variable['tags'])) {
+    $board = node_load($task->field_board[LANGUAGE_NONE][0]["target_id"]);
+    $board_wrapper = entity_metadata_wrapper('node', $board);
+    $board_tids = array_map(fn($el) => $el->tid, $board_wrapper->field_tags->value());
+    $tids = [];
+
+    $tags = json_decode($post_variable['tags']);
+    $space_id = $task->og_group_content_ref[LANGUAGE_NONE][0]['target_id'];
+    foreach ($tags as $tag) {
+      // Create term if it doesn't exist
+      $vname = gofast_get_vocab_machine_name(GOFAST_VID_TAGS);
+      $term = reset(taxonomy_get_term_by_name($tag->name, $vname));
+      // Check if entity exists in taxonomy
+      if($term && $term->name === $tag->name){
+        // Add tag 'task' bundle allowing showing this term on kanban card
+        $field_tags_bundle = $term->field_tags_bundle[LANGUAGE_NONE] ?? [];
+        $tag_bundle = array_column($field_tags_bundle, 'value');
+        if(!in_array($task->type, $tag_bundle)){
+          $term->field_tags_bundle[LANGUAGE_NONE][] = ['value' => $task->type];
+          taxonomy_term_save($term);
+        }
+
+        // Add tag 'gid' value allowing searching for this term in this space
+        $field_tags_gid = $term->field_tags_gid[LANGUAGE_NONE] ?? [];
+        $tag_gids = array_column($field_tags_gid, 'value');
+        if(!in_array($space_id, $tag_gids)){
+          $term->field_tags_gid[LANGUAGE_NONE][] = ['value' => $space_id];
+          taxonomy_term_save($term);
+        }
+      } else {
+        $new_term = new stdClass();
+        $new_term->vid = GOFAST_VID_TAGS;
+        $new_term->name = $tag->name;
+        $new_term->field_tags_bundle[LANGUAGE_NONE][] = ['value' => $task->type];
+        $new_term->field_tags_gid[LANGUAGE_NONE][] = ['value' => $space_id];
+        taxonomy_term_save($new_term);
+        $term = $new_term;
+      }
+      $tids[] = $term->tid;
+    }
+    // Save the card with all the tags
+    $node_wrapper->field_tags->set($tids);
+    $node_wrapper->save();
+
+    // Update board tags
+    $orphan_tids = gofast_kanban_board_orphan_get_tids($board->nid);
+    $filtered_board_tids = array_diff($board_tids, $orphan_tids); // Don't keep terms which no longer exist in any card of the
+    $board_tids = array_unique([...$filtered_board_tids, ...$tids]);
+    $board_wrapper->field_tags->set($board_tids);
+    $board_wrapper->save();
   }
 
   $timer_stop = microtime(true);
@@ -1023,8 +1057,10 @@ function gofast_kanban_node_presave($node){
       //Reset uid due to Iframe constrainte
       global $user;
       $node->uid = $user->uid;
-      $todo_status = $term = array_shift(taxonomy_get_term_by_name('To Do', 'state'));
-      $node->field_state[LANGUAGE_NONE][0]['tid'] = $todo_status->tid; // put defautl state to "ToDo"
+      if(!isset($node->field_state[LANGUAGE_NONE][0]['tid'])){
+        $todo_status = $term = array_shift(taxonomy_get_term_by_name('To Do', 'state'));
+        $node->field_state[LANGUAGE_NONE][0]['tid'] = $todo_status->tid; // put defautl state to "ToDo"
+      }
     }
 
     // Only if node already exists, else let it be done by  HOOK_node_insert
@@ -1063,7 +1099,7 @@ function gofast_kanban_node_insert($node) {
     gofast_audit_insert_line_audit($node->nid, 'card_add', $last_event_serialized, $last_event_unserialized);
 
     //check if we must send an immediate notification for some users
-    gofast_kanban_send_delayed_notification($node);
+    gofast_kanban_send_delayed_notification($node, TRUE);
 
     $timer_stop = microtime(true);
 //watchdog('gofast_kanban', '%name() END - [execution time = %time s]', array('%name' => __FUNCTION__, '%time' => ($timer_stop - $timer_start)), WATCHDOG_DEBUG);
@@ -1233,4 +1269,65 @@ function gofast_kanban_task_can_comment($nid, $account = NULL){
 //watchdog('gofast_kanban', '%name() END - [execution time = %time s]', array('%name' => __FUNCTION__, '%time' => ($timer_stop - $timer_start)), WATCHDOG_DEBUG);
 
   return $canComment;
+}
+/**
+ * Copy a task
+ * @param type $nid
+ */
+function gofast_kanban_task_copy($nid){
+
+  global $user;
+  $copy_task = node_load($nid);  
+
+  $column_id = $copy_task->field_task_column['und'][0]['tid'];
+  $kanban = node_load($copy_task->field_board['und'][0]['target_id']);
+  // Determine the next position in the column
+  $query = new EntityFieldQuery();
+  $query->entityCondition('entity_type', 'node')
+      ->entityCondition('bundle', 'task')
+      ->fieldCondition('field_task_column', 'tid', $column_id)
+      ->fieldCondition('field_board', 'target_id',  $kanban->nid)
+      ->count();
+  $result = $query->execute();
+  $position = empty($result) ? 0 : $result +1;
+
+  // Prepare the new task node
+  $node = new stdClass();
+  $node->type = 'task';
+  module_load_include('inc', 'node', 'node.pages');
+  node_object_prepare($node);
+  $node->title = $copy_task->title . ' -'.t('Copy', array(), array('context' => 'gofast_kanban'));
+  $node->language=$copy_task->language;
+  $node->field_board['und'][0]['target_id'] = $kanban->nid;
+  $node->field_task_column['und'][0]['tid'] = $column_id;
+  $node->field_column_index['und'][0]['value'] = $position;
+  $node->og_group_content_ref['und'][0]['target_id'] = $kanban->og_group_content_ref['und'][0]['target_id'];
+
+  // Copy fields from the original task
+  $fields_to_copy = array(
+    'body', 'field_date', 'field_person_in_charge',
+    'field_state', 'field_target_link', 'field_task_color', 'field_tags'
+  );
+
+  foreach ($fields_to_copy as $field) {
+    foreach ($copy_task->{$field}[LANGUAGE_NONE] as $i => $val) {
+      $node->{$field}[LANGUAGE_NONE][$i] = $val;
+    }
+  }
+  node_save($node);
+
+  // Copy checklist items
+  $checklists_entities = reset(gofast_kanban_get_task_checklists_raw($copy_task->nid, TRUE));
+  if ($checklists_entities) {
+    $items = gofast_kanban_mychecklist_load($checklists_entities->cid)->getItems();
+    $cid = gofast_kanban_get_task_checklists_raw($node->nid, FALSE)[0];
+    foreach ($items as $item) {
+      $attrs = array(
+        "uid" => isset($item->uid) ? $item->uid : "",
+        "deadline" => isset($item->deadline) ? $item->deadline : "",
+      );
+      gofast_kanban_checklistItem_create($cid, $item->label, $attrs);
+    }
+  }
+  drupal_json_output(array('nid'=>$node->nid,'date_created'=> $node->created));
 }

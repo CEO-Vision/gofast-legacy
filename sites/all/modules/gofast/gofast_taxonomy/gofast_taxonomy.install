@@ -188,3 +188,16 @@ function gofast_taxonomy_update_7011() {
 
   taxonomy_term_save($term);
 }
+
+/** Make some unwanted terms not standard allowing user to remove them*/
+function gofast_taxonomy_update_7012() {
+  $term = reset(taxonomy_get_term_by_name("Report and minutes", "category"));
+  $term->field_standard_gf[LANGUAGE_NONE][0]["value"] = 0;
+  
+  taxonomy_term_save($term);
+
+  $term = reset(taxonomy_get_term_by_name("Information", "category"));
+  $term->field_standard_gf[LANGUAGE_NONE][0]["value"] = 0;
+  
+  taxonomy_term_save($term);
+}

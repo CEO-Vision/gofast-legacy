@@ -4,6 +4,9 @@
  */
 
 module_load_include('inc', 'gofast_onlyoffice', 'gofast_onlyoffice_functions');
+module_load_include('inc', 'gofast_onlyoffice', 'gofast_onlyoffice_forms');
+require_once(DRUPAL_ROOT .'/sites/all/libraries/firebase-jwt/vendor/autoload.php');
+use Firebase\JWT\JWT;
 
 /**
  * Define the path pointing to alfresco server
@@ -12,6 +15,33 @@ global $base_url;
 define('GOFAST_URL_WEBSCRIPT_ALFRESCO', $base_url.'/alfresco/s/');
 define('GOFAST_URL_ONLYOFFICE_CALLBACK', $base_url.'/');
 define('GOFAST_ONLYOFFICE_SOFT_LOCK', 'field_onlyoffice_lock');
+
+/**
+ * Implements hook_library().
+ */
+function gofast_onlyoffice_library(){
+  $path = drupal_get_path('module', 'gofast_onlyoffice');
+  $libraries['gofast_onlyoffice_convert'] = array(
+    'title' => 'GoFAST OnlyOffice JS handlers for convert service',
+    'version' => '1.0',
+    'js' => array(
+      $path . '/js/gofast_onlyoffice_convert.js' => array(
+        'group' => JS_THEME,
+        'every_page' => TRUE,
+        'weight' => 1
+      )
+    ),
+  );
+  return $libraries;
+}
+
+/**
+* Implements hook_init().
+*/
+function gofast_onlyoffice_init()
+{
+  drupal_add_library("gofast_onlyoffice", "gofast_onlyoffice_convert", TRUE);
+}
 
 /**
  * Hook theme
@@ -55,6 +85,9 @@ function gofast_onlyoffice_theme() {
       'onlyoffice_compare' => array(
         'template' => 'tpl/gofast_onlyoffice_compare',
       ),
+      'onlyoffice_convert_progress' => array(
+        'template' => 'tpl/gofast_onlyoffice_convert_progress',
+      ),
   );
 }
 
@@ -75,6 +108,16 @@ function gofast_onlyoffice_menu() {
     'delivery callback' => 'gofast_ajax_delivery',
   );
 
+  $items['onlyoffice/config/%node'] = array(
+    'title' => 'Onlyoffice document configuration',
+    'page callback' => 'gofast_onlyoffice_get_config_ajax',
+    'type' => MENU_CALLBACK,
+    'page arguments' => array(2),
+    'access arguments' => array('access content'),
+    'access callback' => 'user_access',
+    'delivery callback' => 'gofast_ajax_delivery',
+  );
+
   $items['onlyoffice/callback/%/%/%'] = array(
     'title' => 'Process onlyoffice callback and dispatch to alfresco',
     'page callback' => 'gofast_onlyoffice_callback',
@@ -84,10 +127,31 @@ function gofast_onlyoffice_menu() {
     'delivery callback' => 'gofast_ajax_delivery',
   );
 
+  $items['onlyoffice/config/jwt'] = array(
+    'title' => 'Onlyoffice document configuration JWT signature',
+    'page callback' => 'gofast_onlyoffice_sign_config_ajax',
+    'type' => MENU_CALLBACK,
+    'access arguments' => array('access content'),
+    'access callback' => 'user_access',
+    'delivery callback' => 'gofast_ajax_delivery',
+  );
+
+  $items['modal/%ctools_js/convert/onlyoffice/%node'] = array(
+    'title' => 'Display modal for conversion using OnlyOffice',
+    'page callback' => 'gofast_onlyoffice_convert_modal',
+    'type' => MENU_CALLBACK,
+    'page arguments' => array(1, 4),
+    'access arguments' => array('access content'),
+    'access callback' => 'user_access',
+    'delivery callback' => 'gofast_ajax_delivery',
+  );
+
   return $items;
 }
 
 function template_preprocess_onlyoffice_compare(&$variables) {
+  global $conf;
+
   $node = $variables["node"];
   $version_source = $variables["version_source"];
   $version_dest = $variables["version_dest"];
@@ -116,23 +180,138 @@ function template_preprocess_onlyoffice_compare(&$variables) {
   if (!$variables["version_source_link"] || !$variables["version_dest_link"]) {
     $variables["errors"][] = t("Could not convert the document for comparison", [], ["context" => "gofast:gofast_onlyoffice"]);
   }
+
+  // tokenize configuration for docsApi
+  $doc_config = gofast_onlyoffice_get_config($node, gofast_generate_uuid(), $variables["version_source_link"], "compare");
+  $variables["token"] = JWT::encode($doc_config, $conf['oo_jwt_secret'], "HS256");
+  $variables["docConfig"] = json_encode($doc_config, JSON_HEX_APOS);
+  // tokenize configuration for compare OO command
+  $doc_request_config = [
+    "c" => "compare",
+    "filetype" => $variables["extension"],
+    "url" => $variables["version_dest_link"],
+  ];
+  $variables["docRequestToken"] = JWT::encode($doc_request_config, $conf['oo_jwt_secret'], "HS256");
+  $variables["docRequestConfig"] = json_encode($doc_request_config);
 }
 
 function gofast_onlyoffice_parashift_callback($hash, $complete_node_ref, $onlyoffice_callback_values) {
+  global $conf;
+
   $url_attributes['nodeRef'] = $complete_node_ref;
   $url_attributes['cb_key'] = $hash;
   $alfresco_callback_url = urldecode('http://localhost:8080/alfresco/s' . '/parashift/onlyoffice/callback?' . http_build_query($url_attributes));
 
+  $token =  JWT::encode(json_decode($onlyoffice_callback_values, TRUE), $conf['oo_jwt_secret'], "HS256");
   //Dispatching data to alfresco
   $ch = curl_init($alfresco_callback_url);
   curl_setopt($ch, CURLOPT_CUSTOMREQUEST, "POST");
-  curl_setopt($ch, CURLOPT_POSTFIELDS, $onlyoffice_callback_values);
+  curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode(["token" => $token]));
   curl_setopt($ch, CURLOPT_RETURNTRANSFER, TRUE);
   curl_setopt($ch, CURLOPT_USERPWD, 'admin:' . gofast_get_admin_pwd());
   curl_setopt($ch, CURLOPT_HTTPHEADER, array('Content-Type: application/json'));
   curl_setopt($ch, CURLOPT_TIMEOUT, 15);
   $result = curl_exec($ch);
   return $result;
+}
+
+/**
+ * Get the OnlyOffice document key given an alfresco reference or raw item ID
+ * @param string $alfresco_reference The alfresco reference (or raw item id) to get the document key of
+ * @return false|string Document key string on success, false on failure (e.g.: document not being edited)
+ */
+function gofast_onlyoffice_get_document_key_by_alfresco_reference($alfresco_reference) {
+  if (empty($alfresco_reference)) {
+    return FALSE;
+  }
+  $item_id = gofast_cmis_get_raw_item_id($alfresco_reference);
+  $hash = gofast_onlyoffice_get_document_key($alfresco_reference);
+  if (empty($hash)) {
+    return FALSE;
+  }
+  return "{$item_id}_{$hash}";
+}
+
+/**
+ * Get the OnlyOffice document key given a loaded node
+ * @param mixed $node Loaded node of document to get the document key of
+ * @return false|string Document key string on success, false on failure (e.g.: document not being edited)
+ */
+function gofast_onlyoffice_get_document_key_by_node($node) {
+  $alfresco_reference = gofast_cmis_node_get_item_id($node);
+  return gofast_onlyoffice_get_document_key_by_alfresco_reference($alfresco_reference);
+}
+
+/**
+ * Retrieves the list of usernames of users co-editing a node's document.
+ * @param object $node The fully loaded node of the document.
+ */
+function gofast_onlyoffice_get_users_editing_by_node($node) {
+  $onlyoffice_document_key = gofast_onlyoffice_get_document_key_by_node($node);
+  return gofast_onlyoffice_get_users_editing($onlyoffice_document_key);
+}
+
+/**
+ * Retrieves the list of usernames of users co-editing a document with the given key.
+ * @param string $document_key The Onlyoffice document key/identifier of which to get the users co-editing.
+ */
+function gofast_onlyoffice_get_users_editing($document_key) {
+  $users_cache_key = gofast_onlyoffice_get_document_users_cache_key($document_key);
+  $users = cache_get($users_cache_key);
+  if ($users !== FALSE) {
+    return $users->data;
+  }
+
+  // force refresh
+  // info command will lead to call to the gofast_onlyoffice_callback function below with a status of 1.
+  // The callback will then set the cache to the value we want to retrieve.
+  $result = gofast_onlyoffice_api_query_info_command($document_key);
+  if ($result->error !== 0) {
+    watchdog(
+      'gofast_onlyoffice',
+      "query to onlyoffice's command service returned with error code '$result->error'",
+      [],
+      WATCHDOG_ERROR,
+    );
+    return FALSE;
+  }
+
+  // poll the cache retrying with a sort of exponential backoff
+  // currently polls 10 times over a total of 1+2+4+7*5 = 42 seconds
+  $retries = 0;
+  $max_retries = 10;
+  // delays to sleep for in seconds
+  $retry_delay = 1;
+  $retry_max_delay = 5;
+  // how fast the delay grows after each retry
+  $retry_delay_multiplier = 2;
+  do {
+    $users = cache_get($users_cache_key);
+
+    if ($users !== FALSE) {
+      break;
+    }
+
+    $retries++;
+    $current_delay = $retry_delay;
+    $retry_delay = min($retry_delay * $retry_delay_multiplier, $retry_max_delay);
+  } while ($retries < $max_retries && sleep($current_delay) === 0);
+
+  // Failed to load users even after polling the cache (or failed to sleep in-between polls)
+  if ($users === FALSE) {
+    return FALSE;
+  }
+
+  return $users->data;
+}
+
+/**
+ * Get the cache key of A document's co-editing user list, to get it using `cache_get`
+ * @param string $document_key The OnlyOffice document's key/identifier
+ * @return string The document users' cache key
+ */
+function gofast_onlyoffice_get_document_users_cache_key($document_key) {
+  return "OODocument:" . $document_key . ':users';
 }
 
 /**
@@ -157,126 +336,125 @@ function gofast_onlyoffice_callback($nid, $node_ref, $alfresco_ticket) {
   
   $onlyoffice_callback_values = str_replace($conf['gofast-comm_domain'], "internal-" . $conf['gofast-comm_domain'], $onlyoffice_callback_values);
 
-  // if the callback is called by the onlyoffice api, onlyoffice still expects a response from the doc server but we don't have to go further
-  $decoded_values = json_decode($onlyoffice_callback_values, TRUE);
-  if (isset($decoded_values["userdata"]) && $decoded_values["userdata"] == "gofast_onlyoffice_is_doc_being_edited") {
-    $hash = gofast_cmis_webservice_item_onlyoffice_hash($complete_node_ref, NULL, NULL, TRUE);
-    return gofast_onlyoffice_parashift_callback($hash, $complete_node_ref, $onlyoffice_callback_values);
-  }
+  try {
+    // if the callback is called by the onlyoffice api, onlyoffice still expects a response from the doc server but we don't have to go further
+    $decoded_values = json_decode($onlyoffice_callback_values, TRUE);
+    if (isset($decoded_values["userdata"]) && $decoded_values["userdata"] == "gofast_onlyoffice_is_doc_being_edited") {
+      $hash = gofast_onlyoffice_get_document_key($complete_node_ref);
+      return gofast_onlyoffice_parashift_callback($hash, $complete_node_ref, $onlyoffice_callback_values);
+    }
 
-  if(isset($decoded_values['status'])) {
+    if(isset($decoded_values['status'])) {
 
     $node = node_load($nid);
     $lock_owner = gofast_cmis_node_is_locked($node);
     $save_continue = FALSE;
+    $unlock = FALSE;
 
-    switch($decoded_values['status']) {
-      case '1' :
-        // Document opened
-        // First user connected: check if it's not bringing back an old session
-        $has_soft_lock = gofast_onlyoffice_document_get_soft_lock($node);
-        if (!$has_soft_lock) {
-          $timestamp_value = end(explode("_", $decoded_values["key"]));
-          $is_session_old = (time() - $timestamp_value) > 60;
-          if ($is_session_old) {
-            return;
-          }
-        }
-        // We need to check if there is a soft_lock, if not, set it to true
-        gofast_onlyoffice_document_set_soft_lock($node, TRUE);
-        break;
-      case '2':
-        // Update of the document made, saving, everybody has closed
-        if(isset($decoded_values['forcesavetype'])){
-            //GoFAST plugin save
-            $save_continue = TRUE;
+      switch($decoded_values['status']) {
+        case '1' :
+          // Document opened
+          // We need to check if there is a soft_lock, if not, set it to true
+          gofast_onlyoffice_document_set_soft_lock($node, TRUE);
+          break;
+        case '2':
+          // Update of the document made, saving, everybody has closed
+          if(isset($decoded_values['forcesavetype'])){
+              //GoFAST plugin save
+              $save_continue = TRUE;
+              $onlyoffice_callback_values = json_encode($decoded_values);
+          }elseif($decoded_values["notmodified"]) {
+            // Don't version if no modification was made since last save on an "alone" session
+            $decoded_values['status'] = 4;
             $onlyoffice_callback_values = json_encode($decoded_values);
-        }else{
-            gofast_onlyoffice_document_set_soft_lock($node, FALSE);
-        }
-        // We can not set a variable that will tell Drupal to update the document preview
-        break;
-      case '4':
-        // Document closed by all of its users
-        gofast_onlyoffice_document_set_soft_lock($node, FALSE);
-        break;
-      case '6':
-        $save_continue = TRUE;
-        $decoded_values['status'] = 2;
-        $onlyoffice_callback_values = json_encode($decoded_values);
-    }
-  }
-  if ($decoded_values['status'] == 1 || $decoded_values['status'] == 4) {
-
-    // registering the number of connected users to a document.
-    // getting map of doc keys => number of users
-    $document_user_count_map = variable_get('oo_doc_user_count_list', array());
-    //getting currently stored max value (lets us not always call max on the count map)
-    $max = variable_get('oo_doc_user_count_max', 0);
-    $key = $decoded_values['key'];
-    // go through the actions to see connections and deconnections of users. Usually only one action is sent.
-    foreach ($decoded_values['actions'] as $action) {
-      if ($action['type'] === 1) {
-        //make sure there is a number for the document's key
-        if (!isset($document_user_count_map[$key])) {
-          $document_user_count_map[$key] = 0;
-        }
-        $document_user_count_map[$key]++;
-        $max = max($max, $document_user_count_map[$key]);
-      } elseif ($action['type'] === 0) {
-        $document_user_count_map[$key]--;
-        $max = max($document_user_count_map);
-        // "forget" about the document if there are no more users on it
-        if ($document_user_count_map[$key] <= 0) {
-          unset($document_user_count_map[$key]);
-        }
+          }else{
+            $unlock = TRUE;
+          }
+          // We can not set a variable that will tell Drupal to update the document preview
+          break;
+        case '4':
+          // Document closed by all of its users
+          $unlock = TRUE;
+          break;
+        case '6':
+          $onlyoffice_callback_values = json_encode($decoded_values);
+          $hash = gofast_onlyoffice_get_document_key($complete_node_ref);
+          return gofast_onlyoffice_parashift_callback($hash, $complete_node_ref, $onlyoffice_callback_values);
       }
     }
-    // set the max value of the period to the max of the current max and the period max. the period is used by the reporting in gofast_update_cron hook.
-    variable_set('oo_doc_user_count_max_period', max($max, variable_get('oo_doc_user_count_max_period')));
-    variable_set('oo_doc_user_count_max', $max);
-    variable_set('oo_doc_user_count_list', $document_user_count_map);
-  }
+    if ($decoded_values['status'] == 1 || $decoded_values['status'] == 4) {
 
-  $hash = gofast_cmis_webservice_item_onlyoffice_hash($complete_node_ref);
-  $result = gofast_onlyoffice_parashift_callback($hash, $complete_node_ref, $onlyoffice_callback_values);
-
-
-  //if we are in case of saving document after OnlyOffice edition, we check if the document is in old office format. If yes, convert it
-  if($decoded_values['status'] == '2'){
-    usurp($lock_owner->uid);
-    $cmis_object = gofast_cmis_node_edit_item_get($node);
-
-    $current_mimetype = $cmis_object->properties["cmis:contentStreamMimeType"];
-
-    watchdog("GOFAST convert document ".$node->nid, $current_mimetype);
-   if(gofast_onlyoffice_is_mimetype_must_convert($current_mimetype)){
-        sleep(3);
-        gofast_cmis_convert_old_office_format_to_new($node);
+      // store in cache the list of users (so we can query it later) for 5 minutes
+      $cache_key = gofast_onlyoffice_get_document_users_cache_key($decoded_values['key']);
+      cache_set($cache_key, $decoded_values['users'], 'cache', time() + (5 /*minutes*/ * 60 /*seconds/min*/));
+      // registering the number of connected users to a document.
+      // getting map of doc keys => number of users
+      $document_user_count_map = variable_get('oo_doc_user_count_list', array());
+      //getting currently stored max value (lets us not always call max on the count map)
+      $max = variable_get('oo_doc_user_count_max', 0);
+      $key = $decoded_values['key'];
+      // go through the actions to see connections and deconnections of users. Usually only one action is sent.
+      foreach ($decoded_values['actions'] as $action) {
+        if ($action['type'] === 1) {
+          //make sure there is a number for the document's key
+          if (!isset($document_user_count_map[$key])) {
+            $document_user_count_map[$key] = 0;
+          }
+          $document_user_count_map[$key]++;
+          $max = max($max, $document_user_count_map[$key]);
+        } elseif ($action['type'] === 0) {
+          $document_user_count_map[$key]--;
+          $max = max($document_user_count_map);
+          // "forget" about the document if there are no more users on it
+          if ($document_user_count_map[$key] <= 0) {
+            unset($document_user_count_map[$key]);
+          }
+        }
+      }
+      // set the max value of the period to the max of the current max and the period max. the period is used by the reporting in gofast_update_cron hook.
+      variable_set('oo_doc_user_count_max_period', max($max, variable_get('oo_doc_user_count_max_period')));
+      variable_set('oo_doc_user_count_max', $max);
+      variable_set('oo_doc_user_count_list', $document_user_count_map);
     }
 
-     usurp(FALSE);
+  $hash = gofast_onlyoffice_get_document_key($complete_node_ref);
+  $result = gofast_onlyoffice_parashift_callback($hash, $complete_node_ref, $onlyoffice_callback_values);
+  if ($unlock) {
+    gofast_onlyoffice_document_set_soft_lock($node, FALSE);
   }
 
-  //Relock the document to continue edition
-  if($save_continue){
-    sleep(2);
-    gofast_onlyoffice_document_set_soft_lock($node, TRUE);
+    //if we are in case of saving document after OnlyOffice edition, we check if the document is in old office format. If yes, convert it
+    if($decoded_values['status'] == '2'){
+      usurp($lock_owner->uid);
+      $cmis_object = gofast_cmis_node_edit_item_get($node);
 
-    //Set again OnlyOffice hash
-    gofast_cmis_webservice_item_onlyoffice_hash($complete_node_ref, null, $hash);
+      $current_mimetype = $cmis_object->properties["cmis:contentStreamMimeType"];
 
-    $decoded_values['status'] = 1;
-    $onlyoffice_callback_values = json_encode($decoded_values);
+      watchdog("GOFAST convert document ".$node->nid, $current_mimetype);
+    if(gofast_onlyoffice_is_mimetype_must_convert($current_mimetype)){
+          sleep(3);
+          gofast_cmis_convert_old_office_format_to_new($node);
+      }
 
-    $result = gofast_onlyoffice_parashift_callback($hash, $complete_node_ref, $onlyoffice_callback_values);
+      usurp(FALSE);
+    }
+
+    //Relock the document to continue edition
+    if($save_continue){
+      sleep(2);
+      gofast_onlyoffice_document_set_soft_lock($node, TRUE);
+
+      $decoded_values['status'] = 1;
+      $onlyoffice_callback_values = json_encode($decoded_values);
+
+      $result = gofast_onlyoffice_parashift_callback($hash, $complete_node_ref, $onlyoffice_callback_values);
+    }
+
+    return $result;
+  } catch(Throwable $e) {
+    watchdog("gofast_onlyoffice", "Caught: " . $e->getMessage(), [], WATCHDOG_ERROR);
+    return gofast_onlyoffice_parashift_callback($hash, $complete_node_ref, $onlyoffice_callback_values);
   }
-
-  if(in_array($decoded_values['status'], array(2, 3, 4), TRUE) && !$save_continue){
-      gofast_cmis_webservice_item_onlyoffice_hash($complete_node_ref, TRUE);
-  }
-
-  return $result;
 }
 
 function gofast_onlyoffice_is_mimetype_must_convert($current_mimetype){
@@ -301,7 +479,7 @@ function gofast_onlyoffice_document_set_soft_lock($node, $value) {
   $field_value = isset($node->{GOFAST_ONLYOFFICE_SOFT_LOCK}[LANGUAGE_NONE][0]['value']) ? $node->{GOFAST_ONLYOFFICE_SOFT_LOCK}[LANGUAGE_NONE][0]['value'] : NULL;
   if ($node->type === 'alfresco_item' && ($field_value === NULL || ($field_value !== NULL && $field_value !== $value))) {
     $node->{GOFAST_ONLYOFFICE_SOFT_LOCK}[LANGUAGE_NONE][0]['value'] = intval($value);
-    field_attach_update('node', $node);
+    gofast_update_field_database($node, GOFAST_ONLYOFFICE_SOFT_LOCK);
   }
 }
 
@@ -323,11 +501,34 @@ function gofast_onlyoffice_document_get_soft_lock($node) {
  * @return boolean TRUE if a matching editing session exists according to OO API
  */
 function gofast_onlyoffice_is_doc_being_edited($doc_id) {
-  $data = [
+  $response = gofast_onlyoffice_api_query_info_command($doc_id, "gofast_onlyoffice_is_doc_being_edited");
+  if (isset($response->error) && $response->error == 1) {
+    return FALSE;
+  } else {
+    return TRUE;
+  }
+}
+
+/**
+ * Request an "info" command to the OnlyOffice command service, fetching information
+ * about a document's current edition session.
+ *
+ * @see https://api.onlyoffice.com/editors/command/info
+ * @param string $doc_id OnlyOffice document id of the document to query the info for
+ * @param string|null $user_data Arbitrary data to be sent alongside the request.
+ *  can be used to identify the request later on
+ * @return object The **Command Service**'s response object. This object
+ *  contains the key/document ID and this specific request's error status,
+ *  **not** the requested document informations. See the onlyoffice documentation on this subject.
+ */
+function gofast_onlyoffice_api_query_info_command($doc_id, $user_data = null) {
+  global $conf;
+  $configuration = [
     "c" => "info",
     "key" => $doc_id,
-    "userdata" => "gofast_onlyoffice_is_doc_being_edited",
+    ...($user_data !== NULL ? ["userdata" => $user_data] : []),
   ];
+  $data = ["token" => JWT::encode($configuration, $conf['oo_jwt_secret'], "HS256")];
 
   $ch = curl_init();
   curl_setopt($ch, CURLOPT_URL, DOC_SERV_COMMAND_SERVICE);
@@ -341,11 +542,7 @@ function gofast_onlyoffice_is_doc_being_edited($doc_id) {
   $response = curl_exec($ch);
   $response = json_decode($response);
   curl_close($ch);
-  if (isset($response->error) && $response->error == 1) {
-    return FALSE;
-  } else {
-    return TRUE;
-  }
+  return $response;
 }
 
 /**
@@ -365,83 +562,15 @@ function gofast_onlyoffice_editor($node, $ro = FALSE) {
       drupal_set_message(t('The document %document is currently locked by another application and cannot be edited with OnlyOffice.', array('%document' => $node->title)), 'warning');
       drupal_goto('/');
     }
-    global $user;
-    global $base_url;
-    // Document's information
-    $document_created_timestamp = $node->created;
-    $doc_name = '';
-    $doc_id = '';
-    $doc_edit_permission = true;
-
-    // Author's information
-    $author_info = gofast_ldap_user_attributes(user_load($node->uid));
-
-    // Non-authored user's information
-    $user_info = '';
-    $user_permission_of_node = 'Deny Access';
-
-    // Technical information
-    $callback_url = ''; // This callback is pointing to the alfresco's onlyoffice webscript (AMP plugin) which saves the document into alfresco's server
-    $editor_mode = 'view';
-
-
-    // Build callback_url
-    $alfresco_ticket = gofast_cmis_ticket_validate(); // This ticket is used for the Alfresco's authentification
-    //$callback_url = rtrim(GOFAST_URL_WEBSCRIPT_ALFRESCO, '/') . '/parashift/onlyoffice/callback?nodeRef=' . $node->{GOFAST_CMIS_REFERENCE_FIELD}[LANGUAGE_NONE][0]['value'] . '&alf_ticket=' . $alfresco_ticket;
-    $callback_url = GOFAST_URL_ONLYOFFICE_CALLBACK . 'onlyoffice/callback/' . $node->nid . '/' . gofast_cmis_get_raw_item_id($node->{GOFAST_CMIS_REFERENCE_FIELD}[LANGUAGE_NONE][0]['value']) . '/' . $alfresco_ticket;
-
-    // Build file_name, file_uri, doc_id
-    $transformed_path = str_replace(':/', '', gofast_cmis_node_get_item_id($node)); // Transform alfresco's node reference to the "good" format
-
-    // URI points to document on the alfresco server
-    $doc_uri_to_document_server = rtrim(GOFAST_URL_WEBSCRIPT_ALFRESCO, '/') . '/api/node/content/' . $transformed_path . '?alf_ticket=' . $alfresco_ticket;
+    global $conf;
 
     // Document's name
     $doc_name = gofast_cmis_item_get($node->{GOFAST_CMIS_REFERENCE_FIELD}[LANGUAGE_NONE][0]['value'])->properties['cmis:contentStreamFileName'];
 
-    // Document's last modification date
-    $doc_last_modification_date = gofast_cmis_item_get($node->{GOFAST_CMIS_REFERENCE_FIELD}[LANGUAGE_NONE][0]['value'])->properties['cmis:lastModificationDate'];
-
     // Document id
     if(!$ro){
-        $current_hash = gofast_cmis_webservice_item_onlyoffice_hash(gofast_cmis_get_raw_item_id($node->{GOFAST_CMIS_REFERENCE_FIELD}[LANGUAGE_NONE][0]['value']), NULL, NULL, TRUE);
-        $is_doc_being_edited = FALSE;
-        // theoretically, this means the document is already being edited
-        if (!empty($current_hash)) {
-          $doc_id = gofast_cmis_get_raw_item_id($node->{GOFAST_CMIS_REFERENCE_FIELD}[LANGUAGE_NONE][0]['value']) . '_' . $current_hash;
-          $is_doc_being_edited = gofast_onlyoffice_is_doc_being_edited($doc_id);
-        }
-        // if not, something went wrong last time the document was closed: trigger the hash to trigger behavior on document closing
-        if (!empty($current_hash) && !$is_doc_being_edited) {
-          gofast_cmis_webservice_item_onlyoffice_hash(gofast_cmis_get_raw_item_id($node->{GOFAST_CMIS_REFERENCE_FIELD}[LANGUAGE_NONE][0]['value']), TRUE);
-          $current_hash = gofast_cmis_webservice_item_onlyoffice_hash(gofast_cmis_get_raw_item_id($node->{GOFAST_CMIS_REFERENCE_FIELD}[LANGUAGE_NONE][0]['value']), NULL, NULL, TRUE);
-          // if hash clear failed, then something is very very wrong and it's wiser to exit
-          if (!empty($current_hash)) {
-            watchdog("gofast_onlyoffice", "Hash cannot be cleared on doc_id %doc_id", ["%doc_id" => $doc_id], WATCHDOG_ERROR);
-            drupal_set_message(t("There was a problem getting the current version of the document"), "error");
-            header('Location: /node/' . $node->nid);
-            exit;
-          }
-        }
-        $hash = gofast_cmis_webservice_item_onlyoffice_hash(gofast_cmis_get_raw_item_id($node->{GOFAST_CMIS_REFERENCE_FIELD}[LANGUAGE_NONE][0]['value']));
+        $hash = gofast_onlyoffice_get_document_key($node->{GOFAST_CMIS_REFERENCE_FIELD}[LANGUAGE_NONE][0]['value']);
         $doc_id = gofast_cmis_get_raw_item_id($node->{GOFAST_CMIS_REFERENCE_FIELD}[LANGUAGE_NONE][0]['value']) . '_' . $hash;
-    }
-
-    // Document's extension
-    $extension  = gofast_cmis_node_get_extension($node);
-
-    $user_info = gofast_ldap_user_attributes();
-    $user_info['user-language'] = $user->language;
-    $user_info['name'] = $user->name;
-
-    if (node_access('update', $node, $user)) {
-      $user_permission_of_node = 'Full Access';
-      $editor_mode = 'edit';
-      $doc_edit_permission = true;
-    } else if (node_access('view', $node, $user)) {
-      $user_permission_of_node = 'Read Only';
-      $editor_mode = 'view';
-      $doc_edit_permission = false;
     }
 
     if($ro){
@@ -468,36 +597,33 @@ function gofast_onlyoffice_editor($node, $ro = FALSE) {
             $node_body = $node->body[LANGUAGE_NONE][0]['value'];
         }
 
+        $doc_config = gofast_onlyoffice_get_config($node, gofast_generate_uuid(), "", "readonly");
+        $token = JWT::encode($doc_config, $conf['oo_jwt_secret'], "HS256");
+  
         return $node_body . theme('onlyoffice_ro', array(
           'nid' => $node->nid,
-          'fileuri' => $doc_uri_to_document_server,
           'filename' => $doc_name,
-          'callbackUrl' => $callback_url,
-          'user' => $user_info,
-          'author' => $author_info,
-          'permission' => $user_permission_of_node,
-          'timestamp' => $document_created_timestamp,
-          'editor_mode' => $editor_mode,
-          'edit_permission' => $doc_edit_permission,
-          'extension' => $extension,
-          'gobackUrl' => $base_url . '/' . 'node/' . $node->nid
+          'token' => $token,
+          'docConfig' => json_encode($doc_config, JSON_HEX_APOS),
         ));
     }else{
-        return theme('onlyoffice', array(
-          'nid' => $node->nid,
-          'fileuri' => $doc_uri_to_document_server,
-          'filename' => $doc_name,
-          'callbackUrl' => $callback_url,
-          'user' => $user_info,
-          'author' => $author_info,
-          'permission' => $user_permission_of_node,
-          'timestamp' => $document_created_timestamp,
-          'key' => $doc_id,
-          'editor_mode' => $editor_mode,
-          'edit_permission' => $doc_edit_permission,
-          'extension' => $extension,
-          'gobackUrl' => $base_url . '/' . 'node/' . $node->nid
-        ));
+      $doc_config = gofast_onlyoffice_get_config($node, $doc_id);
+      $token = JWT::encode($doc_config, $conf['oo_jwt_secret'], "HS256");
+      $local_storage = [];
+      if (module_exists("gofast_mistral")) {
+        global $base_url;
+        $local_storage["GoFASTAIApiKey"] = $conf['gofast-iagent-jwt-token'];
+        $local_storage["GoFASTAIApiEndpoint"] = $base_url;
+        $local_storage["GoFASTAIApiModel"] = empty($conf['gofast-iagent-saas-model']) ? "mistral-small-latest" : $conf['gofast-iagent-default-model-id'];
+      }
+
+      return theme('onlyoffice', array(
+        'filename' => $doc_name,
+        'token' => $token,
+        'docConfig' => json_encode($doc_config, JSON_HEX_APOS),
+        'localStorage' => $local_storage,
+        'commDomain' =>  $conf['gofast-comm_domain'],
+      ));
     }
   } else {
    drupal_goto('/');
@@ -540,7 +666,7 @@ function gofast_onlyoffice_configure_share(){
     'cert' => "true",
     'forcesave' => "false",
     'innerurl' => "",
-    'jwtsecret' => "",
+    'jwtsecret' => $conf['oo_jwt_secret'],
     'url' => "https://internal-" . $conf['gofast-comm_domain'] . "/",
     'webpreview' => "false",
     'formats' => [
@@ -550,7 +676,15 @@ function gofast_onlyoffice_configure_share(){
       'odt' => "false",
       'rtf' => "false",
       'txt' => "true",
-    ]
+    ],
+    'demo' => "false",
+    'convertOriginal' => "false",
+    "chat" => "true",
+    "help" => "true",
+    "compactHeader" => "false",
+    "toolbarNoTabs" => "false",
+    "feedback" => "false",
+    "reviewDisplay" => "false",
   ];
 
   $postfields = json_encode((object)$postfields);

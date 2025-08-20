@@ -25,6 +25,9 @@
     <div class="Conference__Field GofastForm__Field GofastForm__Field--password">
       <?php echo render($form['field_conference_password']); ?>
     </div>
+    <div class="Conference__Field GofastForm__Field GofastForm__Field--recurrence">
+      <?php echo render($form['recurrence']); ?>
+    </div>
     <div class="Conference__Field GofastForm__Field GofastForm__Field--lobby">
       <?php echo render($form['field_conference_has_lobby_room_bs_switch']); ?>
     </div>

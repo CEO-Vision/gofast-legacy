@@ -75,7 +75,7 @@ function gofast_cmis_poll($poll_name, $poll_info, $context) {
          $commands[] = ajax_command_html('#ctools-add-js', "<script type='text/javascript'>jQuery('#refresh-preview').removeClass('disabled');</script>");
         if (!gofast_cmis_node_is_locked($node)) {
            $commands[] = ajax_command_invoke("#fast_drag_drop", 'css', array('display', 'block'));     
-           $commands[] = ajax_command_html("#fast_drag_drop", t("Drag&Drop new version here", array(), array('context' => 'gofast:gofast_cmis')));          
+           $commands[] = ajax_command_html("#fast_drag_drop .drop_area_label", t("Drag&Drop new version here", array(), array('context' => 'gofast:gofast_cmis')));          
          }       
       }      
       break;

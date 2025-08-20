@@ -24,7 +24,7 @@
               "success"
             );
             jQuery('a[href="#edit-rssfeeds"]').remove("processed");
-            Gofast.loadSettingsTab("edit-rssfeed");
+            Gofast.loadSettingsTab("edit-rssfeed", true);
             jQuery('a[href="#edit-rssfeeds"]').addClass("processed");
           } else {
             Gofast.toast(
@@ -63,7 +63,7 @@
               "success"
             );
             jQuery('a[href="#edit-rssfeeds"]').remove("processed");
-            Gofast.loadSettingsTab("edit-rssfeed");
+            Gofast.loadSettingsTab("edit-rssfeed", true);
             jQuery('a[href="#edit-rssfeeds"]').addClass("processed");
           } else {
             Gofast.toast(
@@ -99,7 +99,7 @@
               "success"
             );
             jQuery('a[href="#edit-rssfeeds"]').remove("processed");
-            Gofast.loadSettingsTab("edit-rssfeed");
+            Gofast.loadSettingsTab("edit-rssfeed", true);
             jQuery('a[href="#edit-rssfeeds"]').addClass("processed");
           } else {
             Gofast.toast(

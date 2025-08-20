@@ -215,26 +215,43 @@ function gofast_forum_notify_mentioned_users($comment){
 
   $node = node_load($comment->nid);
 
-  // Get ckekditor content
+  // Get ckeditor content
   $body = $comment->comment_body[LANGUAGE_NONE][0]['value'];
   $href = $base_url . '/node/'.$comment->nid.'#comment-'.$comment->cid;
 
-  // Regex to detect if anybody was mentionned
-  $regex = "(user-autocomplete-[0-9]*)";
+  // Regex to detect if anybody was mentioned
+  $regex = '(user-autocomplete-(\d+))';
 
-  $isMatch = preg_match_all($regex, $body, $matches);
+  $match_count = preg_match_all($regex, $body, $matches);
 
-  // Each everyone and send message into Element
-  if(!empty($matches)){
-    foreach ($matches[0] as $match) {
+  // Iterate on each found mention and send message into Element
+  if ($match_count > 0) {
+    // Takes the values matched for the first capturing group (should be user ids)
+    // and makes them unique string values. There should be no empty strings
+    // (no match) since the first capturing group is required and not in a "or" ('|')
+    // branch.
+    $mentioned_ids = array_unique($matches[1]);
 
-      // User mentionned
-      $id = str_replace('user-autocomplete-', '', $match);
-      $init_user = user_load($user->uid);
+    // Mentioning user, comment author
+    $init_user = user_load($user->uid);
 
-      // Body message
-      $display_name = $init_user->ldap_user_displayname[LANGUAGE_NONE][0]['value'];
-      $message = t('@user mentionned you on ', array('@user' => $display_name)) . '<a href="' . $href . '">&nbsp;' . $node->title . "</a>";
+    // Body message
+    $display_name = $init_user->ldap_user_displayname[LANGUAGE_NONE][0]['value'];
+    // FIXME: typo 'mentionned' => 'mentioned'
+    // FIXME: use '!placeholder' interpolation for link to to document instead of concatenating link to translated string ?
+    $message = t('@user mentionned you on ', array('@user' => $display_name)) . '<a href="' . $href . '">&nbsp;' . $node->title . "</a>";
+
+    foreach ($mentioned_ids as $id) {
+      $mentioned_user = user_load($id);
+      // user does not exist: skip sending message
+      if ($mentioned_user === false) {
+        continue;
+      }
+
+      // user was mentioned in node they can't access, don't send notification
+      if (!node_access('view', $node, $mentioned_user)) {
+        continue;
+      }
 
       // Send message
       gofast_riot_api_send_message(NULL, $id, $message);
@@ -250,7 +267,6 @@ function template_preprocess_gofast_forum_simple_author_pane(&$variables) {
   $variables['id'] = $context->uid;
   $account = user_load($context->uid);
   if(user_view_access($account)){
-    $ldap_attributes = gofast_ldap_user_attributes($account);
     $variables['displayname'] = gofast_user_display_name($account);
     $variables['profile_score'] = userpoints_get_current_points($account->uid) . ' ' . t('points', array(), array('context' => 'gofast'));
     $variables['ldap'] = gofast_ldap_user_attributes($account);
@@ -482,7 +498,12 @@ function gofast_forum_form_comment_form_alter(&$form, &$form_state, $form_id) {
 }
 
 function gofast_forum_hide_text_format(&$form) {
-  $form[LANGUAGE_NONE][0]['format']['#access'] = false;
+  if(isset($form[LANGUAGE_NONE][0]["format"])){
+    $form[LANGUAGE_NONE][0]['format']['#access'] = false;
+  }
+  if(isset($form["format"])){
+    $form["format"]["#access"] = false;
+  }
   return $form;
 }
 

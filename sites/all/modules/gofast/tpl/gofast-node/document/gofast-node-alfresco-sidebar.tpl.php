@@ -106,7 +106,7 @@ if (count(module_implements("extra_metadata")) >= 1) {
 
 <script type='text/javascript'>
   jQuery(document).ready(function() {
-    Gofast.gofast_right_block_breadcrumb("true");
+    Gofast.gofast_right_block_breadcrumb("when_not_mirrored");
 
     jQuery("[href='#document__historytab']").on("click", function() {
       Gofast.historyTab("<?= $node->nid ?>");

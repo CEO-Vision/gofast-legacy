@@ -29,16 +29,15 @@ function gofast_contextual_menu_get_all_items($node, $browser_path, $from_tree, 
 
   $bookmark_flag = flag_get_flag("bookmarks");
   $bookmark_is_flagged = $bookmark_flag->is_flagged($node->nid);
-
+  $webform_is_closed = gofast_webform_is_closed($node);
   if($node == null || $node->type == "folder"){
     while($parent_nid == false){
       $parent_nid = gofast_ajax_file_browser_get_nid_from_href($parent_path);
       $parent_path = dirname($parent_path);
     }
-    $nid = $parent_nid;
-  } else {
-    $nid = $node->nid;
+    $node->nid = $parent_nid;
   }
+  $nid = $node->nid;
 
   $items = [];
   $items = [
@@ -85,7 +84,7 @@ function gofast_contextual_menu_get_all_items($node, $browser_path, $from_tree, 
       'href' => '',
       'icon_class' => 'fa fa-arrow-right',
       'target' => '',
-      'onClick' => 'Gofast.ITHit.linkToFolder(\''.$browser_path.'\','.$nid.')',
+      'onClick' => 'Gofast.ITHit.linkToFolder(\''.str_replace("'", "\'", $browser_path).'\','.$nid.')',
       'title' => t('Copy the link from this location to the clipboard'),
       'page' => array('gofast_contextual_menu_is_from_browser'),
       'type' => array('group', 'organisation', 'extranet', 'public', 'folder'),
@@ -147,7 +146,7 @@ function gofast_contextual_menu_get_all_items($node, $browser_path, $from_tree, 
       'onClick' => '',
       'page' => array('gofast_contextual_menu_node_is_delete'),
       'type' => array('alfresco_item', 'article', 'webform', 'forum', 'conference'),
-      'access_function' => array('gofast_contextual_menu_user_can_delete_node', 'gofast_contextual_menu_node_not_locked', 'gofast_contextual_menu_node_not_archived', 'gofast_contextual_menu_is_not_multifiled', 'gofast_contextual_menu_can_restore_node'),
+      'access_function' => array('gofast_contextual_menu_user_can_delete_node', 'gofast_contextual_menu_node_not_locked', 'gofast_contextual_menu_node_not_archived', 'gofast_contextual_menu_can_restore_node'),
       'hide_from_mobile' => TRUE,
       'hide_from_essential' => FALSE
      ],
@@ -174,7 +173,7 @@ function gofast_contextual_menu_get_all_items($node, $browser_path, $from_tree, 
       'title' => t('Delete this folder'),
       'page' => array('gofast_contextual_menu_is_from_browser'),
       'type' => array('folder'),
-      'access_function' => array('gofast_contextual_menu_folder_is_not_template', 'gofast_contextual_menu_folder_is_not_wiki', 'gofast_contextual_menu_folder_is_not_mirroring','gofast_contextual_menu_node_is_not_template')
+      'access_function' => array('gofast_contextual_menu_folder_is_not_technical_folder', 'gofast_contextual_menu_folder_is_not_template', 'gofast_contextual_menu_folder_is_not_wiki', 'gofast_contextual_menu_folder_is_not_mirroring','gofast_contextual_menu_node_is_not_template')
     ],
     'manage_folder_locations' => [
       'text' => t('Share/Edit locations', array(), array('context' => 'gofast:gofast_views')) . '&nbsp;<span class="label label-lg label-light-warning label-inline">BETA</span>',
@@ -186,7 +185,7 @@ function gofast_contextual_menu_get_all_items($node, $browser_path, $from_tree, 
       'title' => t('Manage locations of this folder'),
       'page' => array('gofast_contextual_menu_all_pages'),
       'type' => array('folder'),
-      'access_function' => array('gofast_contextual_menu_parent_is_not_mirroring'),
+      'access_function' => array('gofast_contextual_menu_folder_is_not_technical_folder', 'gofast_contextual_menu_parent_is_not_mirroring'),
     ],
     'share_folder_email' => [
       'text' => t('Share Folder By Email', array(), array('context' => 'gofast')),
@@ -209,7 +208,7 @@ function gofast_contextual_menu_get_all_items($node, $browser_path, $from_tree, 
       'title' => t('Rename this folder'),
       'page' => array('gofast_contextual_menu_is_from_browser'),
       'type' => array('folder'),
-      'access_function' => array('gofast_contextual_menu_folder_is_not_wiki','gofast_contextual_menu_node_is_not_template')
+      'access_function' => array('gofast_contextual_menu_folder_is_not_technical_folder', 'gofast_contextual_menu_folder_is_not_wiki','gofast_contextual_menu_node_is_not_template')
     ],
     'sync_userlist' => [
       'text' => t("Synchronize this userlist" , array(), array('context' => 'gofast')),
@@ -232,6 +231,19 @@ function gofast_contextual_menu_get_all_items($node, $browser_path, $from_tree, 
       'page' => array('gofast_contextual_menu_all_pages', 'gofast_contextual_menu_node_is_not_delete', 'gofast_contextual_menu_not_from_tree', 'gofast_contextual_menu_not_from_browser'),
       'type' => array('group', 'organisation', 'extranet', 'public'),
       'access_function' =>  array('gofast_contextual_menu_is_not_root_space', 'gofast_contextual_menu_user_is_administrator'),
+    ],
+    'publish_webform' => [
+      'text' => $webform_is_closed ? t('Publish this webform', array(), array('context' => 'gofast_webform')) : t('Unpublish this webform', array(), array('context' => 'gofast_webform')),
+      'link_id' => 'gofast-webform-publish-unpublish',
+      'link_class' => 'publish_webform ctools-use-modal',
+      'href' => "/modal/nojs/node/{$node->nid}/webform/manage",
+      'icon_class' => "fa fa-share",
+      'page' => array('gofast_contextual_menu_all_pages', 'gofast_contextual_menu_node_is_not_delete'),
+      'type' => array('webform'),
+      'access_function' => array('gofast_contextual_menu_user_can_update_node'),
+      'hide_from_mobile' => TRUE,
+      "hide_from_tablet" => TRUE,
+      'hide_from_essential' => FALSE
     ],
     'edit' => gofast_contextual_menu_edit_link($node),
     'delete_userlist' => [
@@ -311,7 +323,7 @@ function gofast_contextual_menu_get_all_items($node, $browser_path, $from_tree, 
       'text' => t('Co-edit with onlyoffice', array(), array('context' => 'gofast')),
       'link_id' => 'contextual_btn_onlyoffice',
       'link_class' => 'gofast-non-ajax contextual_link_onlyoffice',
-      'href' => $base_url . '/onlyoffice/editor/' . $node->nid,
+      'href' => $base_url . '/onlyoffice/editor/' . $node->nid . '?start=' . time(),
       'icon_class' => 'fa fa-edit',
       'target' => '_blank',
       'onClick' => gofast_onlyoffice_get_onclick_contextual_action($node),
@@ -334,7 +346,6 @@ function gofast_contextual_menu_get_all_items($node, $browser_path, $from_tree, 
       'page' => array('gofast_contextual_menu_all_pages', 'gofast_contextual_menu_node_is_not_delete'),
       'type' => array('alfresco_item'),
       'access_function' => array('gofast_contextual_menu_user_can_update_node', 'gofast_contextual_menu_node_not_archived', 'gofast_contextual_menu_node_not_locked', 'gofast_contextual_menu_node_is_desktop_edition_enabled'),
-      'divider' => TRUE,
       'hide_from_mobile' => TRUE,
       "hide_from_tablet" => TRUE,
     ],
@@ -440,6 +451,19 @@ function gofast_contextual_menu_get_all_items($node, $browser_path, $from_tree, 
       "hide_from_tablet" => TRUE,
       'hide_from_essential' => FALSE
     ],
+    'share_webform' => [
+      'text' => t('Share webform', array(), array('context' => 'gofast')),
+      'link_id' => "share_webform",
+      'link_class' => 'share-webform permalink',
+      'href' => "/drupal/survey/$node->nid?hash=". gofast_webform_create_expiration_hash($node->nid),
+      'icon_class' => "fas fa-link",
+      'page' => array('gofast_contextual_menu_all_pages', 'gofast_contextual_menu_node_is_not_delete'),
+      'type' => array('webform'),
+      'access_function' => '',
+      'hide_from_mobile' => TRUE,
+      "hide_from_tablet" => TRUE,
+      'hide_from_essential' => FALSE
+    ],
     'rename_browser' => [
       'text' => t('Rename', array(), array('context' => 'gofast')),
       'link_id' => 'rename',
@@ -499,7 +523,7 @@ function gofast_contextual_menu_get_all_items($node, $browser_path, $from_tree, 
   }
 
   // Hook to alter already existing items in other modules
-  drupal_alter("gofast_contextual_menu", $items);
+  drupal_alter("gofast_contextual_menu", $items, $node);
 
   return $items;
 }
@@ -563,6 +587,7 @@ function gofast_contextual_menu_get_more_actions($node, $browser_path, $fromTree
       'page' => array('gofast_contextual_menu_all_pages', 'gofast_contextual_menu_node_is_not_delete', 'gofast_contextual_menu_not_from_tree', 'gofast_contextual_menu_not_from_browser'),
       'type' => array('group', 'organisation', 'extranet', 'public'),
       'access_function' => array('gofast_contextual_menu_is_not_root_space', 'gofast_contextual_menu_user_is_administrator', 'gofast_contextual_menu_space_not_archived'),
+      'hide_from_essential' => TRUE,
     ],
     'move_space' => [
       'text' => t('Move this space', array(), array('context' => 'gofast')),
@@ -652,10 +677,11 @@ function gofast_contextual_menu_get_more_actions($node, $browser_path, $fromTree
     'unzip' => [
       'text' => t('Extract', array(), array('context' => 'gofast')),
       'link_id' => 'unzip',
+      'link_class' => 'unzip-files',
       'href' => '',
       'icon_class' => 'fa fa-file-archive n-color',
       'target' => '',
-      'onClick' => 'Gofast.ITHit.unzipSelected(event, \'' . $browser_path . '\');$(\'.gofast-node-actions.open\').click();',
+      'onClick' => 'Gofast.ITHit.bulkSelected(event, \'' . $browser_path . '\');$(\'.gofast-node-actions.open\').click();',
       'title' => t('Extracts the selected file'),
       'page' => array('gofast_contextual_menu_unzip_file'),
       'type' => array('alfresco_item'),
@@ -671,8 +697,22 @@ function gofast_contextual_menu_get_more_actions($node, $browser_path, $fromTree
       'onClick' => 'Gofast.ITHit.bulkSelected(event, \'' . $browser_path .
         '\');$(\'.gofast-node-actions.open\').click();',
       'title' => t('Compress the selected file'),
-      'type' => array('folder'),
+      'type' => array('alfresco_item', 'article'),
       'access_function' => array('gofast_contextual_menu_node_is_not_delete'),
+    ],
+    'convert_onlyoffice' => [
+      'text' => t('Convert', array(), array('context' => 'gofast')),
+      'link_id' => '',
+      'link_class' => 'contextual_btn_convert_onlyoffice ctools-use-modal',
+      'href' => "/modal/nojs/convert/onlyoffice/" . $node->nid,
+      'icon_class' => 'fas fa-sync-alt',
+      'title' => t("Convert this document with OnlyOffice"),
+      'page' => array('gofast_contextual_menu_all_pages', 'gofast_contextual_menu_node_is_not_delete'),
+      'type' => array('alfresco_item'),
+      'access_function' => array('gofast_contextual_menu_user_can_update_node', 'gofast_contextual_menu_node_not_archived', 'gofast_contextual_menu_node_not_locked', 'gofast_contextual_menu_node_is_document_convertible'),
+      'divider' => TRUE,
+      'hide_from_mobile' => TRUE,
+      "hide_from_tablet" => TRUE,
     ],
     'duplicate' => [
       'text' => t('Duplicate this file', array(), array('context' => 'gofast')),
@@ -790,19 +830,6 @@ function gofast_contextual_menu_get_more_actions($node, $browser_path, $fromTree
       'divider' => in_array($node->type, array('article', 'conference')) ? TRUE : FALSE,
       'hide_from_mobile' => TRUE,
       'hide_from_essential' => TRUE
-    ],
-    'compress' => [
-      'link_class' => 'compress-files',
-      'text' => t('Compress', array(), array('context' => 'gofast')),
-      'link_id' => 'compress',
-      'href' => '',
-      'icon_class' => 'fa fa-file-archive-o n-color',
-      'target' => '',
-      'onClick' => 'Gofast.ITHit.bulkSelected(event, \'' . $browser_path .
-        '\');$(\'.gofast-node-actions.open\').click();',
-      'title' => t('Compress the selected file'),
-      'type' => array('alfresco_item'),
-      'access_function' => array('gofast_contextual_menu_node_is_not_delete'),
     ],
     'subscribe' => gofast_contextual_menu_create_flag('subscribe_node',  'fa fa-rss', array('alfresco_item', 'article', 'conference', 'forum', 'webform'), FALSE, $node->nid),
   ];
@@ -940,11 +967,11 @@ function gofast_contextual_menu_get_node_actions_dropdown($node, $browser_path =
         
          
         $detect = new Mobile_Detect;
-        if ($detect->isTablet() && $action['hide_from_tablet'] == TRUE) { // Ability to hide some menu links on tablet.
+        if ($detect->isTablet() && $child['hide_from_tablet'] == TRUE) { // Ability to hide some menu links on tablet.
           continue;
-        } else if (gofast_mobile_is_phone() && $action["hide_from_mobile"] == TRUE){ // Ability to hide some menu links on mobile.
+        } else if (gofast_mobile_is_phone() && $child["hide_from_mobile"] == TRUE){ // Ability to hide some menu links on mobile.
           continue;
-        }else if(gofast_essential_is_essential() && $action['hide_from_essential'] == TRUE) {  // Ability to hide some menu links on Essential version.
+        }else if(gofast_essential_is_essential() && $child['hide_from_essential'] == TRUE) {  // Ability to hide some menu links on Essential version.
           continue;
         }
 
@@ -1246,7 +1273,7 @@ function gofast_contextual_menu_is_annotable($node, $browser_path, $fromTree, $m
   $default_documents_form_configuration = array(
     'ticket' => 1,
     'ticket_path_length' => 200,
-    'gofast_onlyoffice_ro_preview' => FALSE,
+    'gofast_onlyoffice_ro_preview' => TRUE,
   );
   $documents_form_defaults = variable_get("documents_form_defaults", $default_documents_form_configuration);
   
@@ -1339,6 +1366,17 @@ function gofast_contextual_menu_node_is_desktop_edition_enabled($node, $browser_
   return TRUE;
 }
 
+function gofast_contextual_menu_node_is_document_convertible($node, $browser_path, $fromTree, $menu_item){
+  $extension = strtolower(gofast_cmis_node_get_extension($node));
+  $convertible_extensions = array_keys(gofast_onlyoffice_get_conversion_table());
+
+  if (in_array($extension, $convertible_extensions)) {
+    return TRUE;
+  }
+
+  return t('This file format is not convertible', array(), array('context' => 'gofast:gofast_contextual_menu'));
+}
+
 function gofast_contextual_menu_node_locked_onlyoffice($node, $browser_path, $fromTree, $menu_item){
   if (gofast_cmis_node_is_locked($node) == FALSE || gofast_onlyoffice_document_get_soft_lock($node)) {
     return TRUE;
@@ -1379,6 +1417,41 @@ function gofast_contextual_menu_node_is_template($node, $browser_path, $fromTree
   } else {
     return t('This file is not a template', array(), array('context' => 'gofast:gofast_contextual_menu'));
   }
+}
+
+/**
+ * Contextual menu access function for folders mandating a folder to not be a
+ * technical folder.
+ *
+ * @param object $node The node associated with the verified item.
+ * @param string $browser_path The path of the item being verified
+ * @param bool $fromTree If the contextual menu was opened from the tree view
+ * @param array $menu_item The current contextual menu item
+ * @return true|string True when access is granted, a string when access is
+ *  denied with a message to display as tooltip.
+ */
+function gofast_contextual_menu_folder_is_not_technical_folder($node, $browser_path, $fromTree, $menu_item) {
+  $path_without_trailing_slash = rtrim($browser_path, '/');
+  $split_path = explode('/', $path_without_trailing_slash);
+
+  $element_name = $split_path[count($split_path) - 1];
+  $parent_element_name = $split_path[count($split_path) - 2];
+
+  // folder is at root of a space or has no parent
+  if ($parent_element_name === NULL || !str_starts_with($parent_element_name, '_')) {
+    return TRUE;
+  }
+
+  // folder is not one of the technical folders ?
+  if (!in_array($element_name, GOFAST_TECHNICAL_FOLDER_NAMES)) {
+    return TRUE;
+  }
+
+  return htmlspecialchars(t(
+      'Folder "@folder_name" is a technical folder, available actions are limited',
+      ['@folder_name' => $element_name],
+      ['context' => 'gofast:gofast_contextual_menu'],
+  ));
 }
 
 function gofast_contextual_menu_folder_is_not_template($node, $browser_path, $fromTree, $menu_item){
@@ -1759,17 +1832,17 @@ function gofast_contextual_menu_is_not_member($node){
 }
 
 function gofast_contextual_menu_check_url_permission($node, $browser_path, $fromTree, $menu_item){
-     //check url permission
-        $path = substr($menu_item['href'], 1);
-        if ($router_item = menu_get_item($path)) {
-            if (!$router_item['access']) {
-             return false;
-            }else{
-             return true;
-            }
-        }else{
-            return true;
-        }
+  // check url permission
+  $path = substr($menu_item['href'], 1);
+  if ($router_item = menu_get_item($path)) {
+      if (!$router_item['access']) {
+        return false;
+      }else{
+        return true;
+      }
+  }else{
+      return true;
+  }
 }
 
 function gofast_contextual_menu_is_not_multifiled($node) {

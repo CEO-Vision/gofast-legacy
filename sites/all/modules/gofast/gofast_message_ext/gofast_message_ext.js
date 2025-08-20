@@ -10,5 +10,3 @@ function display(item){
 function hide(item){
   item.style.display = "none";
 }
-
-console.log('felipe:', 'gofast_message_ext');

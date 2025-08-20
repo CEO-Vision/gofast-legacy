@@ -327,7 +327,7 @@ function gofast_features_ldap_strongarm() {
         ),
         '[o]' => array(
           'ldap_attr' => '[o]',
-          'user_attr' => '[field.ldap_user_o]',
+          'user_attr' => '[taxonomy.field_entity]',
           'convert' => 0,
           'direction' => '2',
           'user_tokens' => '',

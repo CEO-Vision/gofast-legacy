@@ -78,10 +78,22 @@ function gofast_search_advanced_theme() {
     'gofast_search_advanced_filters_columns' => array(
       'template' => 'tpl/gofast-search-advanced-filters-columns',
     ),
+    'gofast_search_advanced_more_tags' => array(
+      'template' => 'tpl/gofast-search-advanced-more-tags'
+    ),
   );
 }
 
-
+/**
+ * Implements hook_cronapi().
+ */
+function gofast_search_advanced_cronapi($op, $job = NULL): array {
+  $items['gofast_search_advanced_cleanup_export_files_cron'] = array(
+    'description' => 'Remove all generated export files',
+    'rule' => '15 23 * * 0', // Each Sunday at 23:15
+  );
+  return $items;
+}
 
 /**
  * Implementation of hook_apachesolr_query_alter().
@@ -142,14 +154,16 @@ function gofast_search_advanced_apachesolr_query_alter(DrupalSolrQueryInterface 
 /**
  * Implementation of hook_declare_metadatas().
  */
-function gofast_search_advanced_declare_all_metadatas($only_metadata = true){
+function gofast_search_advanced_declare_all_metadatas($only_metadata = true, $include_standard_metadata = true){
   $all_metadatas = array();
-  // Get standard metadatas first
-  $standard_metadatas = gofast_search_advanced_declare_standard_metadatas();
-  if($only_metadata == true){
-    $all_metadatas = $standard_metadatas['metadatas'];
-  }else{
-    $all_metadatas[$standard_metadatas['name']] = $standard_metadatas['metadatas'];
+  // Get standard metadatas first if necessary
+  if($include_standard_metadata){
+    $standard_metadatas = gofast_search_advanced_declare_standard_metadatas();
+    if($only_metadata){
+      $all_metadatas = $standard_metadatas['metadatas'];
+    }else{
+      $all_metadatas[$standard_metadatas['name']] = $standard_metadatas['metadatas'];
+    }
   }
   
   // use module_implements to get all metadatas declare in specific hook
@@ -160,8 +174,14 @@ function gofast_search_advanced_declare_all_metadatas($only_metadata = true){
     if (function_exists($function)) {
       $result = $function();
       if (isset($result)) {
-        if($only_metadata == true){
-          $all_metadatas = array_merge($all_metadatas, $result['metadatas']);      
+        if($only_metadata){
+          // reach $result['metadatas'] and and check if each metadata have a 'solr_field' key
+          foreach($result['metadatas'] as $key => $metadata){
+            if(!isset($metadata['solr_field']) || $metadata['prevent_index']){
+              unset($result['metadatas'][$key]);
+            }
+          }
+          $all_metadatas = array_merge($all_metadatas, $result['metadatas']);
         }else{
           $all_metadatas[$result['name']] = $result['metadatas'];
         }
@@ -175,10 +195,15 @@ function gofast_search_advanced_declare_all_metadatas($only_metadata = true){
  * Call custom hook to modify the result
  */
 function gofast_search_advanced_advanced_search_result_alter($result){
+  global $user;
   // For each result, we need to format all the fields
   // Here is the standard part
-  // Change the label name into node link
-  $result['label'] = l($result['label'], $result['path'], array('attributes' => array('class' => 'text-truncate')));
+
+  // If we want to export, we don't need same format for some fields
+  $is_export = false;
+  if(isset($_GET["export"]) && $_GET["export"] == true){
+    $is_export = true;
+  }
 
   // Change creation date and changed date into a date format
   $changed_date = new DateTime($result['ds_changed']);
@@ -187,6 +212,9 @@ function gofast_search_advanced_advanced_search_result_alter($result){
   $created_date = new DateTime($result['ds_created']);
   $result['ds_created'] = $created_date->format('d/m/Y H:i:s');
 
+  $custom_date = new DateTime($result['ds_custom_date']);
+  $result['ds_custom_date'] = $custom_date->format('d/m/Y H:i:s');
+
   if($result['ds_field_date'] != "1970-01-01T00:00:00Z"){
     $field_date = new DateTime($result['ds_field_date']);
     $result['ds_field_date'] = $field_date->format('d/m/Y H:i:s');
@@ -194,15 +222,17 @@ function gofast_search_advanced_advanced_search_result_alter($result){
     $result['ds_field_date'] = "-";
   }
 
-  $term = taxonomy_term_load($result['im_field_format'][0]);
-  $icon = gofast_utils_transform_to_fa5_icone($term->field_icone[LANGUAGE_NONE][0]['value']);
-  $result['im_field_format'] = '<i class="fas fa-2x ' . $icon . '"></i>';
-
   // If there is no criticity, we don't display the field
   if(!empty($result['im_field_criticity'])){
     $term_criticity = taxonomy_term_load($result['im_field_criticity'][0]);
     // Load and translate all terms at once.
-    $result['im_field_criticity'] = t($term_criticity->name);
+    $result['im_field_criticity'] = i18n_object('taxonomy_term', $term_criticity)->localize($user->language)->name;
+  }
+
+  if(!empty($result['im_field_classification'])){
+    $term_classification = taxonomy_term_load($result['im_field_classification'][0]);
+    // Load and translate all terms at once.
+    $result['im_field_classification'] = i18n_object('taxonomy_term', $term_classification)->localize($user->language)->name;
   }
 
   if(!empty($result['sm_vid_Category'])){
@@ -212,20 +242,48 @@ function gofast_search_advanced_advanced_search_result_alter($result){
   if(!empty($result['im_field_state'])){
     // Load and translate all terms at once.
     $term_state = taxonomy_term_load($result['im_field_state'][0]);
-    $result['im_field_state'] = t($term_state->name);
+    $result['im_field_state'] = i18n_object('taxonomy_term', $term_state)->localize($user->language)->name;
   }
 
   if(!empty($result['im_field_tags'])){
     foreach($result['im_field_tags'] as $key => $value){
       $term_tag = taxonomy_term_load($value);
       $term_tag_name = $term_tag->name;
-      $result['im_field_tags'][$key] = $term_tag_name;
+      $result['im_field_tags'][$key] = array();
+      $result['im_field_tags'][$key]['label'] = $term_tag_name;
     }
+    $result["im_field_tags"] = gofast_search_advanced_format_tag_search_result($result["im_field_tags"]);
   }
 
-  $result['sm_unr_author'] = theme('user_picture', array('account' => user_load($result['is_uid']), 'popup' => FALSE, 'dimensions' => '30'));
-  // Change language into flag
-  $result['ss_language'] = gofast_get_flag_icon($result['ss_language']);
+  if(!empty($result["formatedGroupes"]) && count($result["formatedGroupes"]) > TAGS_DISPLAY_AMOUNT){
+    $spaces_gids = array_map(function($space){
+      return $space["nid"];
+    }, $result["formatedGroupes"]);
+    if(!$is_export){
+      array_splice($result["formatedGroupes"], TAGS_DISPLAY_AMOUNT);
+      $result["formatedGroupes"]["more"] = gofast_get_show_more_space_template($spaces_gids);
+    }
+  }
+  
+  if(!$is_export){
+    // Change language into flag
+    $result['ss_language'] = gofast_get_flag_icon($result['ss_language']);
+    // Change the label name into node link
+    $result['label'] = l($result['label'], $result['entity_type'] . "/" . $result['entity_id'], array('attributes' => array('class' => 'text-truncate', 'target' => '_blank', 'title' => $result["label"])));
+    $author = user_load($result['is_uid']);
+    $result['tos_name'] = theme('user_picture', array('account' => $author, 'popup' => FALSE, 'dimensions' => '30'));
+    $last_modifier = user_load($result['is_mod_uid']);
+    $result['tos_mod_name'] = theme('user_picture', array('account' => $last_modifier, 'popup' => FALSE, 'dimensions' => '30'));
+    $term = taxonomy_term_load($result['im_field_format'][0]);
+    $icon = gofast_utils_transform_to_fa5_icone($term->field_icone[LANGUAGE_NONE][0]['value']);
+    $result['im_field_format'] = '<i class="fa-2x ' . $icon . '"></i>';
+  } else {
+    $tid = $result['im_field_format'][0];
+    $result['im_field_format'] = i18n_object('taxonomy_term', taxonomy_term_load($tid))->localize($user->language)->name;
+    $result["tos_name"] = gofast_user_display_name(user_load($result["is_uid"]));
+    $result["tos_mod_name"] = gofast_user_display_name(user_load($result["is_mod_uid"]));
+    $result['ss_language'] = $result['ss_language'] == "und" ? "-" : $result["ss_language"];
+  }
 
   return $result;
 }
@@ -256,4 +314,36 @@ function template_preprocess_gofast_search_advanced_form(&$variables){
   $filters = gofast_search_advanced_get_search_advanced_filters();
 
   $variables['fieldsets'] = $filters;
+}
+
+
+/**
+ * template_preprocess_page_gofast_search_advanced_search
+ */
+function template_preprocess_page_gofast_search_advanced_search(&$variables) {
+  
+  $array_actions[]['themed'] = theme('gofast_link_generic', array(
+    'icon_class' => "fas fa-trash text-danger",
+    'href' => "/modal/nojs/search/advanced/history/clear/confirm",
+    'link_class' => 'ctools-use-modal',
+    'text' => t("Delete all history", array(), array('context' => 'gofast:gofast_search_advanced')),
+  ));
+
+  $array_actions[]['themed'] = theme('gofast_link_generic', array(
+    'icon_class' => "fas fa-trash text-danger",
+    'href' => "",
+    'link_class' => 'delete-selected-items',
+    'text' => t("Delete selection", array(), array('context' => 'gofast:gofast_search_advanced')),
+    'disabled' => TRUE
+  ));
+
+  $user_contextual_actions[] = array(
+    'id' => 'account-dropdown',
+    'title' => 'Contextual actions',
+    'button-text' => '',
+    'icon-class' => 'fa fa-bars',
+    'children' => $array_actions
+  );
+
+  $variables['contextual_menu'] = theme('contextual_links', array('buttons' => $user_contextual_actions));
 }

@@ -10,6 +10,9 @@ $form['group_gofast_sync']['#collapsed'] = TRUE;
       <?php echo render($form['fieldset_userlist']); ?>
     </div>
     <div class="GofastForm__Field">
+      <?php echo render($form['sync_message']) ?>
+    </div>
+    <div class="GofastForm__Field">
       <?php echo render($form['group_ldap_sync']); ?>
     </div>
     <div class="GofastForm__Field">

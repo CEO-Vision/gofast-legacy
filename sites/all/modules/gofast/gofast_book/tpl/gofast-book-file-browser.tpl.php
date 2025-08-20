@@ -41,7 +41,7 @@
         });
         // uncollapse on icon click
         jQuery(".book-explorer-element-open:not(.wiki-processed)").addClass("wiki-processed").on("click", Gofast.book.treeWidgetItemCollapseCallback);
-        if(jQuery("#wiki").hasClass("active")) {
+        if(jQuery("#book-browser").hasClass("active")) {
             jQuery(".explorer-main-container .nav.nav-tabs a.active:not('#explorer-wiki')").removeClass('active');
         }
         jQuery("[id='file_browser_books_mobile_tooolbar_refresh']").on("click", Gofast.book.refreshBrowser);

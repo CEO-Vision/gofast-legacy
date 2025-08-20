@@ -3,7 +3,6 @@
     <div class="alert-text"><?= t("This document is confidential: you can't download and share it", array(), array('context' => 'gofast:gofast_cmis')); ?></div>
   </div>
 <?php endif; ?>
-<?php if($async){ ?> <div class="tab-pane" id="document__historytab" role="tabpanel" aria-labelledby="nav-info-tab"> <?php } ?>
   <div class="historytab__revision mt-4">
     <div class="font-weight-bolder font-size-sm mb-4 mr-4"><?php print  t('Revision by', array(), array('context' => 'gofast:gofast_cmis')) ?> : </div>
     <div class="navbar navbar-light bg-faded">
@@ -64,4 +63,4 @@
       <?php endforeach ?>
     </div>
   </div>
-  <?php if($async){ ?> </div> <?php } ?>
+  

@@ -1833,4 +1833,3 @@ __webpack_require__(/*! ./kanban.scss */ "./webpack/plugins/custom/kanban/kanban
 
 /******/ })()
 ;
-//# sourceMappingURL=kanban.bundle.js.map

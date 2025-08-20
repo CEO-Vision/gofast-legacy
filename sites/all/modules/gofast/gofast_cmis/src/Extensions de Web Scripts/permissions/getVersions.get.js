@@ -2,8 +2,6 @@
 //search for the folder node using lucene search
 var node = search.findNode(args.reference);
 var only_last = args.last;
-logger.log(args.newfunction);
-
 
         /*
         * Update aspects if needed
@@ -67,15 +65,16 @@ logger.log(args.newfunction);
                  function nodeToObject(node) {
                         var version = {};                    
                         var history = node.getVersionHistory();
+                        version.createdDate = utils.toISO8601(node.properties["created"]);
+                        version.modifiedDate = utils.toISO8601(node.properties["modified"]);
                         if(history !== null){
                                 if (history.length > 0) {
                                         node.properties["modifier"] = history[0].creator;
                                         node.properties["modified"] = history[0].createdDate;
+                                        version.modifiedDate = history[0].createdDate;
                                 }
                         }
                         version.label = node.properties["versionLabel"];
-                        version.createdDate = utils.toISO8601(node.properties["created"]);
-                        version.modifiedDate = utils.toISO8601(node.properties["modified"]);
                         version.creator = node.properties["creator"];
                         version.type = node.type != '' ? node.type : "MAJOR";
                         version.description = node.description;
@@ -143,6 +142,3 @@ logger.log(args.newfunction);
         model.myStatus = versions.join(';');
         }
         }
-
-
-

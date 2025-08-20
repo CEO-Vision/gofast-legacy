@@ -959,3 +959,9 @@ function bootstrap_keen_file_upload_help(array $variables) {
 
   return drupal_render($build);
 }
+
+
+function bootstrap_keen_webform_view_messages(array $variables){
+  // Empty theme hook original
+  $variables['theme_hook_original'] = '';
+}

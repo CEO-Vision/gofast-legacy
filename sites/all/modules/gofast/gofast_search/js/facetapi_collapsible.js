@@ -43,7 +43,7 @@
     var wrapper = $facet.closest('ul.facetapi-collapsible').get(0);
 
     if (wrapper) {
-      var facetId = wrapper.id.replace('facetapi-facet-', '').replace(/-/g, '_');
+      var facetId = $(wrapper).data("field-alias")
 
       if (Drupal.settings.gofast_search[facetId]) {
         // We either need to check that the 'condition' in Drupal.settings DOES
@@ -52,6 +52,7 @@
         if (Drupal.settings.gofast_search[facetId][condition] === operation) {
           // behavior is either "addClass" or "removeClass"
           $facet[behavior]('expanded');
+          $facet.find("ul")[behavior]('expanded');
         }
       }
     }
@@ -85,14 +86,13 @@
           activeFacetsList.classList.remove("collapse");
         }
 
-        for (const inactiveFacetsList of document.querySelectorAll('.facetapi-inactive ~ ul')) {
-          inactiveFacetsList.classList.add("collapse");
-        }
-
         // we display the navi-link slightly differently if there is a "close filter" button next to it
         for (const activeBullet of document.querySelectorAll('.facetapi-active > .navi-bullet')) {
           activeBullet.remove();
         }
+
+        // Add the 'expanded' class to the facet if configured to do so.
+        facetCollapseExpanded($facet, 'expand', 1, 'addClass');
 
         if ($('.facetapi-active', this).size() > 0) {
           $(this).addClass('expanded active').removeClass('collapse');
@@ -104,14 +104,11 @@
           }
         }
         else {
-          // Add the 'expanded' class to the facet if configured to do so.
-          facetCollapseExpanded($facet, 'expand', 1, 'addClass');
-          
           var wrapper = $('facetapi-collapsible ul.facetapi-collapsible', $facet).get(0),
               facetId;
           
           if (wrapper) {
-            facetId = wrapper.id.replace('facetapi-facet-', '').replace(/-/g, '_');
+            facetId = $(wrapper).data("field-alias")
             state[facetId] = state[facetId] || [];
             if (state[facetId].indexOf('expanded') !== -1) {
               $facet.addClass('expanded');
@@ -142,24 +139,10 @@
           var $parentwrapper = $list.closest('ul.facetapi-collapsible');
 
           if ($parentwrapper) {
-            var parentfacetId = $parentwrapper.attr('id').replace('facetapi-facet-', '').replace(/-/g, '_');
+            var parentfacetId = $parentwrapper.attr('data-field-alias');
             
             if (Drupal.settings.gofast_search[parentfacetId] && Drupal.settings.gofast_search[parentfacetId].collapsible_children) {
               var $parentfacet = $($list.siblings('.facetapi-facet').get(0));
-
-              // Init facet items state (default is collapsed).
-              $('a', $parentfacet).each(function () {
-                var $facetItem = $(this),
-                    $facetHandle = $('<span class="facetapi-collapsible-handle"></span>'),
-                    $facetTree = $facetItem.closest('.facetapi-facet').siblings('ul').first().add($facetItem.closest('li'));
-                
-                // Insert handle before the facet.
-                $facetItem.prepend($facetHandle);
-                
-                if (state[parentfacetId] && (state[parentfacetId].indexOf($facetItem.attr('href')) > 0)) {
-                  $facetHandle.add($facetTree).toggleClass('expanded'); //
-                }
-              }).addClass('collapselink');
 
               // Expand facet with active childs.
               if ($('a.facetapi-active', $list).length) {
@@ -167,38 +150,22 @@
               }
 
               // Collapse/Expand on click
-              $('a .facetapi-collapsible-handle', $parentfacet).click(function (event) {
+              $('a .navi-bullet', $parentfacet).click(function (event) {
+                event.preventDefault()
+                event.stopImmediatePropagation()
                 var $clickedlist = $parentfacet.siblings('ul'),
-                    $clickedlink = $(this).closest('a'),
-                    $handle = $(this);
+                    $clickedlink = $(this).closest('a');
                 
-                $clickedlist.slideToggle(300, 'swing', function() {
-                  state[parentfacetId] = state[parentfacetId] || [];
-                  $clickedlist.add($clickedlist.closest('li')).toggleClass('expanded'); //
-
-                  $handle.toggleClass('expanded');
-                  if ($clickedlist.hasClass('expanded')) {
-                    state[parentfacetId].push($clickedlink.attr('href'));
-                  }
-                  else {
-                    var index = state[parentfacetId].indexOf($clickedlink.attr('href'));
-                    if (index !== -1) {
-                      state[parentfacetId].splice(index, 1);
-                    }                  
-                  }
-
-                  if (Drupal.settings.gofast_search[parentfacetId].keep_open === false) {
-                    $('ul', $list.closest('li').siblings('li')).each(function () {
-                      $(this).removeClass('expanded');
-                      $('a .facetapi-collapsible-handle', $(this).closest('li')).html('+');
-
-                      var index = state[parentfacetId].indexOf($('a', $(this).closest('li')).attr('href'));
-                      if (index !== -1) {
-                        state[parentfacetId].splice(index, 1);
-                      }
-                    });
-                  }
-                });
+                state[parentfacetId] = state[parentfacetId] || [];
+                if($clickedlist.hasClass("expanded")){
+                  $clickedlink.find(".navi-bullet > i").removeClass().addClass("fas fa-sm fa-plus")
+                  $clickedlist.add($clickedlist.closest('li')).removeClass('expanded'); //
+                  $clickedlist.slideUp(300, 'swing')
+                } else {
+                  $clickedlink.find(".navi-bullet > i").removeClass().addClass("bullet")
+                  $clickedlist.add($clickedlist.closest('li')).addClass('expanded'); //
+                  $clickedlist.slideDown(300, 'swing')
+                }
                 
                 facetSaveState(state);
                 event.preventDefault();

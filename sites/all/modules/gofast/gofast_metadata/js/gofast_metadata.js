@@ -80,10 +80,10 @@
           }
         }
 
-        var node_nid = elem.attr("data-id") != false ? elem.attr("data-id") : false;
-        var vid = elem.attr("data-vid") != false ? elem.attr("data-vid") : false;
-        var filed_name = elem.attr("name") != false ? elem.attr("name") : false;
-        var is_timestamp = elem.attr("data-is-timestamp") != false ? elem.attr("data-is-timestamp") : false;
+        var node_nid = elem.attr("data-id") != false ? elem.attr("data-id") : "";
+        var vid = elem.attr("data-vid") != false ? elem.attr("data-vid") : "";
+        var filed_name = elem.attr("name") != false ? elem.attr("name") : "";
+        var is_timestamp = elem.attr("data-is-timestamp") != false ? elem.attr("data-is-timestamp") : "";
         
         // GoFAST-7647 - prevent poll refresh at field update or edit
         Gofast.incrementMetadataEditCounter();
@@ -508,34 +508,34 @@
         });
       });
 
-      //Call to get subscribe button
-      Drupal.getSubButtonHtml = function (termID) {
-        return $.ajax({
-          url: Drupal.settings.gofast.baseUrl + '/ac/get/subscribe/' + termID,
-          type: 'GET',
-          dataType: 'html',
-          async: false,
-          success: function (content, status) {
-            value = '<li>' + content + '</li></ul>';
-            $.getScript('/sites/all/modules/flag/theme/flag.js', function () {
-              Drupal.behaviors.flagLink.attach(document);
-            });
-          }
-        });
-      }
-
       $(document).bind('flagGlobalBeforeLinkUpdate', function (event, data) { //Rebuilding tag name
         let tmpdata = decodeURI(data.newLink);
         if(!tmpdata.includes('flag-subscribe-term-')) return;
         let tmp1 = tmpdata.split('flag-subscribe-term-');
         let tmp2 = tmp1[1].split('">');
         let newtag = tmp2[0].replace('**', '/');
-        var html = Drupal.getSubButtonHtml(newtag);
+        var html = Gofast.metadata.getSubButtonHtml(newtag);
         data.newLink = html.responseText;
       });
     }
   }
   Gofast.metadata = Gofast.metadata ?? {};
+  //Call to get subscribe button
+  Gofast.metadata.getSubButtonHtml = function (termID) {
+    return $.ajax({
+      url: Drupal.settings.gofast.baseUrl + '/ac/get/subscribe/' + termID,
+      type: 'GET',
+      dataType: 'html',
+      async: false,
+      success: function (content, status) {
+        value = '<li>' + content + '</li></ul>';
+        $.getScript('/sites/all/modules/flag/theme/flag.js', function () {
+          Drupal.behaviors.flagLink.attach(document);
+        });
+      }
+    });
+  }
+
   Gofast.metadata.updateExternalLink = function(e, url){
     // Prevent triggering editable input
     e.preventDefault()

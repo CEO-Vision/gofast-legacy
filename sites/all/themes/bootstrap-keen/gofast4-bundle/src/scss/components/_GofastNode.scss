@@ -243,3 +243,23 @@ figure.table table {
         }
     }
 }
+
+// Adjust rules so Font Awesome styling doesn't break CKEditor italic tags
+html i { // we use the html tag to have more specificity than the original "i" rule in Keen bundle
+    font-size: inherit;
+    color: inherit;
+}
+
+html i:where(.fa, .fas, .far, .fal, .fad, .fab){ // but we still want Font Awesome styling to apply when needed
+    font-size: 1.25rem;
+    color: #B5B5C3;
+}
+
+// Don't show the "Powered by CKEditor" balloon
+.ck-powered-by-balloon {
+    display: none !important;
+}
+
+.ck-dropdown__arrow {
+    z-index: 1 !important;
+}

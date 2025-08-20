@@ -326,35 +326,7 @@
                 if (!$('#DirectoryUserlistFilterForm').length) {
                     return;
                 }
-                $('#DirectoryUserlistFilterForm').on('submit', function(e){
-                    e.preventDefault()
-                    _table.spinnerCallback(true)
-                    let filterArr = $(this).serializeArray()
-                    let filter = Object.create({})
-
-                    filterArr.forEach(fil => {
-                        if(!!fil.value){
-                            let att = fil.name
-                            filter[att] = fil.value
-                        }
-                    })
-                    // don't submit if date values are incomplete
-                    const dateValues = [{start: filter.startModified, end: filter.endModified}, {start: filter.startCreated, end: filter.endCreated}];
-                    for (const dateValue of dateValues) {
-                        if ((dateValue.start && !dateValue.end) || (!dateValue.start && dateValue.end)) {
-                            Gofast.toast(Drupal.t("Please fill in both start and end dates", {}, {context: "gofast:gofast_directory"}), "error");
-                            return;
-                        }
-                    }
-
-                    if(filter.startCreated) filter.startCreated = moment(filter.startCreated, GofastConvertDrupalDatePattern("moment", Drupal.settings.date_format_short, false)).valueOf() / 1000;
-                    if(filter.endCreated) filter.endCreated = moment(filter.endCreated, GofastConvertDrupalDatePattern("moment", Drupal.settings.date_format_short, false)).valueOf() / 1000;
-                    if(filter.startModified) filter.startModified = moment(filter.startModified, GofastConvertDrupalDatePattern("moment", Drupal.settings.date_format_short, false)).valueOf() / 1000;
-                    if(filter.endModified) filter.endModified = moment(filter.endModified, GofastConvertDrupalDatePattern("moment", Drupal.settings.date_format_short, false)).valueOf() / 1000;
-
-                    _table.setDataSourceParam("query", filter)
-                    _table.load()
-                })
+                $('#DirectoryUserlistFilterForm').off('submit').on('submit', e => window.GofastKDataTableFormSubmit(e, _table));
 
                 $('#DirectoryUserlistFilterForm').on('reset', function(e){
                     $(e.currentTarget['status']).val('').selectpicker("refresh")

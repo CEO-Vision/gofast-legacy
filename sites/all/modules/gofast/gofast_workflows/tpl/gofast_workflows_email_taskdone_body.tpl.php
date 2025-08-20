@@ -159,7 +159,7 @@ switch ($step) {
                                     <td align="left" style="font-size:0px;padding:10px 25px;padding-left:0;word-break:break-word;">
                                         <div style="font-family:Poppins;font-size:14px;font-weight:600;line-height:1;text-align:left;color:#000000;"><?= $message ?>
                                         <?php if ($step == "task_done") : ?>
-                                            &nbsp;<?= $done_task_description ?>
+                                            <?= $done_task_description ?>
                                         <?php endif; ?>
                                         </div>
                                         <?php if (isset($post_message) && isset($task_comment) && strlen($task_comment) > 0) : ?>
@@ -281,7 +281,7 @@ switch ($step) {
                                                                     <td><img src="<?= $base_url . '/' . drupal_get_path('module', 'gofast_mail_queue') . '/icon/' . 'play-solid-white.png' ?>" alt="" width="14">
                                                                     </td>
                                                                     <td>
-                                                                        <a href="<?= isset($documents_info[0]) ? $base_url . "/node/" . $documents_info[0] : $base_url . "/workflow/dashboard" ?>" style="color: #FFFFFF; font-size: 14px; font-weight: 600; text-decoration: none;">&nbsp;<?= t("Execute Task", array(), array("langcode" => $assignee_language, "context" => "gofast:gofast_workflows")) ?></a>
+                                                                        <a href="<?= isset($documents_info[0]) ? $base_url . "/node/" . $documents_info[0]["document"]->nid : $base_url . "/workflow/dashboard" ?>" style="color: #FFFFFF; font-size: 14px; font-weight: 600; text-decoration: none;">&nbsp;<?= t("Execute Task", array(), array("langcode" => $assignee_language, "context" => "gofast:gofast_workflows")) ?></a>
                                                                     </td>
                                                                 </tr>
                                                             </tbody>
@@ -351,19 +351,21 @@ switch ($step) {
                     <div class="mj-column-per-90 mj-outlook-group-fix" style="font-size:0px;text-align:left;direction:ltr;display:inline-block;vertical-align:top;width:100%;">
                         <table border="0" cellpadding="0" cellspacing="0" role="presentation" style="vertical-align:middle;" width="100%">
                             <tbody>
-                                <?php foreach ($documents_info as $nid) :
-                                    $document_node = node_load($nid);
-                                    $node_icon = theme("gofast_node_icon_format", array("node" => $node));
-                                    $node_icon = gofast_mail_queue_fa_png($node_icon, "14", "primary"); ?>
+                                <?php foreach ($documents_info as $document_info) :
+                                    $document = $document_info["document"]; ?>
                                     <tr>
                                         <td align="left" style="font-size:0px;padding:0;padding-top:10px;padding-left:10px;word-break:break-word;">
                                             <div style="font-family:Poppins;font-size:14px;font-weight:400;line-height:1;text-align:left;color:#000000;">
                                                 <table border="0" cellpadding="0" cellspacing="0" role="presentation" style="vertical-align:middle;">
                                                     <tbody>
                                                         <tr>
-                                                            <td><?= $node_icon ?></td>
+                                                            <td><?= $document_info["icon"] ?></td>
                                                             <td>
-                                                                <a href="<?= $base_url . "/node/" . $nid ?>" style="color: #337ab7; font-size: 14px; font-weight: 400; text-decoration: none;">&nbsp;<?= $document_node->title ?></a>
+                                                                <?php if($document_info["access"]) : ?>
+                                                                    <a href="<?= $base_url . "/node/" . $document->nid ?>" style="color: #337ab7; font-size: 14px; font-weight: 400; text-decoration: none;">&nbsp;<?= $document->title ?></a>
+                                                                <?php else: ?>
+                                                                    <span style="font-size: 14px; font-weight: 400; text-decoration: none;">&nbsp;<?= $document->title ?></span>
+                                                                <?php endif; ?>
                                                             </td>
                                                         </tr>
                                                     </tbody>

@@ -183,7 +183,7 @@
       department: {
         wrapperSelector: ".profile-department-info",
         inputElClass: "GofastUser__departmentInput",
-        type: "text",
+        type: "tags",
       },
       birthdate: {
         wrapperSelector: ".profile-birthdate-info",
@@ -241,7 +241,7 @@
           job: {field: "ldap_user_title", placeholder: "Job position"},
           phone: {field: "ldap_user_telephonenumber", placeholder: "Your phone number"},
           email: {field: "mail", placeholder: "Your email address"},
-          department: {field: "ldap_user_o", placeholder: "Your organisation"},
+          department: {field: "field_entity", placeholder: "Your organisation"},
           birthdate: {field: "field_birthdate", placeholder: "Your birthdate"},
           expiration_date: {field: "field_extranet_expiration_date", placeholder: ""},
           manager: {field: "ldap_user_manager", placeholder: "Your manager"},
@@ -270,31 +270,14 @@
               formData.set("value", value.ldap_user_prov_entries_value.replace('gofastLDAP|', ''));
             }
           }
-          if(field === "skills"){
+          if(["skills", "interests", "hobbies", "department"].includes(field)){
             formData.delete("value");
             value.forEach(function(val, idx, arr){
               formData.append("value[]", val.name);
             });
-            formData.append("vid", $('#skills_id').attr('data-vid'));
-            formData.append("enforce", $('#skills_id').attr('data-enforce'));
+            formData.append("vid", $('#' + field + '_id').attr('data-vid'));
+            formData.append("enforce", $('#' + field + '_id').attr('data-enforce'));
           }
-          if(field === "interests"){
-            formData.delete("value");
-            value.forEach(function(val, idx, arr){
-              formData.append("value[]", val.name);
-            });
-            formData.append("vid", $('#passions_id').attr('data-vid'));
-            formData.append("enforce", $('#passions_id').attr('data-enforce'));
-          }
-          if(field === "hobbies"){
-            formData.delete("value");
-            value.forEach(function(val, idx, arr){
-              formData.append("value[]", val.name);
-            });
-            formData.append("vid", $('#hobbies_id').attr('data-vid'));
-            formData.append("enforce", $('#hobbies_id').attr('data-enforce'));
-          }
-
           const url = Drupal.settings.basePath + "update_field";
 
           try {
@@ -387,6 +370,15 @@
       if (inputWrapper && inputWrapper.innerHTML.trim() == "") {
         const inputEl = document.createElement("div");
         inputEl.classList.add(ldapInputs[key].inputElClass, "EditableInput");
+        // if the data transfer object has data attributes, put them in the DOM element as well
+        if (profileDTO[key].attributes) {
+          for (const [name, value] of Object.entries(profileDTO[key].attributes)) {
+            inputEl.setAttribute(name, value);
+          }
+          // cleanup and make sure we end up with an array
+          delete profileDTO[key].attributes;
+          profileDTO[key] = Object.values(profileDTO[key]);
+        }
         // for datetime fields, we convert the timestamp into a date string
         if (key === "birthdate") profileDTO[key] = new Date(profileDTO[key]);
         if (key === "manager") {
@@ -619,15 +611,15 @@
                 if(s.length > 2){
                     $('#popup-member-list > li').each(function(){
                         if ($(this).find('.popup-member-list-name').text().toLowerCase().search(s) > -1  || $(this).find('.popup-member-list-role').text().toLowerCase().search(s) > -1) {
-                             $(this).show();
+                             $(this).addClass("d-flex").removeClass("d-none");
                         }
                         else{
-                            $(this).hide();
+                            $(this).addClass("d-none").removeClass("d-flex");
                         }
                     });
                 }
                 else{
-                     $('#popup-member-list > li').show();
+                     $('#popup-member-list > li').addClass("d-flex").removeClass("d-none");
                 }
             });
         }
@@ -658,12 +650,10 @@
 
   Drupal.behaviors.extranetConfig = {
     attach: function (context, settings) {
-      let content = $('body', context);
-      $(document).one('DOMNodeInserted', content, function() {    
-        let groups = $('#og-user-node-add-more-wrapper').find('#ztree_component_user').children('li:nth-child(2)');
-        let organizations = $('#og-user-node-add-more-wrapper').find('#ztree_component_user').children('li:nth-child(3)');
-    if(groups.length == 1 &&  organizations.length == 1 && !$("#user-register-form").hasClass("gofast-extranet-processed")){     
-        $("#user-register-form").addClass("gofast-extranet-processed");      
+      let groups = $('#og-user-node-add-more-wrapper').find('#ztree_component_user').children('li:nth-child(2)');
+      let organizations = $('#og-user-node-add-more-wrapper').find('#ztree_component_user').children('li:nth-child(3)');
+      if(groups.length == 1 &&  organizations.length == 1 && !$("#user-register-form").hasClass("gofast-extranet-processed")){
+        $("#user-register-form").addClass("gofast-extranet-processed");
         let groups = $('#og-user-node-add-more-wrapper').find('#ztree_component_user').children('li:nth-child(2)');
         let organizations = $('#og-user-node-add-more-wrapper').find('#ztree_component_user').children('li:nth-child(3)');
         let config = Drupal.settings.filterExtranet.config;
@@ -678,7 +668,7 @@
             organizations.css("background-color", "#d3d3d3");
             $("#og-user-node-add-more-wrapper").before(html_extranet_message);
           }
-          $("[id^='edit-is-extranet-und']").on("change", function() {
+          $("[id^='edit-is-extranet-und']").once("change", function() {
             if(click % 2 === 1){
               groups.css("pointer-events", "auto");
               organizations.css("pointer-events", "auto");
@@ -713,7 +703,7 @@
             groups.css("background-color", "#d3d3d3");
             $("#og-user-node-add-more-wrapper").before(html_extranet_message);
           }
-          $("[id^='edit-is-extranet-und']").on("change", function() {
+          $("[id^='edit-is-extranet-und']").once("change", function() {
             if(click % 2 === 1){
               $("#extranet_message").remove();
               groups.css("pointer-events", "auto");
@@ -739,7 +729,7 @@
             organizations.css("background-color", "#d3d3d3");
             $("#og-user-node-add-more-wrapper").before(html_extranet_message);
           }
-          $("[id^='edit-is-extranet-und']").on("change", function() {
+          $("[id^='edit-is-extranet-und']").once("change", function() {
             if(click % 2 === 1){
               organizations.css("pointer-events", "auto");
               organizations.css("background-color", "#ffffff");
@@ -758,9 +748,8 @@
           });
         }
       }
-      });
     }
-  };
+  }
 
   
   Drupal.behaviors.initExpirationDateInput = {

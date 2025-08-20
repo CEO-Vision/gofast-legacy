@@ -668,11 +668,6 @@ pre code {
     border-left: 2px dotted #CCCED4 !important;
 }
 
-.timeline.timeline-3 .timeline-items .timeline-item .timeline-content img:not(.gofast__comment-tag-icon):not(.ckeditor-emoji):not(.image_resized){
-    width: 100% !important;
-    height: 100% !important;
-}
-
 #comment-jstree.jstree i.jstree-themeicon-custom{
   background-size: cover !important;
   border-radius: 0.42rem;
@@ -703,4 +698,8 @@ pre code {
 
 .timeline-item .timeline-content__body table{
   margin-right: 0px;
+}
+
+#gofastUserPopup .gofastProfilePopupRight .navi-link {
+  line-height: normal;
 }

@@ -12,7 +12,7 @@ function gofast_poll_info() {
     'description' => 'Gathers and change metadata information',
     'interval' => 2,
     'context' => 'node',
-    'selector' => '#document__infotab'
+    'selector' => '[id$="__infotab"]'
   );
   $items['lock_action'] = array(
     'label' => 'Document lock',
@@ -121,11 +121,24 @@ function gofast_poll($poll_name, $poll_info, $context) {
 
 function gofast_poll_handle_metadata($commands, $poll_info, $context, $old_node, $node){
   $new_node = node_load($node->nid);
-  $commands[] = ajax_command_html($poll_info['selector'], gofast_metadata_get_node_infos($new_node));
+
+  $metadata_panel_selector = "#document";
+  if(gofast_og_is_space($node)){
+    $metadata_panel_selector = "#space";
+  } else if($node->type == "article"){
+    $metadata_panel_selector = "#article";
+  }
+
+  $commands[] = ajax_command_html("{$metadata_panel_selector}__infotab", gofast_metadata_get_node_infos($new_node));
   if(gofast_og_is_space($new_node, TRUE)){
     $commands[] = ajax_command_replace('.breadcrumb-gofast-full', gofast_breadcrumb_display_breadcrumb($new_node->nid, ['return' => TRUE, 'only_title' => FALSE, 'manage_locations' => TRUE]));
   }else{
-    $commands[] = ajax_command_replace('.breadcrumb-gofast-full', gofast_breadcrumb_display_breadcrumb($new_node->nid, ['return' => TRUE, 'only_title' => FALSE, 'show_title' => FALSE, 'manage_locations' => TRUE]));
+    $commands[] = ajax_command_replace('.breadcrumb-gofast-full', gofast_breadcrumb_display_breadcrumb($new_node->nid, [
+      'return' => TRUE,
+      'only_title' => FALSE,
+      'show_title' => FALSE,
+      'manage_locations' => 'when_not_mirrored',
+    ]));
   }
   if(!gofast_og_is_space($new_node, TRUE)){
     $commands[] = ajax_command_invoke('.breadcrumb-gofast-show-title', "replaceWith", [gofast_breadcrumb_display_breadcrumb($new_node->nid, ['return' => TRUE, 'only_title' => FALSE, 'show_title' => TRUE, 'alt_theme' => 'gofast_document_breadcrumb'])]);
@@ -136,7 +149,7 @@ function gofast_poll_handle_metadata($commands, $poll_info, $context, $old_node,
   $commands[] = ajax_command_invoke("#breadcrumb-alt-actions", 'replaceWith', array(theme('contextual_links', array('btn_group_id' => 'breadcrumb-alt-actions', 'buttons' => $node_contextual_actions))));
 
   $history_tab = gofast_render_historyByNode_async($new_node, FALSE);
-  $commands[] = ajax_command_invoke("#document__historytab", 'html', array($history_tab));
+  $commands[] = ajax_command_invoke("{$metadata_panel_selector}__historytab", 'html', array($history_tab));
   
   // Specific metadata section
   $have_extra_metadata = false;
@@ -161,16 +174,16 @@ function gofast_poll_handle_metadata($commands, $poll_info, $context, $old_node,
       
       // Check if we need to create the specific metadata section
       if($old_category != $inbound_mail_taxonomy_term_id && $old_category != $outbound_mail_taxonomy_term_id){
-        $commands[] = ajax_command_invoke('#document__infotab', "after",  ['<div class="tab-pane fade" id="' . $extra_data["id"] . '" role="tabpanel" aria-labelledby="extra-metadata-tab"></div>'] );
+        $commands[] = ajax_command_invoke("{$metadata_panel_selector}__infotab", "after",  ['<div class="tab-pane fade" id="' . $extra_data["id"] . '" role="tabpanel" aria-labelledby="extra-metadata-tab"></div>'] );
       }
       
       // Insert mail metadata
       $commands[] = ajax_command_html("#" . $extra_data['id'], $extra_data['theme']);
     } 
-    $commands[] = ajax_command_replace('#node-tabsHeader', gofast_render_extraMetadataTabsByNode_async($node, TRUE));
+    $commands[] = ajax_command_replace("#nodeContainer[data-nid='$node->nid'] #node-tabsHeader", gofast_render_extraMetadataTabsByNode_async($node, TRUE));
   }else{
-    $commands[] = ajax_command_replace('#node-tabsHeader', gofast_render_extraMetadataTabsByNode_async($node, TRUE));
-    $commands[] = ajax_command_invoke('[id^="document__extra_metadata"]', 'remove', []);
+    $commands[] = ajax_command_replace("#nodeContainer[data-nid='$node->nid'] #node-tabsHeader", gofast_render_extraMetadataTabsByNode_async($node, TRUE));
+    $commands[] = ajax_command_invoke("[id^='{$metadata_panel_selector}__extra_metadata']", 'remove', []);
   }
   
   $commands[] = ajax_command_html('#ctools-add-js', "<script type='text/javascript'>jQuery('.tooltip').remove();</script>");
@@ -183,7 +196,12 @@ function gofast_poll_handle_title($commands, $poll_info, $context, $old_node, $n
     if(gofast_og_is_space($new_node, TRUE)){
       $commands[] = ajax_command_replace('.breadcrumb-gofast-full', gofast_breadcrumb_display_breadcrumb($new_node->nid, ['return' => TRUE, 'only_title' => FALSE, 'manage_locations' => TRUE]));
     }else{
-      $commands[] = ajax_command_replace('.breadcrumb-gofast-full', gofast_breadcrumb_display_breadcrumb($new_node->nid, ['return' => TRUE, 'only_title' => FALSE, 'show_title' => FALSE, 'manage_locations' => TRUE]));
+      $commands[] = ajax_command_replace('.breadcrumb-gofast-full', gofast_breadcrumb_display_breadcrumb($new_node->nid, [
+        'return' => TRUE,
+        'only_title' => FALSE,
+        'show_title' => FALSE,
+        'manage_locations' => 'when_not_mirrored',
+      ]));
     }
     if(!gofast_og_is_space($new_node, TRUE)){
       $commands[] = ajax_command_invoke('.breadcrumb-gofast-show-title', "replaceWith", [gofast_breadcrumb_display_breadcrumb($new_node->nid, ['return' => TRUE, 'only_title' => FALSE, 'show_title' => TRUE, 'alt_theme' => 'gofast_document_breadcrumb'])]);
@@ -193,7 +211,7 @@ function gofast_poll_handle_title($commands, $poll_info, $context, $old_node, $n
       $commands[] = ajax_command_html('.forum-explorer-single .forum-explorer-element-name a', $node->title);
     }
     if($node->type == "article") {
-      $commands[] = ajax_command_html('.gofastHighlightedWikiArticle', $node->title);
+      $commands[] = ajax_command_html('#book-explorer .gofastHighlightedItem', $node->title);
     }
 
     $node_contextual_actions = gofast_get_contextual_actions_node($node);
@@ -209,7 +227,7 @@ function gofast_poll_handle_comments($commands, $poll_info, $context, $old_node,
   if ($old_node->comment_count !== $new_node->comment_count) {
     // Refreshing the comments content (under node)
     $comment_render = gofast_render_allCommentsByNode_async($new_node, TRUE);
-    $commands[] = ajax_command_html('#comments-container', $comment_render);
+    $commands[] = ajax_command_html("[data-nid='$node->nid'] #comments-container", $comment_render);
     $commands[] = ajax_command_html('#ctools-add-js',"<script type='text/javascript'>
       Drupal.behaviors.ZZCToolsModal.attach();
       </script>");
@@ -227,7 +245,7 @@ function gofast_poll_handle_comments($commands, $poll_info, $context, $old_node,
                                 LIMIT 1", array(":nid" => $node->nid, ":poll_interval" => time()-5))->fetchCol();
     if($last_edited != null){
       $comment_render = gofast_render_allCommentsByNode_async($new_node, TRUE);
-        $commands[] = ajax_command_html('#comments-container', $comment_render);
+        $commands[] = ajax_command_html("[data-nid='$node->nid'] #comments-container", $comment_render);
       }
     }
   }
@@ -300,7 +318,12 @@ function gofast_poll_handle_lock($commands, $poll_info, $context, $old_node, $no
     if(gofast_og_is_space($node, TRUE)){
       $commands[] = ajax_command_replace('.breadcrumb-gofast-full', gofast_breadcrumb_display_breadcrumb($node->nid, ['return' => TRUE, 'only_title' => FALSE, 'manage_locations' => TRUE]));
     }else{
-      $commands[] = ajax_command_replace('.breadcrumb-gofast-full', gofast_breadcrumb_display_breadcrumb($node->nid, ['return' => TRUE, 'only_title' => FALSE, 'show_title' => FALSE, 'manage_locations' => TRUE]));
+      $commands[] = ajax_command_replace('.breadcrumb-gofast-full', gofast_breadcrumb_display_breadcrumb($node->nid, [
+        'return' => TRUE,
+        'only_title' => FALSE,
+        'show_title' => FALSE,
+        'manage_locations' => 'when_not_mirrored',
+      ]));
     }
     if(!gofast_og_is_space($node, TRUE)){
       $commands[] = ajax_command_invoke('.breadcrumb-gofast-show-title', "replaceWith", [gofast_breadcrumb_display_breadcrumb($node->nid, ['return' => TRUE, 'only_title' => FALSE, 'show_title' => TRUE, 'alt_theme' => 'gofast_document_breadcrumb'])]);
@@ -311,7 +334,100 @@ function gofast_poll_handle_lock($commands, $poll_info, $context, $old_node, $no
     $context['entity'] = $node;
     gofast_set_context($context);
   }
+
+  gofast_poll_handle_lock_co_editing_updates($commands, $poll_info, $context, $old_node, $node);
+
   return $commands;
+}
+
+/**
+ * Handles updates and sending commands for co-edition list updates
+ *
+ * Updates `$commands` and `$context` as needed.
+ *
+ * @param array[] $commands Commands array, if some changes are detected,
+ *  commands are directly added to the array.
+ * @param array $poll_info Additional poll information
+ * @param array $context The current context. Uses and sets the key
+ *  `oo_coediting_user_list`. `gofast_set_context` is called after setting the
+ *  value.
+ * @param object $old_node Old node object
+ * @param object $node Current node object
+ * @return void
+ */
+function gofast_poll_handle_lock_co_editing_updates(&$commands, $poll_info, &$context, $old_node, $node) {
+  // update user list summary of document being co-edited
+  if (!gofast_onlyoffice_document_get_soft_lock($node)) {
+    return;
+  }
+  // get up-to-date editing user list (this is likely the most expansive call in this function)
+  $editing_list = gofast_onlyoffice_get_users_editing_by_node($node);
+
+  // User list did not change ? don't send commands
+  if (unserialize($context['oo_coediting_user_list']) === $editing_list) {
+    return;
+  }
+
+  // Serialize so context value is a string and is overwritten by merging
+  // instead of appending
+  $context['oo_coediting_user_list'] = serialize($editing_list);
+  gofast_set_context($context);
+
+  $number_of_co_editing_users = $editing_list !== FALSE ? count($editing_list) : NULL;
+  // NOTE: if JS code needs to react to co-editing user list change in the
+  // future, add custom event trigger command
+
+  // Update exact count attribute
+  $commands[] = ajax_command_invoke(
+    '.co-editing-user-counter--value',
+    'attr',
+    ['data-user-count-exact', json_encode($number_of_co_editing_users)],
+  );
+
+  // Update display value
+  $commands[] = ajax_command_invoke(
+    '.co-editing-user-counter--value',
+    'text',
+    [
+      $number_of_co_editing_users !== NULL ?
+        gofast_format_number_with_maximum_threshold(
+          $number_of_co_editing_users,
+          GOFAST_CO_EDITING_NUMBER_BADGE_MAX_VALUE_THRESHOLD,
+        )
+        : '?',
+    ],
+  );
+
+  // Update visibility depending on whether we found users in session
+  $commands[] = ajax_command_invoke(
+    '.co-editing-user-counter--value',
+    'toggle',
+    [$number_of_co_editing_users !== 0],
+  );
+
+  // Update tooltip text
+  $get_title = gofast_get_co_editing_user_list_summary_formatter($editing_list);
+  if ($get_title !== FALSE) {
+    $title = $get_title();
+
+    // Update bootstrap tooltip where it has been initialised (
+    // data-original-title attribute is present).
+    $commands[] = ajax_command_invoke(
+      ':is(#unlock_document_span, #unlock_document_span--wrapper):where([data-original-title])',
+      'attr',
+      // we target the "data-original-title" attribute instead of title since
+      // we use Bootstrap tooltips.
+      ['data-original-title', $title],
+    );
+
+    // For redundancy reasons, target the current title attribute when bootstrap
+    // tooltip has not been initialised.
+    $commands[] = ajax_command_invoke(
+      ':is(#unlock_document_span, #unlock_document_span--wrapper):not([data-original-title])',
+      'attr',
+      ['title', $title],
+    );
+  }
 }
 
 function gofast_poll_handle_standby($commands, $poll_info, $context){

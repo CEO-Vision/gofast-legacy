@@ -119,3 +119,12 @@ function gofast_retention_apply_prearchived_permissions_already_archived(){
       }
   }
 }
+
+/**
+ * Checks if the current app/platform is using retention rules
+ *
+ * @return bool
+ */
+function gofast_retention_is_app_using_retention() {
+  return !empty(variable_get(GOFAST_RETENTION_PERIOD_MATRICE_VAR));
+}

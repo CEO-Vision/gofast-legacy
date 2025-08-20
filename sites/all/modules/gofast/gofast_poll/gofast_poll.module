@@ -255,7 +255,8 @@ function gofast_poll_preprocess_page(&$variables) {
       'js' => array(
         array(
           'data' => drupal_get_path('module', 'gofast_poll') . '/gofast_poll.js',
-          'type' => 'file'
+          'type' => 'file',
+          'defer' => TRUE,
         ),
         array(
           'data' => array('gofast_poll' => $settings),

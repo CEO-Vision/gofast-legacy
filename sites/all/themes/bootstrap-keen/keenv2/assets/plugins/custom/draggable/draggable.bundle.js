@@ -39400,4 +39400,3 @@ __webpack_require__(/*! @shopify/draggable/lib/plugins/swap-animation.js */ "./n
 
 /******/ })()
 ;
-//# sourceMappingURL=draggable.bundle.js.map

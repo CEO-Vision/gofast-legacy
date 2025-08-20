@@ -174,6 +174,97 @@ function gofast_cart_bulk_add_form_submit($form, &$form_state) {
   }
 }
 
+/**
+ * Clear the caches associated with a user.
+ *
+ * @param numeric $user_id The ID of the user
+ * @return void
+ */
+function gofast_cart_clear_user_cart_caches($user_id) {
+  $cache_key = 'gofast_cart:user_cart:' . $user_id;
+  cache_clear_all($cache_key, 'cache', TRUE);
+}
+
+/**
+ * Implements hook_flag_flag
+ *
+ * @param flag_flag $flag
+ *  The flag object.
+ * @param int $entity_id
+ *  The id of the entity the flag is on.
+ * @param $account
+ *  The user account performing the action.
+ * @param $flagging
+ *  The flagging entity.
+ * @return void
+ */
+function gofast_cart_flag_flag($flag, $entity_id, $account, $flagging) {
+  if ($flag->name !== 'cart') {
+    return;
+  }
+  gofast_cart_clear_user_cart_caches($account->uid);
+}
+
+/**
+ * Implements hook_flag_unflag
+ *
+ * @param flag_flag $flag
+ *  The flag object.
+ * @param int $entity_id
+ *  The id of the entity the flag is on.
+ * @param $account
+ *  The user account performing the action.
+ * @param $flagging
+ *  The flagging entity.
+ * @return void
+ */
+function gofast_cart_flag_unflag($flag, $entity_id, $account, $flagging) {
+  if ($flag->name !== 'cart') {
+    return;
+  }
+  gofast_cart_clear_user_cart_caches($account->uid);
+}
+
+/**
+ * Checks if any of the specified or current user's cart items is in a mirrored
+ * location
+ *
+ * @param numeric $user_id The ID of the user of which to check the cart. Defaults to the current user.
+ * @return bool True if any cart item in in a mirrored location, False otherwise.
+ */
+function gofast_cart_contains_node_in_mirrored_location($user_id = NULL) {
+  if (!isset($user_id)) {
+    $user_id = $GLOBALS['user']->uid;
+  }
+  $cache_key = 'gofast_cart:user_cart:' . $user_id . ':contains_mirrored';
+  $cached_value = cache_get($cache_key);
+  if ($cached_value !== FALSE) {
+    return $cached_value->data;
+  }
+
+  $cart_flags = flag_get_user_flags('node', NULL, $user_id)['cart'];
+  // Check that some 'cart' flagged nodes exist, if not then the cart is empty,
+  // therefore it cannot contain a mirrored item.
+  if ($cart_flags === NULL) {
+    return FALSE;
+  }
+
+  $cart_nodes = node_load_multiple(array_map(fn($f) => $f->entity_id, $cart_flags));
+  $any_mirrored = FALSE;
+  foreach ($cart_nodes as $node) {
+    foreach ($node->field_emplacement[LANGUAGE_NONE] as $location) {
+      // checking for mirroring is the expensive part of this function
+      if (gofast_cmis_is_path_mirrored($location['value'])) {
+        $any_mirrored = TRUE;
+        break 2;
+      }
+    }
+  }
+  // cache value for 10 minutes (unless invalidated) since recomputing each request can take time.
+  cache_set($cache_key, $any_mirrored, 'cache', time() + 10/*minutes*/ * 60/*seconds/minutes*/);
+  return $any_mirrored;
+}
+
 
 /*
  * Modal for subscription UI
@@ -192,6 +283,7 @@ function gofast_cart_ui_display_modal($js){
     $attr = array(
       'onClick' => "Gofast.Cart.bulkSelectedCart(event)",
     );
+    $cart_contains_mirrored_locations = gofast_cart_contains_node_in_mirrored_location();
     $download_field = '<li class="navi-item">' . theme('gofast_link_generic', array(
               'text' => t('Download', array(), array('context' => 'gofast')),
               'link_id' => "download",
@@ -205,7 +297,7 @@ function gofast_cart_ui_display_modal($js){
             . '<div class="navi navi-hover navi-link-rounded min-w-250px">'
                 .  '<li class="navi-item">' . $download_field
                 .  '<li class="navi-item">' . gofast_dropdown_link(t('Manage Metadata', array(), array('context' => 'gofast')), '/modal/nojs/manage-taxonomy', 'taxonomy_open_span', 'ctools-use-modal manage-taxonomy navi-link', 'fa fa-tags', $attr ) . '</li>'
-                .  '<li class="navi-item">' . gofast_dropdown_link(t('Share/Add locations', array(), array('context' => 'gofast')), '/modal/nojs/add-locations', 'locations_open_span', 'ctools-use-modal add-locations navi-link', 'fa fa-share-alt', $attr). '</li>'
+                .  '<li class="navi-item">' . gofast_dropdown_link(t('Share/Add locations', array(), array('context' => 'gofast')), '/modal/nojs/add-locations', 'locations_open_span', ($cart_contains_mirrored_locations ? '' : 'ctools-use-modal ') . 'add-locations navi-link', 'fa fa-share-alt', [...$attr, 'disabled' => $cart_contains_mirrored_locations]) . '</li>'
                 .  '<li class="navi-item">' . gofast_dropdown_link(t('Create publications', array(), array('context' => 'gofast')), '/modal/nojs/manage-publications', 'publications_open_span', 'ctools-use-modal manage-publications navi-link', 'fa fa-arrow-up', $attr). '</li>'
                 .  '<li class="navi-item">' . gofast_dropdown_link(t('Share by email', array(), array('context' => 'gofast')), '/modal/nojs/manage-mail-sharing', 'publications_open_span', 'ctools-use-modal manage-mail-sharing navi-link', 'fa fa-envelope', $attr). '</li>'
 		.  '<li class="navi-item">' . gofast_dropdown_link(t('Archive cart content', array(), array('context' => 'gofast:gofast_cart')), '/modal/nojs/bulk-archive', 'taxonomy_open_span', 'ctools-use-modal bulk-archive navi-link', 'fa fa-archive', $attr ) . '</li>'
@@ -216,7 +308,11 @@ function gofast_cart_ui_display_modal($js){
                 .  '<li class="d-none">' . gofast_dropdown_link(t('Archive cart content', array(), array('context' => 'gofast')), '/modal/nojs/bulk-archive', 'taxonomy_open_span', 'ctools-use-modal bulk_archive bulk-archive gofast_display_none', 'fa fa-archive'). '</li>'
           . '</div></ul>'
           . '</div>';
-    $start_workflow = '<button id="cart_toolbar_process" class="btn btn-default btn-sm d-flex ml-1" onClick="Drupal.gofast_workflows.ceo_vision_js_process_get_available_processes(\'cart\')"><i class="fa fa-cogs text-primary"></i>  <span class="">' . t('New process', array(), array('context' => 'gofast:gofast_workflows')) . '</span></button>';
+    $start_workflow = "";
+    $detect = new Mobile_Detect();
+    if(!$detect->isTablet() && !$detect->isPhone()) {
+      $start_workflow = '<button id="cart_toolbar_process" class="btn btn-default btn-sm d-flex ml-1" onClick="Drupal.gofast_workflows.ceo_vision_js_process_get_available_processes(\'cart\')"><i class="fa fa-cogs text-primary"></i>  <span class="">' . t('New process', array(), array('context' => 'gofast:gofast_workflows')) . '</span></button>';
+    }
     $delete_all_content_button = '<div id="remove_from_cart" class="m-0 ml-auto p-1"><button id="remove_all_documents" class="btn btn-default btn-sm d-flex" onClick="Gofast.Cart.remove()"><i class="fa fa-trash text-danger"></i>  <span class="">' . t("Remove all documents", array(), array('context' => 'gofast')) . '</span></button></div>';
     $res = $manage . $start_workflow . $delete_all_content_button . $render;
     $render = $res;
@@ -471,4 +567,55 @@ function gofast_cart_get_node_references() {
   }
 
   gofast_api_success($node_references);
+}
+
+/**
+ * Remove node from all users' carts.
+ *
+ * @param string|int $node_id Id of the node that will be removed from all users' carts.
+ * @return void
+ */
+function gofast_cart_remove_node_from_all_carts($node_id) {
+  /** @var flag_flag The cart flag object */
+  $cart_flag = flag_get_flag('cart');
+
+  // get list of user accounts that have the node in their cart (node has cart flag from user)
+  $user_id_list = array_keys(flag_get_entity_flags('node', $node_id, 'cart'));
+  $accounts = user_load_multiple($user_id_list);
+
+  // remove node from each user's cart (remove cart flag for node for each user)
+  foreach ($accounts as $account) {
+    $cart_flag->flag('unflag', $node_id, $account);
+  }
+}
+
+/**
+ * Try to remove a node from all cart after checking it was just unpublished
+ *
+ * @param object $node Updated node (from hook_node_update)
+ * @return void
+ */
+function gofast_cart_try_remove_node_from_all_carts_on_unpublish($node) {
+  // was node updated ?
+  if (!isset($node->original)) {
+    return;
+  }
+
+  // was node just unpublished ?
+  if ($node->original->status === $node->status || $node->status !== 0) {
+    return;
+  }
+
+  // remove from all carts
+  gofast_cart_remove_node_from_all_carts($node->nid);
+}
+
+/**
+ * Implements hook_node_update()
+ *
+ * @param object $node Updated node
+ * @return void
+ */
+function gofast_cart_node_update($node) {
+  gofast_cart_try_remove_node_from_all_carts_on_unpublish($node);
 }

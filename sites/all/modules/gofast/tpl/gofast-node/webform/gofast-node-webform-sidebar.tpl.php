@@ -89,6 +89,7 @@ if (count(module_implements("extra_metadata")) >= 1) {
     Gofast.gofast_main_block_breadcrumb();
     Gofast.gofast_right_block_breadcrumb();
     Drupal.behaviors.webformAjaxification.attach(document, Drupal.settings);
+    Gofast.sideFileBrowser.initFileBrowser("webform-browser");
     jQuery("#collapsible-metadata-panel-toggle").on("click", Gofast.initCollapsibleMetadataPanel);
 
     jQuery("[href='#document__audittab'").on("click", function() {

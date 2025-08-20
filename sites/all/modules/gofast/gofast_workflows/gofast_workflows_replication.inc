@@ -72,9 +72,15 @@ function gofast_workflows_create_user($myuser = null, $password = null){
     //on prepare les infos du user que l'on va créer
     if($myuser){  
        
-        $username = $myuser->name; 
-        $firstname = $myuser->ldap_user_givenname[LANGUAGE_NONE][0]['value'];
-        $lastname = $myuser->ldap_user_sn[LANGUAGE_NONE][0]['value'];
+        $username = $myuser->name;
+        // If the user is admin, set the firstname and lastname because it can not be set on internal LDAP
+        if($myuser->uid == 1){
+          $firstname = "admin";
+          $lastname = "admin";
+        } else {
+          $firstname = $myuser->ldap_user_givenname[LANGUAGE_NONE][0]['value'];
+          $lastname = $myuser->ldap_user_sn[LANGUAGE_NONE][0]['value'];
+        }
         $password = "password";
         if(mb_detect_encoding($username, 'UTF-8', true) != false){
             //$encoded_username = utf8_encode($username);
@@ -495,50 +501,40 @@ function gofast_workflows_get_bonitagroup_from_userlist($userlist){
 }
 
 
-/* fonction qui resynchronize tous les membres du groupe Drupal recu en parametre avec les membres du groupe Bonita */
+/**
+ * Function that resynchronizes all members of the Drupal group received as a parameter with the members of the Bonita group
+ */
 function gofast_workflows_synchronize_members_group($group_node, $just_add = false){
-     //on recupere le groupe Bonita qui correspond au groupe drupal recu en parametre
+    // we retrieve the Bonita group which corresponds to the drupal group received as a parameter
     $bonita_group = gofast_workflows_get_bonitagroup_from_gofastgroup($group_node);
-    
-    //on recupere tous les membres du groupe Drupal recu en parametre
-     $members = gofast_og_get_members_userlist_included($group_node);
-     
-  
-     //d'abord on retire tous les membres sur Bonita
-     $bonita_members = gofast_workflows_curl_get_members_group_bonita($bonita_group["id"]);
-     $formatted_bonita_members = array();
-     if(isset($bonita_members) && count($bonita_members) > 0){
-             foreach( $bonita_members as $member_bonita ){
-                    $formatted_bonita_members[$member_bonita["id"]] = $member_bonita;
-              }
-     }
+    if (!$bonita_group) {
+        return;
+    }
 
-     if($just_add == false){   
-        if(isset($bonita_members) && count($bonita_members) > 0){
-            foreach($bonita_members as $member_bonita){
-                gofast_workflows_curl_delete_user_from_bonitagroup($member_bonita["id"], $bonita_group["id"]);
+    // we retrieve all the members of the Drupal group received as a parameter
+    $members = gofast_og_get_members_userlist_included($group_node);
+    $members_uids = array_values($members); // no gaps in indexes
+    $members_ids = gofast_workflows_get_bonitaids_from_uids($members_uids);
+    $bonita_members = gofast_workflows_curl_get_members_group_bonita($bonita_group["id"]);
+    $bonita_ids = array_map(fn($mem) => $mem["id"], $bonita_members);
+
+
+    $members_to_add = array_diff($members_ids, $bonita_ids); // drupal group members not in the bonita group
+    $members_to_delete = array_diff($bonita_ids, $members_ids); // bonita group members no in the bonita group
+
+    if($just_add == false){   
+        if(isset($members_to_delete) && count($members_to_delete) > 0){
+            foreach($members_to_delete as $member_to_delete){
+                gofast_workflows_curl_delete_user_from_bonitagroup($member_to_delete, $bonita_group["id"]);
             }
-        }   
-     }
-     
-     
-     foreach($members as $uid){
-         //on recupere le bonita_id du membre
-         $myuser = user_load($uid);
-         
-         $bonita_uid = gofast_workflows_get_user_id($myuser);          
-          if($bonita_uid !== null){
-               //check if we are in a complete resynchro or not
-                if($just_add == false){   
-                     gofast_workflows_curl_add_user_into_bonitagroup($bonita_uid, $bonita_group["id"]);  
-                }else{
-                       //we are not in a complete resynchro, so check if the user is already member into Bonita space or not
-                       if(!isset($formatted_bonita_members[$bonita_uid])){                              
-                                gofast_workflows_curl_add_user_into_bonitagroup($bonita_uid, $bonita_group["id"]); 
-                       }
-               }      
-          }
-     }
+        }
+    }
+
+    if(isset($members_to_add) && count($members_to_add) > 0){
+        foreach($members_to_add as $member_to_add){
+            gofast_workflows_curl_add_user_into_bonitagroup($member_to_add, $bonita_group["id"]);
+        }
+    }
 }
 
 /**
@@ -618,40 +614,32 @@ function gofast_workflows_synchronize_members_userlist($userlist){
     $bonita_group = gofast_workflows_get_bonitagroup_from_userlist($userlist);
     $members = $userlist->field_userlist_members[LANGUAGE_NONE];
        
-     $bonita_members = (array) gofast_workflows_curl_get_members_group_bonita($bonita_group["id"]);
-     $formatted_bonita_members = array();
-     if(isset($bonita_members) && count($bonita_members) > 0){
-             foreach( $bonita_members as $member_bonita ){
-                    $formatted_bonita_members[$member_bonita["id"]] = $member_bonita;
-              }
-     } 
+    $bonita_members = (array) gofast_workflows_curl_get_members_group_bonita($bonita_group["id"]);
+    
+    $bonita_members_ids = array_map(function($bonita_member) {
+        return $bonita_member["id"];
+    }, $bonita_members);
      
-     if(isset($bonita_members) && count($bonita_members) > 0){
-         foreach($bonita_members as $member_bonita){
-             gofast_workflows_curl_delete_user_from_bonitagroup($member_bonita["id"], $bonita_group["id"]);
-         }
-     }
+    $userlist_bonita_members_ids = [];
+    foreach($members as $uid){
+        $uid = $uid['value'];
+        $account = new stdClass();
+        $account->name = gofast_user_get_login($uid);
+        $account->uid = $uid;
+        $bonita_uid = gofast_workflows_get_user_id($account);
+        $userlist_bonita_members_ids[] = $bonita_uid;
+    }
+    $removed_members_bonita_ids = array_diff($bonita_members_ids, $userlist_bonita_members_ids);
+    $added_members_bonita_ids = array_diff($userlist_bonita_members_ids, $bonita_members_ids);
+    
+    foreach($removed_members_bonita_ids as $removed_member_id){
+        gofast_workflows_curl_delete_user_from_bonitagroup($removed_member_id, $bonita_group["id"]);
+    }
+    foreach($added_members_bonita_ids as $added_member_bonita_id){
+        gofast_workflows_curl_add_user_into_bonitagroup($added_member_bonita_id, $bonita_group["id"]);  
+    }
      
-     
-     foreach($members as $uid){
-         //on recupere le bonita_id du membre
-         $myuser = user_load($uid['value']);
-         
-         $bonita_uid = gofast_workflows_get_user_id($myuser);          
-          if($bonita_uid !== null){
-               //check if we are in a complete resynchro or not
-                if($just_add == false){   
-                     gofast_workflows_curl_add_user_into_bonitagroup($bonita_uid, $bonita_group["id"]);  
-                }else{
-                       //we are not in a complete resynchro, so check if the user is already member into Bonita space or not
-                       if(!isset($formatted_bonita_members[$bonita_uid])){                              
-                                gofast_workflows_curl_add_user_into_bonitagroup($bonita_uid, $bonita_group["id"]); 
-                       }
-               }      
-          }
-     }
-     
-     gofast_workflows_update_userlist_tasks($userlist);
+    gofast_workflows_update_userlist_tasks($userlist);
 }
 
 

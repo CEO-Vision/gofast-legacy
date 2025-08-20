@@ -413,7 +413,7 @@ function gofast_userlist_access_callback($op, $userlist = NULL, $account = NULL)
 
   switch ($op) {
     case 'create' : // only user with manager role
-      if (gofast_user_is_manager($user) || gofast_user_is_adm($user) ) {
+      if (gofast_user_is_site_manager($user) || gofast_user_is_adm($user) ) {
         return TRUE;
       }
       break;
@@ -672,7 +672,7 @@ function gofast_userlist_is_visible($ulid, $account = null){
         $account = $user;
     }
 
-
+    
   $visibility = variable_get('gofast_user_partitioning', GOFAST_USER_PARTITIONING_DEFAULT);
   $admin_visibility = variable_get('gofast_admin_visibility', GOFAST_ADMIN_VISIBILITY_DEFAULT);
   $admin_visibility_condition = ($admin_visibility == GOFAST_ADMIN_VISIBILITY_ON && gofast_user_is_adm($account));
@@ -687,6 +687,13 @@ function gofast_userlist_is_visible($ulid, $account = null){
     $userlists = entity_load('userlist', array($ulid));
     $userlist = $userlists[$ulid];
     $userlist_node = node_load($userlist->nid);
+    
+    // public ul is always visible
+    $public_ul = variable_get("public_userlist", 0);
+    if($userlist_node->nid === $public_ul){
+      return true;
+    }
+  
 
     $administrators = gofast_og_get_members($userlist_node);
     $members = array_keys(gofast_userlist_get_members($ulid));
@@ -785,14 +792,15 @@ function gofast_userlist_is_member_of($userlist_ulid, $uid) {
 function gofast_userlist_get_userlists_by_user($account){
   $userlists = array();
 
-  $query = new EntityFieldQuery();
-  $query->entityCondition('entity_type' , 'userlist')
-      ->entityCondition('bundle', 'userlist')
-      ->fieldCondition('field_userlist_members', 'value', $account->uid);
+  $uid = $account->uid;
 
-  $result = $query->execute();
-  if(isset($result['userlist'])){
-    $userlists = $result['userlist'];
+  $query = db_select('field_data_field_userlist_members', 'fuf')->fields('fuf', ['entity_id']);
+  $query->condition('fuf.field_userlist_members_value', $uid);
+  $ulids = $query->execute()->fetchCol();
+  foreach ($ulids as $ulid) {
+    $userlist = new stdClass();
+    $userlist->ulid = $ulid;
+    $userlists[$ulid] = $userlist;
   }
 
   return $userlists;
@@ -1278,7 +1286,7 @@ function gofast_userlist_node_access($node, $op, $account){
         }else{
           switch ($op) {
             case 'create' : // only user with manager role
-              if (gofast_user_is_manager($account) || gofast_user_is_adm($account) ) {
+              if (gofast_user_is_site_manager($account) || gofast_user_is_adm($account) ) {
                 return NODE_ACCESS_IGNORE;
               }else{
                 return NODE_ACCESS_DENY;

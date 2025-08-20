@@ -43,9 +43,8 @@
         //Interval to process tooltips
         tooltipsInterval: null,
         
-        //Interval to ckeck if the js session corresponds to the localstorage session
-        //WARNING : This interval is not used as Gofast.sessionCheckInterval has been set
-        //To prevent it from being destroyed
+        //Interval to check if the JS session corresponds to the localStorage session
+        //WARNING : This interval should NEVER be destroyed
         sessionCheckInterval: null,
 
         //Wait for the full content of the window to be loaded before interferring with elements inside
@@ -58,6 +57,9 @@
         // If click an element outside Riot, autoclose Riot modal to "shortcut" the focus lock trap
         // which otherwise would prevent focus on any parent document element
         shortcutFocusLock: function(e) {
+          if (!$("#IframeRiotBloc").contents().length) {
+            return;
+          }
           const dialogButtons = $("#IframeRiotBloc").contents()[0].querySelectorAll(".mx_ImageView_button_close, .mx_Dialog_primary, .mx_Dialog_cancelButton");
           if ($("#IframeRiotBloc") && $("#IframeRiotBloc").contents()[0] && dialogButtons.length) {
             for (const dialogButton of dialogButtons) {
@@ -66,6 +68,12 @@
             setTimeout(() => {
               $(e.target).focus();
             }, 500);
+          }
+        },
+        onCallStateChange: function(e) {
+          // Open side-panel chat when the phone rings
+          if (e.detail.status == "ringing" && !Gofast.Riot.isExpanded){
+            Gofast.Riot.expand();
           }
         },
       },
@@ -104,6 +112,7 @@
         Gofast.Riot.display();
 
         $(document).on("mousedown", Gofast.Riot.listeners.shortcutFocusLock);
+        $(document).on("call_state", Gofast.Riot.listeners.onCallStateChange);
       },
       
       /*
@@ -112,6 +121,11 @@
       destroy: function(collapse = true){
         if (collapse) {
           Gofast.Riot.collapse();
+        }
+        for (const [key, interval] of Object.entries(Gofast.Riot.intervals)) {
+          if (interval !== null && key !== "sessionCheckInterval") {
+              clearInterval(interval);
+          }
         }
         $("#IframeRiotBloc").attr("src", "");
         Gofast.Riot = null;
@@ -134,10 +148,11 @@
         localStorage['mx_im.vector.fake.direct_sortBy'] = "RECENT"; // | ALPHABETIC
 
         // Localization
-        let mxSettings = {webRtcForceTURN: true}; // disable P2P by default
-        if (localStorage['mx_local_settings']) {
+        let mxSettings = {};
+        if (localStorage['mx_local_settings'] && typeof localStorage['mx_local_settings'] === "object") {
           mxSettings = JSON.parse(localStorage['mx_local_settings']); // keep already existing settings
-        } 
+        }
+        mxSettings["webRtcForceTURN"] = Drupal.settings.DISABLE_P2P_RIOT; // disable P2P if configuration says so
         mxSettings["language"] = Drupal.settings.gofast.language; // for the language regardless of existing settings
         localStorage['mx_local_settings'] = JSON.stringify(mxSettings);
 
@@ -272,7 +287,7 @@
 
       handleFailure: function(){
         // first we check if the COMM server is up
-        const pingCommEndpoint = "https://" + Drupal.settings.GOFAST_COMM;
+        const pingCommEndpoint = "https://" + Drupal.settings.GOFAST_COMM + "/.well-known/matrix/client";
         $.get(pingCommEndpoint).done(function(data, status) {
           if (status != "success") {
             Gofast.toast(Drupal.t("The Element server is not available. Please try again later.", {}, {context: "gofast:gofast_riot"}), "error");
@@ -294,6 +309,9 @@
        * Element is ready, display it
       */
       display: function(){
+        if (Gofast.Riot.intervals.displayInterval) {
+          return;
+        }
         //Wait for our session to be ready
         let displayAttemptsCounter = 0;
         Gofast.Riot.intervals.displayInterval = setInterval(async () => {
@@ -310,7 +328,7 @@
           
           //Display Element
           $(".gofastRiotReload").addClass("d-none");
-          $("#IframeRiotBloc").attr("src", "/sites/all/libraries/riot/index.html?v=v=420_1_5")
+          $("#IframeRiotBloc").attr("src", "/sites/all/libraries/riot/index.html?v=430");
 
           clearInterval(Gofast.Riot.intervals.displayInterval);
 
@@ -329,8 +347,6 @@
               //Our session is ready, display and process Element
               Gofast.Riot.applyBubbleEvents();
               Gofast.Riot.processTooltips();
-              Gofast.Riot.initFetchEvent('#IframeRiotBloc');
-              Gofast.Riot.initFetchListener();
               resolve();
             }, 100);
           });
@@ -439,84 +455,6 @@
         });
       },
 
-      /** temporary fix, issue opened at Element Web: https://github.com/vector-im/element-web/issues/22951 */
-      generateDownloadLink: function(endpoint) {
-        const link = document.createElement('a');
-        link.setAttribute("href", endpoint);
-        link.setAttribute("target", "_blank");
-        link.setAttribute('download', "download");
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-      },
-
-      /** temporary fix, issue opened at Element Web: https://github.com/vector-im/element-web/issues/22951 */
-      initFetchListener: function() {
-          // GOFAST-8052 - make download button work inside the iframe
-          document.addEventListener("riotFetchRequest", async ({detail}) => {
-            const endpointPattern = /media\/.*\/download/;
-            if(!!detail.endpoint.match(endpointPattern)) {
-              let linkParentTile = detail.downloadLinkElement.closest(".mx_EventTile");
-              if (!linkParentTile) { // fetch automatically triggered on load
-                await new Promise((resolve, reject) => {
-                  // to get the event tile containing the download link, we have to wait for it to be rendered...
-                  const waitForTileInterval = setInterval(() => {
-                    linkParentTile =  detail.iframeWindow.document.querySelector("a[href='"+detail.endpoint+"']")?.closest(".mx_EventTile");
-                    if (!linkParentTile) {
-                        return;
-                    }
-                    clearInterval(waitForTileInterval);
-                    resolve();
-                  }, 250);
-                });
-              }
-
-              // we just get the header of the resource (not the whole of it) to know for sure if it's an image
-              const headersResponse = await fetch(detail.endpoint, { method: 'HEAD' });
-              const contentType = headersResponse.headers.get('content-type');
-              if (!contentType.startsWith('image/')) { // we don't need to prefetch images (worse: it would predownload them)
-                this.generateDownloadLink(detail.endpoint)
-              }
-              // there are two download link elements we have to set
-              const downloadLinkHoverable = linkParentTile?.querySelector(".mx_MessageActionBar_downloadButton");
-              const downloadLinkElement = linkParentTile?.querySelector(".mx_MFileBody");
-              [downloadLinkHoverable, downloadLinkElement].forEach((el) => {
-                el?.addEventListener("click", e => {
-                  e.preventDefault();
-                  this.generateDownloadLink(detail.endpoint);
-                });
-              });
-            }
-          });
-      },
-
-      /** temporary fix, issue opened at Element Web: https://github.com/vector-im/element-web/issues/22951 */
-      initFetchEvent: function(selector) {
-          // override fetch method of iframe in order to be able to listen to AJAX calls made from the instance of the fetch API used by Element Web
-          const iframeWindow = document.querySelector(selector).contentWindow;
-          let mousePosX = 0;
-          let mousePosY = 0;
-          iframeWindow.document.addEventListener("mousemove", e => {
-            mousePosX = e.clientX;
-            mousePosY = e.clientY;
-          });
-          (function(riotWindow, fetch) {
-            if (typeof fetch !== 'function') return;
-            riotWindow.fetch = function() {
-              const downloadLinkElement = iframeWindow.document.elementFromPoint(mousePosX, mousePosY);
-              const result = fetch.apply(this, arguments);
-              if (typeof arguments[0] != "string") {
-                return result;
-              }
-              riotWindow.parent.document.dispatchEvent(new CustomEvent("riotFetchRequest", {
-                detail: {endpoint: arguments[0], downloadLinkElement, iframeWindow}
-              }));
-              return result;
-            }
-          
-          }(iframeWindow, iframeWindow.fetch));
-      },
-      
       processHandleClickEvent: function(){
         $('#animateRiot').once('animated', function () {
           $(this).click(Gofast.Riot.onHandleClick);

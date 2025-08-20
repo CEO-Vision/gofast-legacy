@@ -15,4 +15,3 @@ var __webpack_exports__ = {};
 
 /******/ })()
 ;
-//# sourceMappingURL=flot.bundle.js.map

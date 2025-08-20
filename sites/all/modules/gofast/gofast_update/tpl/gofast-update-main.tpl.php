@@ -27,7 +27,7 @@
       
       //Log
       function loadLogs(){
-        jQuery.get(window.location.origin + "/sites/default/files/logs/update_report.gflog?v=" + Math.floor((Math.random() * 999999) + 1), function(data) {
+        jQuery.get(window.location.origin + "/sites/default/files/logs/update_report.log?v=" + Math.floor((Math.random() * 999999) + 1), function(data) {
           jQuery( "#log_output_update" ).html(data.split("\n").slice(-300).join("\n"));
           if(!jQuery("#scroll_check").is(":checked")){
             jQuery("#log_output_update").scrollTop(jQuery("#log_output_update")[0].scrollHeight);

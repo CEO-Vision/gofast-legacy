@@ -78,28 +78,28 @@
             jQuery(".gofast_link_sharing_button").on("click", function() {
                 jQuery(this).html('<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>&nbsp;');
                 jQuery(this).append(Drupal.t("Download started...", {}, {context: 'gofast:gofast_link_sharing'}));
+                var process_uuid = Gofast.ITHit.generate_uuid();
                 //make ajax call to download the folder
-                var url =  '/public/multi_sharing/dl?workspace=<?= $folder_store_id ?>&hash=<?= $hash ?>';
+                var url =  '/public/multi_sharing/dl?workspace=<?= $folder_store_id ?>&hash=<?= $hash ?>&process_uuid='+process_uuid;
                 jQuery.ajax({
                     url: url,
                     type: 'GET',
-                    success: async function(downloadObject) {
+                    success: function(response) {
                         // link may have been expired or invalid, in that case, we receive a redirect instead of
                         // an error response and JQuery doesn't allow us to differentiate a 200 OK from a 3XX
                         // while both count as success. hacky fix checks if returned value is an object instead of a
                         // string (redirected page's HTML)
-                        if(typeof downloadObject !== 'object') {
+                        if(typeof response !== 'object') {
                             onDownloadError();
                             return;
                         }
-
-                        await Gofast.ITHit._checkDownloadStatus(downloadObject);
+                        Gofast.ITHit._checkDownloadStatus(process_uuid);
                         $(".gofast_link_sharing_button").removeClass("btn-warning");
                         $(".gofast_link_sharing_button").addClass("btn-success");
                         $(".gofast_link_sharing_button").attr("disabled", true);
                         // Check if the download is completed
                         var interval = setInterval(function() {
-                        if (Gofast.ITHit._completedDownloads.includes(downloadObject.id)) {
+                        if (Gofast.ITHit._completedDownloads.includes(process_uuid)) {
                             clearInterval(interval);
                             Gofast.toast(Drupal.t("Download completed", {}, {context: 'gofast:gofast_link_sharing'}), "success");
                             $(".gofast_link_sharing_button").text(Drupal.t("Download again", {}, {context: 'gofast:gofast_link_sharing'}));

@@ -1,29 +1,34 @@
 <?php global $user; ?>
-<div class="mt-6 row d-flex justify-content-center ">
-    <form id="gofast-multi-link-sharing-form" method="POST" action="<?= $_SERVER["REQUEST_URI"] ?>">
-        <div class="card shadow w-100 d-flex flex-column align-items-center">
-            <div class="card-header w-75 pb-0">
+<div class="row d-flex justify-content-center h-100">
+    <form id="gofast-multi-link-sharing-form" class="h-100" method="POST" action="<?= $_SERVER["REQUEST_URI"] ?>">
+        <div class="card shadow w-100 h-100 d-flex flex-column align-items-center">
+            <div class="card-header w-100 pb-0">
                 <div class="card-title">
                     <h2 class="display-2 text-primary text-center"><?= t('Shared Documents : ', array(), array('context' => 'gofast:gofast_link_sharing')) ?></h2>
                 </div>
                 <div class="card-toolbar d-flex align-items-start justify-content-center">
-                    <div class="w-30px form-item form-type-checkbox align-items-start d-flex flex-column mb-5"><label class="checkbox checkbox-outline checkbox-outline-2x checkbox-primary mr-3" for="edit-check-all"><input type="checkbox" id="edit-check-all" class="form-checkbox"><span class="mr-2"></span></label>
+                    <div class="w-30px form-item form-type-checkbox align-items-start d-flex flex-column"><label class="checkbox checkbox-outline checkbox-outline-2x checkbox-primary mr-3" for="edit-check-all"><input type="checkbox" id="edit-check-all" class="form-checkbox"><span class="mr-2"></span></label>
                     </div>
                     <div class="w-50"><label class="h3 w-100 text-center"><?php print t('Title', array(), array('context' => 'gofast:gofast_link_sharing')) ?></label></div>
                     <div class="w-25"><label class="h3 w-100 text-center"><?php print t('Version', array(), array('context' => 'gofast')) ?></label></div>
                 </div>
             </div>
-            <div class="card-body w-75 py-0">
+            <div class="card-body w-100 py-0 overflow-scroll">
                 <?php foreach ($form["shares"]["#options"] as $nid => $link) : ?>
-                    <div class="gofast_link_sharing_checkbox w-100 d-flex align-items-center justify-content-center pt-4">
+                    <div class="gofast_link_sharing_checkbox w-100 d-flex align-items-center justify-content-center my-2">
                         <div class="w-30px"><?php
                                             unset($form["shares"][$nid]["#title"]);
                                             echo drupal_render($form["shares"][$nid]);
                                             ?></div>
-                        <div class="w-50 d-flex flex-column align-items-center">
+                        <div class="w-50 d-flex flex-column">
                             <span class="d-flex align-items-center" style="gap: .5rem;">
+                              <div class="w-30px d-flex justify-content-center">
                                 <?= theme("gofast_node_icon_format", array("node" => node_load($nid))) ?>
-                                <p id="link_sharing_title_<?= $nid ?>" class="mb-0 h4 font-weight-light"><a class="text-decoration-none" href="<?= $base_url . "/node/" . $nid ?>"><?php print $link["title"] ?></a></p>
+                              </div>
+                                <p id="link_sharing_title_<?= $nid ?>" class="mb-0 h4 font-weight-light w-100 d-flex">
+                                  <a class="text-decoration-none text-truncate" title="<?= $link["title"] ?>" href="<?= $base_url . "/node/" . $nid ?>"><?php print $link["title"] ?>
+                                </a>
+                                </p>
                             </span>
                         </div>
                         <div class="w-25 d-flex flex-column align-items-center">
@@ -80,6 +85,9 @@
         transform: scale(1.1) translateY(-3px);
         box-shadow: rgba(50, 50, 93, 0.25) 0px 50px 100px -20px, rgba(0, 0, 0, 0.3) 0px 30px 60px -30px, rgba(10, 37, 64, 0.35) 0px -2px 6px 0px inset;
     }
+    .gofast_link_sharing_checkbox .checkbox {
+      margin-bottom: 0 !important;
+    }
 </style>
 <script>
   jQuery(document).ready(function() {
@@ -94,14 +102,15 @@
             link.click();
             link.remove();
         // multilink file
-        } else if (response.id) {
-            Gofast.ITHit._checkDownloadStatus(response, null, false);
+        } else if (response.process_uuid) {
+            Gofast.ITHit._checkDownloadStatus(response.process_uuid);
         }
     });
-    $(".gofast_link_sharing_button").on("click", function() {
+    $(".gofast_link_sharing_button").on("click", function(e) {
         if (!$("#gofast-multi-link-sharing-form input[type='checkbox'][id^=edit-shares]:checked").length) {
-            Gofast.toast(Drupal.t("You must select at least 1 item in order to start the download", {}, {context: "gofast:gofast_link_sharing"}), "warning");
-            return;
+          e.preventDefault();
+          Gofast.toast(Drupal.t("You must select at least 1 item in order to start the download", {}, {context: "gofast:gofast_link_sharing"}), "warning");
+          return;
         }
         Gofast.toast(Drupal.t("Your download has started", {}, {context: "gofast:gofast_link_sharing"}), "info")
     });

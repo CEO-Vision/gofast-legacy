@@ -9,7 +9,7 @@
     }
 
 ?>
-<div class="h-100 w-100 <?= gofast_essential_is_essential() ? 'overflow-auto' : ''; ?>">
+<div id="forum-page" class="h-100 w-100 <?= gofast_essential_is_essential() ? 'overflow-auto' : ''; ?>" data-nid="<?= $node->nid ?>">
     <div class="card card-custom" id="forum_breadcrumb">
         <div class="card-header min-h-50px flex-nowrap px-3">
             <?php print theme('gofast_menu_header_subheader', ['node' => $node]); ?>

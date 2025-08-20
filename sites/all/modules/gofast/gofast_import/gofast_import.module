@@ -1,0 +1,458 @@
+<?php
+
+/**
+ * @file
+ * Module to import data and configurations in bulk.
+ *
+ * Currently aims at allowing imports of users, spaces and memberships using
+ * excel files.
+ *
+ * Exposes CLI Drush commands to run import(s).
+ */
+
+require_once drupal_get_path('module', 'gofast_import') . '/gofast_import.utils.inc';
+require_once drupal_get_path('module', 'gofast_import') . '/includes/gofast_import_spreadsheet.inc';
+require_once drupal_get_path('module', 'gofast_import') . '/includes/gofast_import_process.inc';
+require_once drupal_get_path('module', 'gofast_import') . '/includes/gofast_import_dry_run.inc';
+require_once drupal_get_path('module', 'gofast_import') . '/includes/gofast_import_execute.inc';
+
+// Internal column type values for import of tabular data
+/** Import type for a user column */
+define('GOFAST_IMPORT_COLUMN_TYPE_USER', 'user');
+/** Import type for a user list column */
+define('GOFAST_IMPORT_COLUMN_TYPE_USERLIST', 'userlist');
+/** Import type for an organisation column */
+define('GOFAST_IMPORT_COLUMN_TYPE_ORGANISATION', 'organisation');
+/** Import type for a group column */
+define('GOFAST_IMPORT_COLUMN_TYPE_GROUP', 'group');
+/** Import type for an extranet column */
+define('GOFAST_IMPORT_COLUMN_TYPE_EXTRANET', 'extranet');
+
+// Types of importable items, implemented as aliases to membership column types
+// types (warn: different semantics, notice how user type is excluded)
+/** Import type for a user list item */
+define('GOFAST_IMPORT_ITEM_TYPE_USERLIST', GOFAST_IMPORT_COLUMN_TYPE_USERLIST);
+/** Import type for an organisation item */
+define('GOFAST_IMPORT_ITEM_TYPE_ORGANISATION', GOFAST_IMPORT_COLUMN_TYPE_ORGANISATION);
+/** Import type for a group item */
+define('GOFAST_IMPORT_ITEM_TYPE_GROUP', 'group', GOFAST_IMPORT_COLUMN_TYPE_GROUP);
+/** Import type for an extranet item */
+define('GOFAST_IMPORT_ITEM_TYPE_EXTRANET', 'extranet', GOFAST_IMPORT_COLUMN_TYPE_EXTRANET);
+
+// Member types (columns with the user type header represent members)
+/** Member type for a user. */
+define('GOFAST_IMPORT_MEMBER_TYPE_USER', 'user');
+/** Cell value for a user member type. */
+define('GOFAST_IMPORT_MEMBER_TYPE_USER_CELL_VALUE', 'USR');
+/** Member type for a user list. */
+define('GOFAST_IMPORT_MEMBER_TYPE_USERLIST', 'userlist');
+/** Cell value for a user list member type. */
+define('GOFAST_IMPORT_MEMBER_TYPE_USERLIST_CELL_VALUE', 'LST');
+
+// Userlist membership roles
+/** Userlist membership role for admin members. */
+define('GOFAST_IMPORT_USERLIST_MEMBERSHIP_ROLE_ADMIN', 'admin');
+/** Imported spreadsheet cell value for a user list admin member membership. */
+define('GOFAST_IMPORT_USERLIST_MEMBERSHIP_ROLE_ADMIN_CELL_VALUE', 'ADM');
+
+/** Userlist membership role for regular members. */
+define('GOFAST_IMPORT_USERLIST_MEMBERSHIP_ROLE_MEMBER', 'member');
+/** Imported spreadsheet cell value for a user list regular member membership. */
+define('GOFAST_IMPORT_USERLIST_MEMBERSHIP_ROLE_MEMBER_CELL_VALUE', 'MBR');
+
+/**
+ * Imported spreadsheet cell value for a user list membership being
+ * both an admin and a regular member.
+ */
+define('GOFAST_IMPORT_USERLIST_MEMBERSHIP_ROLE_BOTH_CELL_VALUE', 'BOTH');
+
+// Space membership roles
+// spell-checker:ignore CTRIB
+/** Space membership role for an admin member. */
+define('GOFAST_IMPORT_SPACE_MEMBERSHIP_ROLE_ADMIN', 'admin');
+/** Imported spreadsheet cell value for a space admin member membership. */
+define('GOFAST_IMPORT_SPACE_MEMBERSHIP_ROLE_ADMIN_CELL_VALUE', 'ADM');
+
+/** Space membership role for a space manager member. */
+define('GOFAST_IMPORT_SPACE_MEMBERSHIP_ROLE_MANAGER', 'manager');
+/** Imported spreadsheet cell value for a space manager member membership. */
+define('GOFAST_IMPORT_SPACE_MEMBERSHIP_ROLE_MANAGER_CELL_VALUE', 'MGR');
+
+/** Space membership role for a contributor member. */
+define('GOFAST_IMPORT_SPACE_MEMBERSHIP_ROLE_CONTRIBUTOR', 'contributor');
+/** Imported spreadsheet cell value for a space contributor member membership. */
+define('GOFAST_IMPORT_SPACE_MEMBERSHIP_ROLE_CONTRIBUTOR_CELL_VALUE', 'CTRIB');
+
+/** Space membership role for a read-only member. */
+define('GOFAST_IMPORT_SPACE_MEMBERSHIP_ROLE_READ_ONLY', 'read_only');
+/** Imported spreadsheet cell value for a space read-only member membership. */
+define('GOFAST_IMPORT_SPACE_MEMBERSHIP_ROLE_READ_ONLY_CELL_VALUE', 'RO');
+
+// Import command types
+/** Command type value for creating a user */
+define('GOFAST_IMPORT_COMMAND_TYPE_USER_CREATE', 'user:create');
+/** Command type value for setting a properties on a user */
+define('GOFAST_IMPORT_COMMAND_TYPE_USER_SET_PROPERTIES', 'user:set_properties');
+/** Command type value for creating a user list */
+define('GOFAST_IMPORT_COMMAND_TYPE_USER_LIST_CREATE', 'user_list:create');
+/** Command type value for setting properties of a user list */
+define('GOFAST_IMPORT_COMMAND_TYPE_USER_LIST_SET_PROPERTIES', 'user_list:set_properties');
+/** Command type value for adding a user list member */
+define('GOFAST_IMPORT_COMMAND_TYPE_USER_LIST_ADD_MEMBER', 'user_list:add_member');
+/** Command type value for removing a user list member */
+define('GOFAST_IMPORT_COMMAND_TYPE_USER_LIST_REMOVE_MEMBER', 'user_list:remove_member');
+/** Command type value for creating a space */
+define('GOFAST_IMPORT_COMMAND_TYPE_SPACE_CREATE', 'space:create');
+/** Command type value for setting properties of a user list */
+define('GOFAST_IMPORT_COMMAND_TYPE_SPACE_SET_PROPERTIES', 'space:set_properties');
+/** Command type value for setting properties of a user list */
+define('GOFAST_IMPORT_COMMAND_TYPE_SPACE_SET_MEMBERSHIP_ROLE', 'space:set_membership_role');
+/** Command type value for adding a membership to a space (adds user or user list) */
+define('GOFAST_IMPORT_COMMAND_TYPE_SPACE_ADD_MEMBERSHIP', 'space:add_membership');
+
+// Back-end types
+/** Importer back-end type value for executing import */
+define('GOFAST_IMPORT_BACKEND_TYPE_EXECUTE', 'execute');
+/** Importer back-end type value for import dry run */
+define('GOFAST_IMPORT_BACKEND_TYPE_DRY_RUN', 'dry_run');
+
+/**
+ * Require the PHPOffice/PhpSpreadsheet library autoload file
+ *
+ * @return void
+ */
+function gofast_import__require_phpspreadsheet_autoload() {
+  require_once libraries_get_path('phpspreadsheet') . '/vendor/autoload.php';
+}
+
+
+/**
+ * Import a spreadsheet of users, spaces, users lists and their memberships
+ * according to the given options.
+ *
+ * First parses the import spreadsheet, reports errors if any, then pass data to
+ * common import handler function.
+ *
+ * Represents full import from user, space memberships spreadsheet.
+ *
+ * @param array{
+ *  file_path?: string|null,
+ *  logger?: callable(string $type, string $message, array $variables=, int<0,7> $severity=): void,
+ *  output_logger?: callable(string $type, string $message, array $variables=, int<0,7> $severity=): void,
+ *  runner_uid: numeric,
+ *  backend: string,
+ *  sheet_index?: int,
+ *  sheet_name?: string,
+ * } $options Spreadsheet import options.
+ * @return array{0:array|null,1:null|mixed} A tuple with errors at
+ *  index 0, and an array of commands at index 1.
+ */
+function gofast_import__import_user_space_membership_spreadsheet($options) {
+  [$errors, $import_data] = gofast_import__parse_user_space_membership_spreadsheet($options);
+  if (gofast_import__is_errors_array_fatal($errors)) {
+    return [$errors, NULL];
+  }
+
+  // Carry old non-fatal errors (most likely warnings)
+  $old_errors = $errors ?? [];
+
+  [$errors] = gofast_import__import($import_data, $options);
+  $errors = array_merge($old_errors, $errors ?? []);
+  if (gofast_import__is_errors_array_fatal($errors)) {
+    return [$errors, NULL];
+  }
+  return [$errors, NULL];
+}
+
+/**
+ * Run an import operation.
+ *
+ * First processes the import through parsing and validation, then transform
+ * data into commands and dispatches them to the right back-end function.
+ *
+ * Combines import middle-end layer with import back-end.
+ *
+ * @param array{
+ *  users: array{
+ *    type: GOFAST_IMPORT_MEMBER_TYPE_USER,
+ *    name: string,
+ *    last_name: string | null,
+ *    first_name: string | null,
+ *    email: string | null,
+ *    account?: object | null,
+ *  }[],
+ *  user_lists: array{
+ *    type: GOFAST_IMPORT_ITEM_TYPE_USERLIST,
+ *    name: string,
+ *    description?: string,
+ *    memberships: array{role: string, member: array{name: string, type: string}}[],
+ *    node?: object | null,
+ *  }[],
+ *  spaces: array{
+ *    type: GOFAST_IMPORT_ITEM_TYPE_EXTRANET
+ *      | GOFAST_IMPORT_ITEM_TYPE_GROUP
+ *      | GOFAST_IMPORT_ITEM_TYPE_ORGANISATION,
+ *    path: string,
+ *    description?: string,
+ *    memberships: array{role: string, member: array{name: string, type: string}}[],
+ *    name?: string,
+ *    parent_path?: string | null,
+ *    node?: object | null,
+ *  }[],
+ * } $import_data Full description of the desired state after import of the platform.
+ * @param array{
+ *  logger?: callable(string $type, string $message, array $variables=, int<0,7> $severity=): void,
+ *  output_logger?: callable(string $type, string $message, array $variables=, int<0,7> $severity=): void,
+ *  runner_uid: numeric,
+ *  backend: string,
+ * } $options Import options.
+ * @return array{0:array|null,1:null|mixed} A tuple with errors at
+ *  index 0, and an array of commands at index 1.
+ */
+function gofast_import__import($import_data, $options) {
+  [$errors, $commands] = gofast_import__process_import_data($import_data, $options);
+  if (gofast_import__is_errors_array_fatal($errors)) {
+    return [$errors, NULL];
+  }
+
+
+  // Execute command processing.
+  switch ($options['backend']) {
+    case GOFAST_IMPORT_BACKEND_TYPE_DRY_RUN:
+      gofast_import__print_import_commands($commands, $options);
+      break;
+    case GOFAST_IMPORT_BACKEND_TYPE_EXECUTE:
+      gofast_import__execute_import_commands($commands, $options);
+      break;
+    default:
+      return [
+        [[
+          'type' => 'error',
+          'code' => 'unknown_backend',
+          'message' => 'Unknown import back-end type "@type"',
+          'variables' => [
+            '@type' => $options['backend'],
+          ],
+        ]],
+        NULL,
+      ];
+      break;
+  }
+  return [$errors, NULL];
+}
+
+/**
+ * Gets the user objects property descriptors linking to and from the user
+ * import object and the user account.
+ *
+ * @return array<
+ *    'first_name'|'last_name'|'email',
+ *    array{
+ *     name: string,
+ *     required?: bool,
+ *     account: array{
+ *       get: callable(object $account):mixed,
+ *       set: callable(object &$account,mixed $value):void,
+ *     },
+ *     validate?: (callable(string, array): array|null)[]
+ *    }
+ *  > User import object property descriptors.
+ */
+function gofast_import__get_user_property_descriptors() {
+  return [
+    'first_name' => [
+      'name' => 'first_name',
+      'required' => TRUE,
+      'account' => [
+        'get' => fn($a) => $a->ldap_user_givenname[LANGUAGE_NONE][0]['value'],
+        'set' => fn(&$a, $v) => $a->ldap_user_givenname[LANGUAGE_NONE][0]['value'] = $v,
+      ],
+    ],
+    'last_name' => [
+      'name' => 'last_name',
+      'required' => TRUE,
+      'account' => [
+        'get' => fn($a) => $a->ldap_user_sn[LANGUAGE_NONE][0]['value'],
+        'set' => fn(&$a, $v) => $a->ldap_user_sn[LANGUAGE_NONE][0]['value'] = $v,
+      ],
+    ],
+    'email' => [
+      'name' => 'email',
+      'required' => TRUE,
+      'account' => [
+        'get' => fn($a) => $a->mail,
+        'set' => fn(&$a, $v) => $a->mail = $v,
+      ],
+      'validate' => [
+        function ($value, $user) {
+          if (!valid_email_address($value)) {
+            return [
+              'type' => 'error',
+              'code' => 'invalid_user_email',
+              'message' => 'User "@username" email "@email" is invalid',
+              'variables' => [
+                '@username' => $user['name'],
+                '@email' => $value,
+              ]
+            ];
+          }
+          return NULL;
+        }
+      ]
+    ],
+  ];
+}
+
+/**
+ * Gets the user list objects property descriptors linking to and from the user
+ * list import object and the user list node.
+ *
+ * @return array{
+ *    description: array{
+ *      name: string,
+ *      node: array{
+ *        get: callable(object $node): string,
+ *        set: callable(object &$node, string $value): void,
+ *      },
+ *    },
+ *    members: array{
+ *      name: string,
+ *      node: array{
+ *        get: callable(object $node): array{member:array{name:string,type:string},role:string}[],
+ *      },
+ *    },
+ *  } User list import object property descriptors.
+ */
+function gofast_import__get_user_list_property_descriptors() {
+  return [
+    'description' => [
+      'name' => 'description',
+      'node' => [
+        'get' => fn($n) => $n->field_description[LANGUAGE_NONE][0]['value'],
+        'set' => fn(&$n, $v) => $n->field_description[LANGUAGE_NONE][0]['value'] = $v,
+      ],
+    ],
+    'members' => [
+      'name' => 'members',
+      'node' => [
+        'get' => fn($n) => array_merge(
+          array_map(
+            fn($m) => [
+              'role' => GOFAST_IMPORT_USERLIST_MEMBERSHIP_ROLE_MEMBER,
+              'member' => [
+                'name' => $m['username'],
+                'type' => GOFAST_IMPORT_MEMBER_TYPE_USER
+              ],
+            ],
+            gofast_userlist_get_members($n->field_userlist_ulid[LANGUAGE_NONE][0]['value'], FALSE),
+          ),
+          array_map(
+            fn($m) => [
+              'role' => GOFAST_IMPORT_USERLIST_MEMBERSHIP_ROLE_ADMIN,
+              'member' => [
+                'name' => $m['username'],
+                'type' => GOFAST_IMPORT_MEMBER_TYPE_USER,
+              ],
+            ],
+            gofast_userlist_get_administrators($n->field_userlist_ulid[LANGUAGE_NONE][0]['value'], FALSE),
+          ),
+        ),
+      ]
+    ]
+  ];
+}
+
+/**
+ * Extract import-compatible memberships from a node for a given entity type.
+ *
+ * This is equivalent to flat mapping a user to a map of their roles to an
+ * import membership array.
+ *
+ * @param object $node Fully loaded node object.
+ * @param string $entity_type Entity type identifier, e.g.: node, user, userlist, etc.
+ * @param callable(object):string[] $roles_from_membership Callback returning an
+ *  array of role names from a membership object.
+ * @param callable(object):array{name:string} $member_info_provider Callback
+ *  returning properties of the member array.
+ * @return array{role:string,member:array{name:string,type:string}}[] Memberships for the given parameters.
+ */
+function _gofast_import__extract_memberships_from_space_node($node, $entity_type, $roles_from_membership, $member_info_provider) {
+  $entity_type_to_member_type = [
+    'user' => GOFAST_IMPORT_MEMBER_TYPE_USER,
+    'userlist' => GOFAST_IMPORT_MEMBER_TYPE_USERLIST,
+  ];
+
+  $import_memberships = [];
+
+  $memberships = gofast_og_get_memberships($node->nid, $entity_type);
+  foreach ($memberships as $membership) {
+    $member = [
+      ...$member_info_provider($membership),
+      'type' => $entity_type_to_member_type[$entity_type],
+    ];
+
+    $membership_roles = $roles_from_membership($membership);
+    $import_memberships[] = array_map(
+      fn($role_name) => [
+        'role' => gofast_import__convert_space_role_name_to_import_role($role_name),
+        'member' => $member,
+      ],
+      $membership_roles,
+    );
+  }
+
+  return array_merge(...$import_memberships);
+}
+
+/**
+ * Gets the space objects property descriptors linking to and from the space
+ * import object and the space node.
+ *
+ * @return array{
+ *    description: array{
+ *      name: string,
+ *      node: array{
+ *        get: callable(object $node): string,
+ *        set: callable(object &$node, string $value): void,
+ *      },
+ *    },
+ *    memberships: array{
+ *      name: string,
+ *      node: array{
+ *        get: callable(object $node): array{member:array{name:mixed,type:string},role:string}[],
+ *      },
+ *    },
+ *  } Space import object property descriptors.
+ */
+function gofast_import__get_space_property_descriptors() {
+  return [
+    'description' => [
+      'name' => 'description',
+      'node' => [
+        'get' => fn($n) => $n->field_description[LANGUAGE_NONE][0]['value'],
+        'set' => fn(&$n, $v) => $n->field_description[LANGUAGE_NONE][0]['value'] = $v,
+      ],
+    ],
+    'memberships' => [
+      'name' => 'memberships',
+      'node' => [
+        'get' => fn($n) => array_merge(
+          // Membership per role for users
+          _gofast_import__extract_memberships_from_space_node(
+            $n,
+            'user',
+            fn($m) => og_get_user_roles('node', $n->nid, $m->etid, FALSE),
+            fn($m) => ['name' => user_load($m->etid)->name],
+          ),
+          // Membership per role for user lists
+          _gofast_import__extract_memberships_from_space_node(
+            $n,
+            'userlist',
+            fn($m) => gofast_userlist_og_get_userlist_roles('node', $n->nid, $m->etid, FALSE),
+            fn($m) => ['name' => entity_load_single('userlist', $m->etid)->name],
+          ),
+        ),
+      ],
+    ],
+  ];
+}

@@ -225,12 +225,12 @@ $items['modal/%ctools_js/og/%node/userlist/preadd/members'] = array(
     'type' => MENU_CALLBACK,
   );
 
-  $items['modal/%ctools_js/og/%node/preadd/members'] = array(
-    'title' => 'manage pre-add',
+  $items['modal/%ctools_js/og/%/preadd/members'] = array(
+    'title' => 'Pre-add members',
     'page callback' => 'gofast_modal_og_preadd_members',
     'page arguments' => array(1, 3),
-    'access callback' => 'user_access',
-    'access arguments' => array('pre add members'),
+    'access callback' => 'og_user_access',
+    'access arguments' => array("node", 3, 'pre add members'),
     'type' => MENU_CALLBACK,
   );
 
@@ -439,6 +439,14 @@ $items['modal/%ctools_js/og/%node/userlist/preadd/members'] = array(
 	'type' => MENU_CALLBACK,
   );
 
+  //Popup that displays password expiration information
+  $items['gofast/%ctools_js/password_expires'] = array(
+    'page arguments' => array(1),
+    'access callback' => TRUE,
+    'page callback' => 'gofast_modal_password_expires',
+    'type' => MENU_CALLBACK,
+  );
+
   //Popup that displays the output of the versions scripts
   $items['gofast/%ctools_js/versions'] = array(
 	'title' => 'Components installed',
@@ -642,6 +650,13 @@ $items['modal/%ctools_js/og/%node/userlist/preadd/members'] = array(
     'access callback' => 'user_access',
     'type' => MENU_CALLBACK,
     'page arguments' => array(1),
+  );
+  $items['modal/%ctools_js/ldap_sync_test'] = array(
+    'title' => 'Test LDAP Sync',
+    'page callback' => 'gofast_modal_ldap_sync_test',
+    'page arguments' => array(1),
+    'access arguments' => array('administer general configuration'),
+    'type' => MENU_CALLBACK,
   );
   return $items;
 }
@@ -869,7 +884,7 @@ function gofast_modal_article_position_form($js, $node) {
     $commands = array_merge($commands, gofast_ajaxification_get_toast_messages());
     $commands[] = ajax_command_html("#ctools-add-js", "<script>
       Drupal.settings.gofast_selected_book = " . $node->nid . ";
-      Gofast.refreshWikiPanel();
+      Gofast.sideFileBrowser.refreshBrowser('book-browser');
     </script>");
   }
   if (empty($commands)) {
@@ -916,10 +931,10 @@ function gofast_modal_article_location_form($js, $node) {
     $commands[] = ctools_modal_command_dismiss();
     $commands = array_merge($commands, gofast_ajaxification_get_toast_messages());
     $commands[] = ajax_command_html('#ctools-add-js',"<script type='text/javascript'>
-      $.get(window.origin + '/gofast/book/explorer').done(function(data){
+      $.get(window.origin + '/gofast/book-browser/explorer').done(function(data){
         $('.book-explorer-main').replaceWith(data);
         $(\".breadcrumb-gofast:not('.breadcrumb-gofast-full')\").removeClass('processed');
-        Gofast.selectCurrentWikiArticle();
+        Gofast.sideFileBrowser.selectCurrentItem('book-browser');
         Gofast.gofast_main_block_breadcrumb(true);
         Gofast.gofast_right_block_breadcrumb(false);
       });
@@ -1095,7 +1110,7 @@ function gofast_modal_og_add_members($js, $og) {
 /**
  * page callback - Manage pre-add group membership
  */
-function gofast_modal_og_preadd_members($js, $og) {
+function gofast_modal_og_preadd_members($js, $gid) {
   $form_id = 'gofast_preadd_users_form';
 
   /*  if (!$js) {
@@ -1111,12 +1126,11 @@ function gofast_modal_og_preadd_members($js, $og) {
     'build_info' => array(
       'args' => array(
         "node",
-        $og->nid,
+        $gid,
       )
     ),
-    'title' => t('Pre Add member/Userlists', array(), array('context' => 'gofast')),
+    'title' => t('Pre-Add members', array(), array('context' => 'gofast:gofast_userlist:preadd:contextual_menu:item_label')),
     'ajax' => TRUE,
-    'title' => null
   );
 
   $commands = ctools_modal_form_wrapper($form_id, $form_state);
@@ -1363,6 +1377,7 @@ function gofast_modal_new_document() {
  * Implements hook_form_FORM_ID_alter
  */
 function gofast_modal_form_og_ui_add_users_alter(&$form, &$form_state, $form_id){
+  global $user;
   if (isset($form_state['label'])) {
     $form['og_user']['#title'] = $form_state['label'];
   }
@@ -1380,7 +1395,7 @@ function gofast_modal_form_og_ui_add_users_alter(&$form, &$form_state, $form_id)
   $roles = array();
    if(count($form["og_user"]["roles"]["#options"]) > 0){
           foreach($form["og_user"]["roles"]["#options"] as $rid=>$role_string){
-           $roles[$role_string] = t($role_string, array(), array("context" => "gofast"));
+           $roles[$role_string] = $user->language == "en" ? ucfirst($role_string) : t($role_string, array(), array("context" => "gofast"));
           }
       }
    $form["og_user"]["roles"]["#options"] = $roles;
@@ -1454,24 +1469,7 @@ function gofast_modal_og_ui_add_users_userlist_validate($form, &$form_state){
  * @param type $form_state
  */
 function gofast_preadd_users_form($form, &$form_state) {
-
- /* $form['user_userlist_member'] = array(
-    '#title' => t('Users names to pre-add', array(), array('context' => 'gofast_og')),
-    '#type' => 'textfield',
-    '#size' => 62,
-    '#autocomplete_path' => 'gofast_og_space_user_userlist_preadd_autocomplete', //gofast_userlist_og_autocomplete
-    '#attributes' => array('class' => array('labelize-autocomplete'))
-  );*/
-
-  $form['user_userlist_member']['#title'] = $form_state['label'] ?? t('Add a group member or a userlist to %group', array('%group' => $label));
-
-  $form['user_userlist_member']['member_entity_type'] = array(
-    '#type' => 'hidden'
-  );
-
-  $form['user_userlist_member']['member_entity_id'] = array(
-    '#type' => 'hidden'
-  );
+  global $user;
 
   $attributes_name = [
     'class' => [' form-control-tags js-tagify'],
@@ -1495,17 +1493,18 @@ function gofast_preadd_users_form($form, &$form_state) {
     '#size' => 62,
   );
 
-  $form['default_role'] = array(
+  // Get all the non-default roles.
+  $og_default_roles = og_get_default_roles(FALSE);
+  $og_default_role_trad = array();
+  foreach($og_default_roles as $key => $role_string){
+    $og_default_role_trad[$role_string] = $user->language == "en" ? ucfirst($role_string) : t($role_string, array(), array("context" => "gofast"));
+  }
+  $form['roles'] = array(
     '#type' => 'radios',
-    '#options' => array(
-        '1' => t("Contributor", array(), array('gofast:gofast_user')),
-        '2' => t("Read Only", array(), array('gofast:gofast_user'))
-    ),
+    '#options' => $og_default_role_trad,
+    '#title' => t("Which role should be required?", array(), array('context' => 'gofast')),
     '#required' => true,
-    '#default_value' => 2,
-    '#title' => t("Which role do you ask on this space ?", array(), array('context' => 'gofast')),
   );
-
 
   $form['submit'] = array(
     '#type' => 'submit',
@@ -1528,7 +1527,7 @@ function gofast_preadd_users_form_validate($form, &$form_state) {
 
   if ($gid === FALSE)
     return t('error', array(), array('context' => 'gofast'));
-  $json_list_user_preadd =   json_decode($form_state['input']['ac-list-tags-field-user-userlist']);
+    $json_list_user_preadd =   json_decode($form_state['input']['ac-list-tags-field-user-userlist']);
 
     if (empty($json_list_user_preadd)) {
         form_set_error('roles', t('Please select a user/userlist', array(), array('context' => 'gofast')));
@@ -1541,8 +1540,7 @@ function gofast_preadd_users_form_validate($form, &$form_state) {
   }
 }
 
-function gofast_preadd_users_form_submit($form,&$form_state, $type = "space"){
-
+function gofast_preadd_users_form_submit($form, &$form_state, $type = "space"){
    if(isset($_SESSION["gids_bulk_actions"])){
        $gids = $_SESSION["gids_bulk_actions"];
    }else{
@@ -1550,7 +1548,6 @@ function gofast_preadd_users_form_submit($form,&$form_state, $type = "space"){
        $gids = array($gid);
    }
 
-  watchdog("debug bulk gids", json_encode($gids));
   $final_json_list_user_preadd =   json_decode($form_state['input']['ac-list-tags-field-user-userlist']);
   $html = "";
   $progress_bar = theme('gofast_progress_bar');
@@ -1563,7 +1560,7 @@ function gofast_preadd_users_form_submit($form,&$form_state, $type = "space"){
           'user_preadd_list' => $final_json_list_user_preadd,
           "message" => $form_state["values"]["message"],
           "type" => $type,
-          "rid" => $form_state["values"]["default_role"])
+          "rid" => $form_state["values"]["roles"])
         );
   }
 
@@ -1610,7 +1607,12 @@ function gofast_modal_node_manage($js, $node, $group) {
       // No error, display message to user and handle redirection if needed.
       $commands = array_merge($commands, gofast_messages_to_commands(TRUE));
       $commands[] = ctools_modal_command_dismiss();
-      $commands[] = gofast_command_processAjax('/activity');
+      if($node->type == "conference"){
+        $commands[] = gofast_command_callback("Gofast.goto", array('/activity'));
+      }else{
+        $commands[] = gofast_command_processAjax('/activity');
+      }
+     
     }
   }
   print ajax_render($commands);
@@ -1694,27 +1696,16 @@ function gofast_node_delete_modal_template($node = FALSE, $ajax = FALSE) {
  * @return string
  * @throws \Exception
  */
-function gofast_node_unzip_modal_template($node = FALSE, bool $ajax = FALSE): string {
-
+function gofast_node_unzip_modal_template() {  
   $items = [];
-  if ($node === "get_unzip_modal_content") {
-    $paths = $_POST["items"];
-    foreach ($paths as $path) {
-      $path = gofast_xss_clean($path);
-      $path = str_replace("/alfresco/webdav", "", $path);
-      $items[] = gofast_cmis_item_get_by_path($path);
-    }
+  $paths = $_POST["items"];
+  
+  foreach ($paths as $path) {
+    $path = gofast_xss_clean($path["url"]);
+    $path = str_replace("/alfresco/webdav", "", $path);
+    $items[] = gofast_cmis_item_get_by_path($path);
   }
-  elseif (isset($node->{GOFAST_CMIS_REFERENCE_FIELD}[LANGUAGE_NONE][0]["value"])) { // the item should exist in alfresco
-    $ref = $node->{GOFAST_CMIS_REFERENCE_FIELD}[LANGUAGE_NONE][0]["value"];
-    $items[] = gofast_cmis_item_get($ref);
-  }
-  else { // if we have a $node and no alfresco ref, then this means it's the Drupal node which was passed
-    $items[] = $node;
-  }
-
   $nodes_description = [];
-
   foreach ($items as $item) {
     $node_description = new stdClass();
     $node_description->children = [];
@@ -1755,7 +1746,7 @@ function gofast_node_unzip_modal_template($node = FALSE, bool $ajax = FALSE): st
     $nodes_description[] = $node_description;
   }
 
-  if ($ajax) {
+  if ($_POST["isAjax"] && $_POST["isAjax"] == true) {
     echo theme("gofast_modal_node_unzip", ["nodes_description" => $nodes_description]);
     exit();
   }
@@ -1763,24 +1754,14 @@ function gofast_node_unzip_modal_template($node = FALSE, bool $ajax = FALSE): st
   return theme("gofast_modal_node_unzip", ["nodes_description" => $nodes_description]);
 }
 
-function gofast_node_compress_modal_template($node = FALSE, bool 
-$ajax = FALSE): string {
+function gofast_node_compress_modal_template() {
   
   $paths = json_decode($_POST["items"]);
   
-  if ($node === "get_compress_modal_content") {
-    foreach ($paths as $path) {
-      $path = urldecode($path->url);
-      $path = str_replace("/alfresco/webdav", "", $path);
-      $items[] = gofast_cmis_item_get_by_path($path);
-    }
-  }
-  elseif (isset($node->{GOFAST_CMIS_REFERENCE_FIELD}[LANGUAGE_NONE][0]["value"])) { // the item should exist in alfresco
-    $ref = $node->{GOFAST_CMIS_REFERENCE_FIELD}[LANGUAGE_NONE][0]["value"];
-    $items[] = gofast_cmis_item_get($ref);
-  }
-  else { // if we have a $node and no alfresco ref, then this means it's the Drupal node which was passed
-    $items[] = $node;
+  foreach ($paths as $path) {
+    $path = urldecode($path->url);
+    $path = str_replace("/alfresco/webdav", "", $path);
+    $items[] = gofast_cmis_item_get_by_path($path);
   }
 
   $nodes_description = [];
@@ -1827,14 +1808,23 @@ $ajax = FALSE): string {
     }
   }
   
-  if ($ajax) {
-    echo theme("gofast_modal_node_compress", ["nodes_description" => 
-    $nodes_description]);
+  $main_location =  str_replace('/alfresco/webdav','',dirname($paths[0]->url));
+  $main_location = urldecode($main_location);
+
+  /** Get the alfresco parent store ID of a node   */
+  $parent_item = gofast_cmis_item_get_by_path($main_location);
+  $zip_file_name = null;
+  if(count($items) == 1){
+    $zip_file_name = $items[0]->properties["cmis:name"];
+  }
+  $unique_zip_file_name = pathinfo(gofast_cmis_generate_unique_title($parent_item, $zip_file_name), PATHINFO_FILENAME);
+
+  if ($_POST["isAjax"] && $_POST["isAjax"] == true) {
+    echo theme("gofast_modal_node_compress", ["nodes_description" => $nodes_description, "zip_file_name" => $unique_zip_file_name]);
     exit();
   }
 
-  return theme("gofast_modal_node_compress", ["nodes_description" => 
-  $nodes_description]);
+  return theme("gofast_modal_node_compress", ["nodes_description" => $nodes_description, "zip_file_name" => $unique_zip_file_name]);
 }
 /**
  * Ask for confirmation of node deletion (unpublish)
@@ -2300,7 +2290,11 @@ function gofast_modal_comment_reply($js = NULL, $node = NULL, $pid = NULL) {
       $commands[] = ctools_ajax_command_redirect($_GET['destination']);
     }
     else {
-      $comments_container_id = '#comments-container';
+      $comments_container_prefix = "#myTabContent";
+      if($node->type == "forum"){
+        $comments_container_prefix = "#forum-page";
+      }
+      $comments_container_id = $comments_container_prefix."[data-nid='$node->nid'] #comments-container";
       $wrapper_class = 'comment-wrapper';
       $wrapper_id = $node->type == 'forum' ? 'forum-comments-wrapper' : 'forum-comments';
       ctools_include('comment.admin', 'comment', '');
@@ -2316,9 +2310,9 @@ function gofast_modal_comment_reply($js = NULL, $node = NULL, $pid = NULL) {
       $commands[] = ajax_command_html($comments_container_id, $comments);
 
       $latest_comment_id = $form_state['values']['cid'];
-      $commands[] = gofast_command_scrollToComment('#comment-' . $latest_comment_id);
+      $commands[] = gofast_command_scrollToComment($comments_container_prefix."[data-nid='$node->nid'] #comment-$latest_comment_id");
 
-      $commands[] = ajax_command_html('#block-gofast-gofast-node-comments-tree', gofast_comments_tab($node));
+      $commands[] = ajax_command_html($comments_container_prefix."[data-nid='$node->nid'] #block-gofast-gofast-node-comments-tree", gofast_comments_tab($node));
 
       $commands[] = ctools_modal_command_dismiss();
 
@@ -2327,6 +2321,9 @@ function gofast_modal_comment_reply($js = NULL, $node = NULL, $pid = NULL) {
       if($node->type == "forum"){
         //Reload left panel with new comments
         $commands[] = gofast_command_callback("Gofast.reloadForums");
+      }
+      if($node->type == "task"){
+        $commands[] = gofast_command_trigger_event(null, "reloadTaskComments", array("cardId" => $node->nid));
       }
     }
   }
@@ -2433,7 +2430,12 @@ function gofast_modal_comment_edit($js, $comment) {
         $commands[] = ctools_ajax_command_redirect($_GET['destination']);
       }
       else {
-        $comments_container_id = '#comments-container';
+        $comments_container_prefix = "#myTabContent";
+        if($node->type == "forum"){
+          $comments_container_prefix = "#forum-page";
+        }
+
+        $comments_container_id = $comments_container_prefix."[data-nid='$node->nid'] #comments-container";
         $wrapper_class = 'comment-wrapper';
         $wrapper_id = $node->type == 'forum' ? 'forum-comments-wrapper' : 'forum-comments';
         ctools_include('comment.admin', 'comment', '');
@@ -2529,7 +2531,12 @@ function gofast_modal_callback_comment_delete($js = NULL, $node = NULL, $cid = N
         $commands = false;
       }
       if ($commands === false) {
-        $comments_container_id = '#comments-container';
+        $comments_container_prefix = "#myTabContent";
+        if($node->type == "forum"){
+          $comments_container_prefix = "#forum-page";
+        }
+
+        $comments_container_id = $comments_container_prefix."[data-nid='$node->nid'] #comments-container";
         $wrapper_class = 'comment-wrapper';
         $wrapper_id = $node->type === 'forum' ? 'forum-comments-wrapper' : 'forum-comments';
         $node_view = [];
@@ -2545,7 +2552,7 @@ function gofast_modal_callback_comment_delete($js = NULL, $node = NULL, $cid = N
           $comment_render = '<div id="' . $wrapper_id . '" class="' . $wrapper_class . '"></div>';
         }
         $commands[] = ajax_command_html($comments_container_id, $comment_render);
-        $commands[] = ajax_command_html('#block-gofast-gofast-node-comments-tree', gofast_comments_tab($node));
+        $commands[] = ajax_command_html($comments_container_prefix."[data-nid='$node->nid'] #block-gofast-gofast-node-comments-tree", gofast_comments_tab($node));
 
         $commands[] = ctools_modal_command_dismiss();
 
@@ -2558,7 +2565,12 @@ function gofast_modal_callback_comment_delete($js = NULL, $node = NULL, $cid = N
     }
   }
   else {
-    $comments_container_id = '#comments-container';
+    $comments_container_prefix = "#myTabContent";
+    if($node->type == "forum"){
+      $comments_container_prefix = "#forum-page";
+    }
+
+    $comments_container_id = $comments_container_prefix."[data-nid='$node->nid'] #comments-container";
     $wrapper_class = 'comment-wrapper';
     $wrapper_id = $node->type == 'forum' ? 'forum-comments-wrapper' : 'forum-comments';
     ctools_include('comment.admin', 'comment', '');
@@ -2575,7 +2587,7 @@ function gofast_modal_callback_comment_delete($js = NULL, $node = NULL, $cid = N
     variable_set('comment_default_per_page_' . $node->type, 1);
     $commands[] = ajax_command_html($comments_container_id, $comment_render);
 
-    $commands[] = ajax_command_html('#block-gofast-gofast-node-comments-tree', gofast_comments_tab($node));
+    $commands[] = ajax_command_html($comments_container_prefix."[data-nid='$node->nid'] #block-gofast-gofast-node-comments-tree", gofast_comments_tab($node));
 
     $commands[] = ctools_modal_command_dismiss();
 
@@ -4104,6 +4116,7 @@ function gofast_modal_manage_mail_sharing_form($js){
   ctools_include('ajax');
 
   $form_state = array(
+    'reset_html_ids' => TRUE,
     'ajax' => TRUE,
     'build_info' => array(
       'args' => array()
@@ -4125,15 +4138,21 @@ function gofast_modal_manage_mail_sharing_form($js){
  * @param type $nid the node id to update
  * @return type the form
  */
-function gofast_modal_form_tag_major_version($form, &$form_state, $nid) {
-  $form['comment'] = array(
-    '#type' => "textarea",
-    '#cols' => 50,
+function gofast_modal_form_tag_major_version(&$form, &$form_state, $nid) {
+  $form['comment_body'] = array(
+    '#after_build' => ["gofast_cmis_remove_ckeditor", "gofast_forum_hide_text_format"],
+    '#attributes' => ["data-ckeditor" => "ckeditor-full", 'placeholder' => t('Add a comment', array(), array('context' => 'gofast'))],
     "#title" => t("Comment", array(), array('context' => 'gofast')),
     "#required" => FALSE,
-    '#attributes' => array('placeholder' => t('Add a comment', array(), array('context' => 'gofast')))
+    '#resizable' => FALSE,
+    '#type' => 'text_format',
+    '#format' => 'filtered_html',
+    '#default_value' => '',
+    '#cols' => 60,
+    '#rows' => 5,
+    '#pre_render' => ['ckeditor_pre_render_text_format'],
   );
-
+  
   $form['nid'] = array(
     '#type' => 'hidden',
     '#value' => $nid,
@@ -4151,7 +4170,7 @@ function gofast_modal_form_tag_major_version($form, &$form_state, $nid) {
 function gofast_modal_form_tag_major_version_submit($form, $form_state) {
   $data = $form_state['values'];
   $node_id = $data['nid'];
-  $comment_message = nl2br($data['comment']);
+  $comment_message = nl2br($data['comment_body']["value"]);
 
   return gofast_cmis_tag_major_version(node_load($node_id), $comment_message);
 }
@@ -4189,7 +4208,12 @@ function gofast_modal_node_tag_major_version_form($js, $node) {
       $commands[] = ctools_ajax_command_redirect($_GET['destination']);
     }
     else {
-      $comments_container_id = '#comments-container';
+      $comments_container_prefix = "#myTabContent";
+      if($node->type == "forum"){
+        $comments_container_prefix = "#forum-page";
+      }
+
+      $comments_container_id = $comments_container_prefix."[data-nid='$node->nid'] #comments-container";
       $wrapper_class = 'comment-wrapper';
       $wrapper_id = $node->type == 'forum' ? 'forum-comments-wrapper' : 'forum-comments';
       ctools_include('comment.admin', 'comment', '');
@@ -5460,7 +5484,7 @@ function gofast_modal_display_carousel($js = NULL) {
 
   foreach($files as $file){
       $items[] = array(
-        'slide'   => '<img style="height:600px !important;" src="' . $base_url . '/sites/all/modules/gofast/img/carousel/' . $name . '/' . $file . '" />',
+        'slide'   => '<img class="m-auto" src="' . $base_url . '/sites/all/modules/gofast/img/carousel/' . $name . '/' . $file . '" />',
           'caption' => array(
               'title' => file_get_contents($folder_path . $name . "_title/" . $file . ".html"),
               'data' => file_get_contents($folder_path . $name . "_data/" . $file . ".html"),
@@ -5469,6 +5493,7 @@ function gofast_modal_display_carousel($js = NULL) {
   }
     $optionset = slick_optionset_load($name);
     $options = $optionset->options['settings'];
+    $options["variableWidth"] = TRUE;
     $settings = array(
       'optionset' => $name,
       'media_switch' => 'colorbox-switch',
@@ -5485,12 +5510,26 @@ function gofast_modal_display_carousel($js = NULL) {
   ctools_include('modal');
   ctools_include('ajax');
   $output = array();
-  $output[] = ctools_modal_command_display(t('New features and improvements', array(), array('context' => 'gofast')), $popup_content);
+  $modal_command = ctools_modal_command_display(t('New features and improvements', array(), array('context' => 'gofast')), $popup_content);
+  $modal_command["settings"] = ["resizable" => FALSE];
+  $output[] = $modal_command;
 
   //Outputting the formed popup in the browser
   print ajax_render($output);
   drupal_exit();
 }
+
+function gofast_modal_password_expires($js = NULL) {
+  ctools_include('modal');
+  ctools_include('ajax');
+  $password_expiration = gofast_xss_clean($_GET["timestamp"]);
+  $popup_content = theme("gofast_ldap_password_expires_modal", ["password_expiration" => $password_expiration]);
+  $output = array();
+  $output[] = ctools_modal_command_display(t('Password expiration notification', array(), array('context' => 'gofast:gofast_ldap')), $popup_content);
+  print ajax_render($output);
+  drupal_exit();
+}
+
 /*
  * Callback function for the Displaying versions page
  */
@@ -5862,8 +5901,14 @@ function gofast_modal_share_folder_by_email_modal() {
   global $user;
   $folder = str_replace('modal/0/share_folder_by_email', '', $_GET['q']);
 
-  /** @noinspection PhpParamsInspection */
   $item = gofast_cmis_item_get_by_path(str_replace('/alfresco/webdav', '', $folder));
+  $is_valid = gofast_ajax_file_browser_validate_folder_download($item->properties["alfcmis:nodeRef"]);
+
+  if(!$is_valid){
+    $commands[] = gofast_command_toast_message(t("You can't share this folder as it contains confidential data.", array(), array("context" => "gofast:gofast_modal")), "warning");
+    print ajax_render($commands);
+    exit;
+  }
   
   $data = array(
     'folder' => $folder,
@@ -5976,4 +6021,30 @@ function gofast_userlist_preadd_users_form(mixed $form, mixed &$form_state): arr
  */
 function gofast_userlist_preadd_users_form_submit($form, &$form_state): void {
   gofast_preadd_users_form_submit($form, $form_state, "userlist");
+}
+
+/**
+ * Modal display function
+ * Displays the LDAP Sync test table
+ *
+ * @param bool $js
+ *
+ * @return void
+ */
+function gofast_modal_ldap_sync_test($js) {
+  ctools_include('modal');
+  ctools_include('ajax');
+  module_load_include('inc', 'gofast_ldap', 'gofast_ldap.admin');
+  
+  if (!$js) {
+    return drupal_goto('admin/config/gofast/global');
+  }
+
+  $render = gofast_ldap_admin_ldap_sync_test_table();
+  $commands[] = ctools_modal_command_display(t('Test directory synchronisation', array(), array('context' => 'gofast:gofast_ldap')), $render);
+
+  $commands = array_merge($commands, gofast_ajaxification_get_toast_messages());
+  print ajax_render($commands);
+  
+  exit;
 }

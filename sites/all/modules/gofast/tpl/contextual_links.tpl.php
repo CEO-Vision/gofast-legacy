@@ -7,14 +7,49 @@
             ?>
             <?php if (isset($btn['children'])) : ?>
                 <?php $contextual_menu = $btn; ?>
-            <?php elseif(isset($btn['title'])) : ?>
-                <a type="button" class="btn btn-outline-secondary btn-icon btn-sm position-relative <?php echo $classes ?>" <?php if (isset($btn['id'])) : ?> id="<?php echo $btn['id'] ?>" <?php endif ?> <?php if (isset($btn['href'])) : ?> href="<?php echo $btn['href'] ?>" <?php endif ?> <?php if (isset($btn['disabled'])) : ?> disabled <?php endif ?> <?php if (isset($btn['onClick'])) : ?> onClick=<?php echo $btn['onClick'] ?> <?php endif ?> <?php if (isset($btn['alt'])) : ?> alt="<?php echo $btn['alt'] ?>" <?php endif ?> <?php if (isset($btn['target'])) : ?> target="<?php echo $btn['target'] ?>" <?php endif ?> <?php if (isset($btn['title'])) : ?> title="<?php echo t($btn['title'], array(), array('context' => 'gofast:gofast_workflows')) ?>" <?php endif ?>>
-                      <?php if (isset($btn['avatar'])) : ?>
-                          <?php echo $btn['avatar'] ?>
-                      <?php endif ?>
-                    <i class="<?php echo $btn['icon-class'] ?> icon-nm">
-                    </i>
-                </a>
+            <?php elseif(isset($btn['title'])) : /* Handle buttons with icons/titles, wrapper span
+                allows title to show even when button is disabled. The wrapper needs all buttons
+                classes to be kept in the button group aesthetics-wise. The inline style
+                'pointer-events' counters the disabled state for the tooltip. This is super hacky,
+                but unless JS is involved, it's the only way to make Bootstrap behave here while
+                playing by their rules. */ ?>
+                <span
+                    class="
+                        d-inline-block
+                        btn
+                        btn-sm
+                        btn-icon
+                        btn-outline-secondary
+                        position-relative
+                        <?php if(isset($btn['disabled'])) : ?>disabled<?php endif ?>
+                        <?= $classes ?>
+                    "
+                    style="pointer-events: auto;"
+                    data-toggle="tooltip"
+                    data-placement="bottom"
+                    data-delay='{"show": 250, "hide": 0}'
+                    data-trigger="hover"
+                    title="<?= t($btn['title'], array(), array('context' => 'gofast:gofast_workflows')) ?>"
+                    <?php if(isset($btn['id'])) : ?>id="<?="{$btn['id']}--wrapper"?>"<?php endif ?>
+                >
+                    <a
+                        type="button"
+                        class="btn btn-icon btn-sm position-relative overflow-hidden <?php echo $classes ?>"
+                        <?php if (isset($btn['id'])) : ?> id="<?php echo $btn['id'] ?>" <?php endif ?>
+                        <?php if (isset($btn['href'])) : ?> href="<?php echo $btn['href'] ?>" <?php endif ?>
+                        <?php if (isset($btn['disabled'])) : ?> disabled aria-disabled="true" <?php endif ?>
+                        <?php if (isset($btn['onClick'])) : ?> onClick=<?php echo $btn['onClick'] ?> <?php endif ?>
+                        <?php if (isset($btn['alt'])) : ?> alt="<?php echo $btn['alt'] ?>" <?php endif ?>
+                        <?php if (isset($btn['target'])) : ?> target="<?php echo $btn['target'] ?>" <?php endif ?>
+                    >
+                        <?php if (isset($btn['avatar'])) : ?>
+                            <?php echo $btn['avatar'] ?>
+                        <?php endif ?>
+                        <?php if (isset($btn['icon-class'])) : ?>
+                        <i class="<?php echo $btn['icon-class'] ?> icon-nm"></i>
+                        <?php endif ?>
+                    </a>
+                </span>
             <?php endif ?>
         <?php endforeach ?>
     </div>
@@ -54,30 +89,32 @@
         </a>
     </div>
     <?php endif; ?>
+    <script>
+      jQuery(document).ready(function() {
+        jQuery("#refresh_actions_button").removeClass("d-none");
+        // GOFAST-8671: if submenu overflows from its parent, translate it so it actually starts at the top of its parent
+        jQuery('.contextual-actions ~ .dropdown').on('shown.bs.dropdown', function() {
+          jQuery(".gofastDropdown .dropdown-menu").css("visibility", "hidden");
+          jQuery(".gofastDropdown .dropdown-menu").css("display", "block"); // for the element to actually have a size while remaining invisible
+          jQuery.each(jQuery(".gofastDropdown .dropdown-menu"), (i, el) => {
+            const $subMenu = $(el);
+            if (!$subMenu.length) {
+              return;
+            }
+            const subMenuRelativePosition = $subMenu[0].getBoundingClientRect();
+            $subMenu.css("display", "");
+            $subMenu.css("visibility", "");
+            const subMenuOverflows = subMenuRelativePosition.top < 0;
+            if (subMenuOverflows) {
+              $subMenu.css("cssText", "position: fixed; top: 0 !important; height: min-content;");
+            }
+          })
+        });
+        // Disable click on disabled links
+        jQuery('.navi-link.disabled').on('click', function(event) {
+        event.preventDefault();
+        return false;
+        });
+      });
+    </script>
 </div>
-<script>
-  jQuery(document).ready(function() {
-    jQuery("#refresh_actions_button").removeClass("d-none");
-    // GOFAST-8671: if submenu overflows from its parent, translate it so it actually starts at the top of its parent
-    jQuery('.contextual-actions ~ .dropdown').on('shown.bs.dropdown', function() {
-      jQuery(".gofastDropdown .dropdown-menu").css("visibility", "hidden");
-      jQuery(".gofastDropdown .dropdown-menu").css("display", "block"); // for the element to actually have a size while remaining invisible
-      const $subMenu = jQuery(".gofastDropdown .dropdown-menu");
-      if (!$subMenu.length) {
-        return;
-      }
-      const subMenuRelativePosition = $subMenu[0].getBoundingClientRect();
-      jQuery(".gofastDropdown .dropdown-menu").css("display", "");
-      jQuery(".gofastDropdown .dropdown-menu").css("visibility", "");
-      const subMenuOverflows = subMenuRelativePosition.top < 0;
-      if (subMenuOverflows) {
-        jQuery(".gofastDropdown .dropdown-menu").css("cssText", "position: fixed; top: 0 !important; height: min-content;");
-      }
-    });
-    // Disable click on disabled links
-    jQuery('.navi-link.disabled').on('click', function(event) {
-    event.preventDefault();
-    return false;
-    });
-  });
-</script>

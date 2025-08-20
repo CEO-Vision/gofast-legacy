@@ -69,6 +69,7 @@
               print '<li class="navi-item">' . gofast_dropdown_link(t('Archive content'), '/modal/nojs/bulk-archive', 'taxonomy_open_span', 'ctools-use-modal bulk_archive bulk-archive gofast_display_none', 'fa fa-archive') . '</li>';
               print '<li class="navi-item">' . gofast_dropdown_link(t('Add to cart'), '/modal/nojs/bulk_add_to_cart', 'taxonomy_open_span', 'ctools-use-modal bulk_add_to_cart gofast_display_none', 'fas fa-shopping-basket') . '</li>';
               print '<li class="navi-item">' . gofast_dropdown_link(t('Compress'), '/modal/nojs/compress-files', 'taxonomy_open_span', 'ctools-use-modal compress_files gofast_display_none', 'fa fa-file-archive-o n-color') . '</li>';
+              print '<li class="navi-item">' . gofast_dropdown_link(t('Extract', array(), array('context' => 'gofast')), '/modal/nojs/unzip-files', 'taxonomy_open_span', 'ctools-use-modal unzip_files gofast_display_none', 'fa fa-file-archive-o n-color') . '</li>';
 
 
               ?>

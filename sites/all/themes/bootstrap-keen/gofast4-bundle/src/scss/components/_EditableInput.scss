@@ -39,6 +39,16 @@
             &.tagify {
                 height: auto !important;
                 display: flex;
+                // prevent very long words from overflowing their parent
+                white-space: pre-wrap;
+                word-wrap: anywhere;
+                // don't allow input if max number of tags has been reached
+                &.tagify--hasMaxTags {
+                    cursor: not-allowed;
+                    & .tagify__input {
+                        pointer-events: none;
+                    }
+                }
             }
             
         }

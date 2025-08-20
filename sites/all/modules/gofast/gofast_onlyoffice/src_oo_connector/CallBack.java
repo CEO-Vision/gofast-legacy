@@ -238,8 +238,8 @@ public class CallBack extends AbstractWebScript {
             case 2:
                 logger.debug("Document Updated, changing content");
                 lockService.unlock(nodeRef);
-                //logger.info("removing prop");
-               // nodeService.removeProperty(nodeRef, Util.EditingHashAspect);
+                // logger.info("removing prop");
+                // nodeService.removeProperty(nodeRef, Util.EditingHashAspect);
                 updateNode(nodeRef, callBackJSon.getString("url"));
                 break;
             case 3:
@@ -253,6 +253,15 @@ public class CallBack extends AbstractWebScript {
                 lockService.unlock(nodeRef);
                 logger.info("removing prop");
                 nodeService.removeProperty(nodeRef, Util.EditingHashAspect);
+                break;
+            case 6:
+                logger.debug("Document force-saved, changing content");
+                lockService.unlock(nodeRef);
+                updateNode(nodeRef, callBackJSon.getString("url"));
+                Map<String, Serializable> versionProperties = new HashMap<String, Serializable>(1);
+                versionProperties.put(VersionModel.PROP_VERSION_TYPE, VersionType.MINOR);
+                versionService.createVersion(nodeRef, versionProperties);
+                lockService.lock(nodeRef, LockType.WRITE_LOCK);
                 break;
             }
             return null;
@@ -342,6 +351,10 @@ public class CallBack extends AbstractWebScript {
             checkCert();
             InputStream in = new URL( url ).openStream();
             contentService.getWriter(nodeRef, ContentModel.PROP_CONTENT, true).putContent(in);
+            // flag new version as created from onlyoffice
+            logger.info("Set onlyofficeOrigin prop to true");
+            final QName onlyofficeOrigin = QName.createQName("gofast.model", "onlyofficeOrigin");
+            nodeService.setProperty(nodeRef, onlyofficeOrigin, true);
         } catch (IOException e) {
            // logger.error(ExceptionUtils.getFullStackTrace(e));
             throw new Exception("Error while downloading new document version: " + e.getMessage(), e);
@@ -398,4 +411,3 @@ public class CallBack extends AbstractWebScript {
         }
     }
 }
-

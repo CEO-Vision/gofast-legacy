@@ -106,8 +106,8 @@
 
     if (Drupal.settings.gofast_selected_book && Gofast.get("node").type != "article") {
       delete Drupal.settings.gofast_selected_book;
-      Gofast.selectCurrentWikiArticle();
     }
+    Gofast.sideFileBrowser.selectCurrentItem("file-browser", false);
 
     setTimeout(function () {
       // Reset the search input field

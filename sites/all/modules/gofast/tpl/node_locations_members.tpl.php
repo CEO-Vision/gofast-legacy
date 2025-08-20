@@ -19,6 +19,9 @@
         if (in_array(GOFAST_OG_ROLE_ADMIN,$members_roles[$uid])){
             $role=GOFAST_OG_ROLE_ADMIN;
         }
+        elseif (in_array(GOFAST_OG_ROLE_MANAGER, $members_roles[$uid])) {
+            $role = GOFAST_OG_ROLE_MANAGER;
+        }
         elseif (in_array(GOFAST_OG_ROLE_STANDARD,$members_roles[$uid])){
             $role=GOFAST_OG_ROLE_STANDARD;
         }

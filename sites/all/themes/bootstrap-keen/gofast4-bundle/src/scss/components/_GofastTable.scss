@@ -56,6 +56,9 @@
             }
             & .datatable-cell {
                 padding: 0.5rem 0.5rem !important;
+                &[data-autohide-enabled] {
+                    padding: 0 !important; // if cell is hidden, we don't want it to occupy any room
+                }
                 & .dropdown {
                     & i {
                         font-size: 1rem !important;
@@ -92,7 +95,6 @@
     & table {
         height: 0 !important;
         & tbody {
-            height: calc(100% - 30px) !important;
             & td[data-field='actions'] {
                 height: 100%;
             }
@@ -147,18 +149,24 @@
     overflow: visible;
 }
 
-#gofastAdvancedSearchResults > table,
-.datatable > table {
-    & > thead > tr > th:not(.datatable-cell-left) {
+#gofastAdvancedSearchHistory > table {
+  & > thead > tr > th {
+    &.datatable-cell-check > span {
+      font-weight: 400;
+      letter-spacing: 0px;
+    }
+    &[data-field=date], &[data-field=filters], &[data-field=query]{
+      padding: 0 !important;
+    }
+  }
+}
+
+#gofastAdvancedSearchResults > table, .datatable > table {
+    & > thead > tr > th:not(.datatable-cell-left, .datatable-cell-check) {
         text-align: center;
         & > span {
             text-align: center;
             display: inline-block !important;
-        }
-    }
-    & > tbody > tr > td:not(.datatable-cell-left) {
-        & span {
-            margin: auto;
         }
     }
 }

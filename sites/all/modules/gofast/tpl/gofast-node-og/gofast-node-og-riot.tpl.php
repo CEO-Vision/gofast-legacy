@@ -22,7 +22,6 @@
         }
         clearInterval(waitForConversationPageLoadInterval);
         jQuery("#gf_conversation").contents().find('body').addClass("space-context");
-        Gofast.Riot.initFetchEvent('#gf_conversation');
       }, 100);
     }
   })

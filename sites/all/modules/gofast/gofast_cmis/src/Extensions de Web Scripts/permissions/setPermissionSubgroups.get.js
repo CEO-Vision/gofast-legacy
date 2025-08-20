@@ -42,6 +42,12 @@ if (args.nodeRef !== null) {
       } catch (ex) {
       }
     }
+    function setTemplatePermissions(folderNode, groupName) {
+      folderNode.setPermission("Consumer", "GROUP_" + groupName + "_STANDARD");
+      folderNode.setPermission("GroupManager", "GROUP_" + groupName + "_GROUPMANAGER");
+      folderNode.setPermission("Coordinator", "GROUP_" + groupName + "_ADMIN");
+      folderNode.setPermission("Consumer", "GROUP_" + groupName);
+    }
 
     // Add the new permissions, will be blank until next LDAP synch cron
     if (grouptype === "private_space") {
@@ -62,20 +68,28 @@ if (args.nodeRef !== null) {
 		folderNode.setPermission("Consumer", "GROUP_" + unique_name_group);
     } else if (template_folder !== null) {
         renderArray.permissions.standard = {"Consumer": "GROUP_" + unique_name_group + "_STANDARD"};
+        renderArray.permissions.groupmanager = {"GroupManager": "GROUP_" + unique_name_group + "_GROUPMANAGER"};
         renderArray.permissions.coordinator = {"Coordinator": "GROUP_" + unique_name_group + "_ADMIN"};
         renderArray.permissions.consumer = {"Consumer": "GROUP_" + unique_name_group};
         
-        folderNode.setPermission("Consumer", "GROUP_" + unique_name_group + "_STANDARD");
-        folderNode.setPermission("Coordinator", "GROUP_" + unique_name_group + "_ADMIN");
-        folderNode.setPermission("Consumer", "GROUP_" + unique_name_group);
+        setTemplatePermissions(folderNode, unique_name_group);
     } else {
       renderArray.permissions.standard = {"Standard": "GROUP_" + unique_name_group + "_STANDARD"};
+      renderArray.permissions.groupmanager = {"GroupManager": "GROUP_" + unique_name_group + "_GROUPMANAGER"};
       renderArray.permissions.coordinator = {"Coordinator": "GROUP_" + unique_name_group + "_ADMIN"};
       renderArray.permissions.consumer = {"Consumer": "GROUP_" + unique_name_group};
 
       folderNode.setPermission("Standard", "GROUP_" + unique_name_group + "_STANDARD");
+      folderNode.setPermission("GroupManager", "GROUP_" + unique_name_group + "_GROUPMANAGER");
       folderNode.setPermission("Coordinator", "GROUP_" + unique_name_group + "_ADMIN");
       folderNode.setPermission("Consumer", "GROUP_" + unique_name_group);
+      // handle permissiosn for TEMPLATES folder as well
+      for each(var child in folderNode.children) {
+        if (child.name.equals("TEMPLATES")) {
+          setTemplatePermissions(child, unique_name_group);
+          break;
+        }
+      }
     }
     folderNode.save();
 

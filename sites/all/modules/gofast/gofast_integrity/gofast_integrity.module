@@ -36,6 +36,57 @@ function gofast_integrity_node_insert($node) {
 }
 
 /**
+ * Return all integrity failures, grouped by failure type.
+ */
+function gofast_integrity_get_failures() {
+    $query = db_select('gofast_integrity_failures', 'gif')
+    ->fields('gif', [])
+    ->execute()
+    ->fetchAll();
+    $integrity_failures = [];
+    foreach ($query as $record) {
+        $integrity_failures[$record->failure_type . "s"][] = json_decode($record->integrity_data);
+    }
+    return $integrity_failures;
+}
+
+/**
+ * Insert a new integrity failure entry to the database.
+ */
+function gofast_integrity_insert_failure($failure_data, $failure_type) {
+    $entity_reference = $failure_data["reference"];
+    $failed_check = "unknown";
+    $keys = array_keys($failure_data);
+    foreach ($keys as $key) {
+        if (str_starts_with($key, "invalid")) {
+            $failed_check = $key;
+            break;
+        }
+    }
+
+    try {
+        db_insert("gofast_integrity_failures")
+        ->fields([
+            'entity_reference' => $entity_reference,
+            'failure_type' => $failure_type,
+            'failed_check' => $failed_check,
+            'integrity_data' => json_encode($failure_data),
+        ])->execute();
+    } catch(Exception $e) {
+        watchdog('gofast_integrity', "Failed to insert @failed_check failure for reference @entity_reference on table gofast_integrity_failures, maybe due to unique constraint violations.", ["@failed_check" => $failed_check, "@entity_reference" => $entity_reference], WATCHDOG_ERROR);
+    }
+}
+
+/**
+ * Remove from the database all entries matching the given integrity failure type.
+ */
+function gofast_integrity_delete_failures($failure_type) {
+    db_delete("gofast_integrity_failures")
+        ->condition("failure_type", $failure_type)
+        ->execute();
+}
+
+/**
  * Write an error message to a file which can be inspected by a zabbix item
  * Then runs again 30 minutes later to remove the error message from the file
  */
@@ -102,7 +153,7 @@ function gofast_integrity_cron(){
     if(time() > intval($integrity_replication) + 3700 && date('H') == "04"){
         //Run the check each night once at 4 a.m.
         watchdog('gofast_integrity', "Run permissions check");
-        gofast_integrity_alfresco_run_replication_check();
+        gofast_integrity_alfresco_run_permissions_check();
         variable_set("gofast_integrity_permissions", time());
     }
     
@@ -213,11 +264,11 @@ function gofast_integrity_run_batch(){
             variable_set('gofast_integrity_folders_skip', 0);
             variable_set('gofast_integrity_spaces_skip', 0);
             variable_set('gofast_integrity_documents_skip', 0);
-            
-            variable_set("gofast_integrity_invalid_folders", array());
-            variable_set("gofast_integrity_invalid_spaces", array());
-            variable_set("gofast_integrity_invalid_documents", array());
-            
+
+            gofast_integrity_delete_failures("invalid_folder");
+            gofast_integrity_delete_failures("invalid_space");
+            gofast_integrity_delete_failures("invalid_document");
+
             //Prepare for next cron
             watchdog('gofast_integrity', "Starting integrity process at next cron");
             variable_set("gofast_integrity_run_state", GOFAST_INTEGRITY_RUN_STATE_FOLDERS);
@@ -274,27 +325,27 @@ function gofast_integrity_process_folders(){
         $metadata = gofast_integrity_alfresco_identify_folders_spaces_metadata($folders);
         if(count($metadata['invalid']) != 0){
             watchdog('gofast_integrity', count($metadata['invalid']) . " invalid folders identified in metadata check !");
-            $invalid_folders = variable_get("gofast_integrity_invalid_folders", array());
-            $invalid_folders = array_merge($invalid_folders, $metadata['invalid']);
-            variable_set("gofast_integrity_invalid_folders", $invalid_folders);
+            foreach($metadata['invalid'] as $invalid_folder) {
+                gofast_integrity_insert_failure($invalid_folder, "invalid_folder");
+            }
         }
         
         watchdog('gofast_integrity', "Starting folders permissions check");
         $permissions = gofast_integrity_alfresco_identify_folders_spaces_permissions($folders);
         if(count($permissions['invalid']) != 0){
             watchdog('gofast_integrity', count($permissions['invalid']) . " invalid folders identified in permissions check !");
-            $invalid_folders = variable_get("gofast_integrity_invalid_folders", array());
-            $invalid_folders = array_merge($invalid_folders, $permissions['invalid']);
-            variable_set("gofast_integrity_invalid_folders", $invalid_folders);
+            foreach($metadata['invalid'] as $invalid_folder) {
+                gofast_integrity_insert_failure($invalid_folder, "invalid_folder");
+            }
         }
 
         // watchdog('gofast_integrity', "Starting folders mirroring check");
         // $mirrors = gofast_integrity_alfresco_identify_folders_mirrors($folders);
         // if(count($mirrors['invalid']) != 0) {
         //     watchdog('gofast_integrity', count($permissions['invalid']) . " invalid folders identified in mirrors check !");
-        //     $invalid_folders = variable_get("gofast_integrity_invalid_folders", array());
-        //     $invalid_folders = array_merge($invalid_folders, $mirrors['invalid']);
-        //     variable_set("gofast_integrity_invalid_folders", $invalid_folders);
+        //     foreach($metadata['invalid'] as $invalid_folder) {
+        //         gofast_integrity_insert_failure($invalid_folder, "invalid_folder");
+        //     }
         // }
     
         watchdog('gofast_integrity', "End of folders batch, preparing folders integrity for next batch");
@@ -323,36 +374,36 @@ function gofast_integrity_process_spaces(){
         $metadata = gofast_integrity_alfresco_identify_folders_spaces_metadata($spaces);
         if(count($metadata['invalid']) != 0){
             watchdog('gofast_integrity', count($metadata['invalid']) . " invalid spaces identified in metadata check !");
-            $invalid_spaces = variable_get("gofast_integrity_invalid_spaces", array());
-            $invalid_spaces = array_merge($invalid_spaces, $metadata['invalid']);
-            variable_set("gofast_integrity_invalid_spaces", $invalid_spaces);
+            foreach($metadata['invalid'] as $invalid_space) {
+                gofast_integrity_insert_failure($invalid_space, "invalid_space");
+            }
         }
         
         watchdog('gofast_integrity', "Starting spaces permissions check");
         $permissions = gofast_integrity_alfresco_identify_folders_spaces_permissions($spaces);
         if(count($permissions['invalid']) != 0){
             watchdog('gofast_integrity', count($permissions['invalid']) . " invalid spaces identified in permissions check !");
-            $invalid_spaces = variable_get("gofast_integrity_invalid_spaces", array());
-            $invalid_spaces = array_merge($invalid_spaces, $permissions['invalid']);
-            variable_set("gofast_integrity_invalid_spaces", $invalid_spaces);
+            foreach($metadata['invalid'] as $invalid_space) {
+                gofast_integrity_insert_failure($invalid_space, "invalid_space");
+            }
         }
         
         watchdog('gofast_integrity', "Starting spaces ogs check");
         $ogs = gofast_integrity_drupal_identify_spaces($spaces);
         if(count($ogs['invalid']) != 0){
             watchdog('gofast_integrity', count($ogs['invalid']) . " invalid spaces identified in Drupal OG check !");
-            $invalid_spaces = variable_get("gofast_integrity_invalid_spaces", array());
-            $invalid_spaces = array_merge($invalid_spaces, $ogs['invalid']);
-            variable_set("gofast_integrity_invalid_spaces", $invalid_spaces);
+            foreach($metadata['invalid'] as $invalid_space) {
+                gofast_integrity_insert_failure($invalid_space, "invalid_space");
+            }
         }
 
         watchdog('gofast_integrity', "Starting spaces ldap sync check");
         $ldaps = gofast_integrity_drupal_check_spaces_ldap_sync($spaces);
         if(count($ldaps['invalid']) != 0){
             watchdog('gofast_integrity', count($ldaps['invalid']) . " invalid spaces identified in Drupal ldap sync check !");
-            $invalid_spaces = variable_get("gofast_integrity_invalid_spaces", array());
-            $invalid_spaces = array_merge($invalid_spaces, $ldaps['invalid']);
-            variable_set("gofast_integrity_invalid_spaces", $invalid_spaces);
+            foreach($metadata['invalid'] as $invalid_space) {
+                gofast_integrity_insert_failure($invalid_space, "invalid_space");
+            }
         }
         
         watchdog('gofast_integrity', "End of spaces batch, preparing spaces integrity for next batch");
@@ -383,45 +434,45 @@ function gofast_integrity_process_documents(){
         $metadata = gofast_integrity_alfresco_identify_documents_metadata($documents);
         if(count($metadata['invalid']) != 0){
             watchdog('gofast_integrity', count($metadata['invalid']) . " invalid documents identified in metadata check !");
-            $invalid_documents = variable_get("gofast_integrity_invalid_documents", array());
-            $invalid_documents = array_merge($invalid_documents, $metadata['invalid']);
-            variable_set("gofast_integrity_invalid_documents", $invalid_documents);
+            foreach($metadata['invalid'] as $invalid_document) {
+                gofast_integrity_insert_failure($invalid_document, "invalid_document");
+            }
         }
         
         watchdog('gofast_integrity', "Starting documents aspects check");
         $aspects = gofast_integrity_alfresco_identify_documents_aspects($documents);
         if(count($aspects['invalid']) != 0){
             watchdog('gofast_integrity', count($aspects['invalid']) . " invalid documents identified in aspects check !");
-            $invalid_documents = variable_get("gofast_integrity_invalid_documents", array());
-            $invalid_documents = array_merge($invalid_documents, $aspects['invalid']);
-            variable_set("gofast_integrity_invalid_documents", $invalid_documents);
+            foreach($metadata['invalid'] as $invalid_document) {
+                gofast_integrity_insert_failure($invalid_document, "invalid_document");
+            }
         }
         
         watchdog('gofast_integrity', "Starting documents permissions check");
         $permissions = gofast_integrity_alfresco_identify_documents_permissions($documents);
         if(count($permissions['invalid']) != 0){
             watchdog('gofast_integrity', count($permissions['invalid']) . " invalid documents identified in permissions check !");
-            $invalid_documents = variable_get("gofast_integrity_invalid_documents", array());
-            $invalid_documents = array_merge($invalid_documents, $permissions['invalid']);
-            variable_set("gofast_integrity_invalid_documents", $invalid_documents);
+            foreach($metadata['invalid'] as $invalid_document) {
+                gofast_integrity_insert_failure($invalid_document, "invalid_document");
+            }
         }
         
         watchdog('gofast_integrity', "Starting documents Drupal metadata check");
         $drupal_metadata = gofast_integrity_drupal_identify_documents_metadata($documents);
         if(count($drupal_metadata['invalid']) != 0){
             watchdog('gofast_integrity', count($drupal_metadata['invalid']) . " invalid documents identified in Drupal metadata check !");
-            $invalid_documents = variable_get("gofast_integrity_invalid_documents", array());
-            $invalid_documents = array_merge($invalid_documents, $drupal_metadata['invalid']);
-            variable_set("gofast_integrity_invalid_documents", $invalid_documents);
+            foreach($metadata['invalid'] as $invalid_document) {
+                gofast_integrity_insert_failure($invalid_document, "invalid_document");
+            }
         }
         
         watchdog('gofast_integrity', "Starting documents Drupal OG check");
         $ogs = gofast_integrity_drupal_identify_documents_ogs($documents);
         if(count($ogs['invalid']) != 0){
             watchdog('gofast_integrity', count($ogs['invalid']) . " invalid documents identified in Drupal OG check !");
-            $invalid_documents = variable_get("gofast_integrity_invalid_documents", array());
-            $invalid_documents = array_merge($invalid_documents, $ogs['invalid']);
-            variable_set("gofast_integrity_invalid_documents", $invalid_documents);
+            foreach($metadata['invalid'] as $invalid_document) {
+                gofast_integrity_insert_failure($invalid_document, "invalid_document");
+            }
         }
         
         watchdog('gofast_integrity', "End of documents batch, preparing documents integrity for next batch");

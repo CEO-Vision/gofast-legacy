@@ -4,3 +4,24 @@
   //   min-width: 600px;
   // }
 }
+
+#available_process_table {
+  table-layout: fixed;
+  .gofast_wf_type{
+    width: 25%;
+  }
+  .gofast_wf_buttons{
+    width: 100px;
+  }
+  .gofast_wf_profil{
+    width: auto;
+  }
+  .select2-selection.select2-selection--single .select2-selection__rendered {
+    padding-right: 1rem;
+    & > div{
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+  }
+}

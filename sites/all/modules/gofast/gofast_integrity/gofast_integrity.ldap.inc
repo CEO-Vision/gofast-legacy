@@ -46,8 +46,9 @@ function gofast_integrity_drupal_check_spaces_ldap_sync($items){
             continue;
         }
         $common_name = explode("cn=", $dn);
-        //No cn is filled Drupal-side, something is wrong
+        //No CN is filled Drupal-side, something is wrong
         if (!isset($common_name[1])) {
+            $item["invalid_no_cn_filled_on_drupal"] = "No CN is filled Drupal-side, something is wrong";
             $invalid[] = $item;
             continue;
         }
@@ -59,12 +60,14 @@ function gofast_integrity_drupal_check_spaces_ldap_sync($items){
 
         //No data = no match, something is wrong
         if (!isset($ldap_result[0])) {
+            $item["invalid_no_matching_ldap_data"] = "No LDAP data matching Drupal data";
             $invalid[] = $item;
             continue;
         }
         $gid_from_ldap_server = preg_replace("/\D*/", "", $ldap_result[0]);
         //Data don't match, something is wrong
         if ($gid_from_ldap_server != $gid_from_ldap_field) {
+            $item["invalid_no_matching_ldap_gid"] = "GID on LDAP doesn't match GID on Drupal";
             $invalid[] = $item;
             continue;
         }
@@ -76,6 +79,7 @@ function gofast_integrity_drupal_check_spaces_ldap_sync($items){
         $alf_item = gofast_cmis_item_get($alf_ref);
         //We retrieved a folder or the data doesn't match, either case something is wrong
         if (!isset($alf_item->properties["gofast:nid"]) || $alf_item->properties["gofast:nid"] != $gid_from_ldap_field) {
+            $item["invalid_gofast_nid_prop"] = "Gofast:nid prop on Alfresco doesn't match LDAP GID";
             $invalid[] = $item;
             continue;
         }

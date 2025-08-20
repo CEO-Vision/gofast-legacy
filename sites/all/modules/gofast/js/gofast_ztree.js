@@ -187,8 +187,9 @@
               }
             });
           }
-          var ztreeAsyncResult = JSON.parse(msg);
-          if(ztreeAsyncResult[0].path_warnings) {
+
+          var ztreeAsyncResult = msg ? JSON.parse(msg) : null;
+          if (ztreeAsyncResult?.[0]?.path_warnings) {
             Drupal.settings[ztree_component_id].path_warnings = ztreeAsyncResult[0].path_warnings;
           }
 
@@ -245,7 +246,7 @@
               }));
             }
           }
-            
+
           //Update popup size.
           var in_modal = $('#' + treeId).parents('div#modalContent').length;
           if (in_modal === 1 && !$(".ztree-widget").hasClass("resize_processed")) {
@@ -268,7 +269,7 @@
                   element.parent().hide();
                   //Hiding checkbox of Sites
                   element.parent().parent().children('span').css("display", "none");
-              }             
+              }
               if(("#alfresco-item-node-form") !== undefined || ('#article-node-form') !== undefined){
                   $('.roots_open').hide();
               }
@@ -278,7 +279,7 @@
               }
             });
           }
-          
+
           Drupal.attachBehaviors();
         }
 
@@ -425,7 +426,7 @@
                   }
                   treeNode.is_mirror = true;
                   // change icon
-                  const icon = treeNode.icon.split("/").slice(0, -1).join("/") + "/folders-primary.svg"; 
+                  const icon = treeNode.icon.split("/").slice(0, -1).join("/") + "/folders-primary.svg";
                   treeNode.icon = icon;
                   zTreeObj.updateNode(treeNode);
                   $("#" + treeNode.tId + "_ico").css("background", "url(" + icon + ") 0 0 no-repeat");
@@ -470,7 +471,7 @@
                 $('#' + $('[id^=edit-templates]').attr('id') + ' option:contains(' + treeNode.gid + ')').prop('selected', true);
                 $('#' + $('[id^=edit-language]').attr('id') + ' option[value=' + $('[id^=edit-templates]').val().split('|:|')[4] + ']').prop('selected', true);
                 $('#' + $('[id^=edit-language]').attr('id') + ' option[value=' + $('[id^=edit-templates]').val().split('|:|')[4] + ']').trigger('change');
-               
+
                 if ($('[id^=edit-reference]').val() !== '') {
                   $('[id^=edit-reference]').val('');
                   //$('#edit-title').val('');
@@ -480,7 +481,7 @@
                   $('[id^=edit-empty-template]').val('none');
                   //$('#edit-title').val('');
                 }
-                
+
                 //temporary fix
                 if(window.location.hash == '#createFromTemplate'){
                     jQuery('#create_from_template').click();
@@ -617,7 +618,7 @@
                 if ($(".span_temp_emplacement").length === 0) {
                   $('.ui-locations-check i').hide();
                 }
-                
+
                 if($('#is-from-mirror').length == 1){deletable = false;}
                 if(deletable === false ){
                   var message = Drupal.t("You are not permitted to remove a location you do not have access to. ", {}, {'context': 'gofast'});
@@ -627,7 +628,7 @@
                 }
                 widget_locations.append(ui_location_checkbox);
               }
-             
+
               $('#edit-locations span[value="' + node_id + '"]').parent().attr('data-deletable', deletable).attr('data-tid', node_tId);
               $(".span_temp_emplacement[id='emplacement_tag" + get_clean_path(linkid) + "']").bind("click", function () {
                 html_remove_location($(this));
@@ -648,7 +649,7 @@
               ztree_update_node(link);
               let link_tId = link.attr("data-tId");
               $("#" + link_tId + "_a").removeClass("curSelectedNode");
-              $("#" + link_tId + " .ztree-fake-node").remove(); 
+              $("#" + link_tId + " .ztree-fake-node").remove();
               link.remove();
             } else {
               if($('#is-from-mirror').length == 1){
@@ -996,7 +997,7 @@
                 var node_id = window.location.pathname.split('/')[2];
                 url_async = (isNaN(+node_id) || Gofast._settings.isEssential) ? url_async : url_async + "?node=" + node_id;
             }
-            
+
             if (ztree_component_id == "ztree_component_content_templates"){
               url_async = "/ztree_location/async?template=true";
             }
@@ -1105,7 +1106,7 @@
               if($("#gofast-taxonomy-manage-folder-locations-form").length != 0){
                 var folder_reference = $("#gofast-taxonomy-manage-folder-locations-form #edit-selected-folder").val();
               }
-              
+
               // param $_REQUEST["node"] passed in gofast_ztree_async_json
               if(folder_reference != null){
                 setting.async.otherParam = {"node": nid, "folder_reference" : folder_reference};
@@ -1359,7 +1360,7 @@
                   element.parent().hide();
                   //Hiding checkbox of Sites
                   element.parent().parent().children('span').css("display", "none");
-              } 
+              }
               if (element.text() === "FOLDERS TEMPLATES" && element.parents("form").length && element.parents("form").attr('id') !== 'gofast-ajax-file-browser-add-template-folder-form' && element.parents(".ztree").attr('id') !== "ztree_component_content_templates_folders"){
                   element.parent().parent().hide();
               }

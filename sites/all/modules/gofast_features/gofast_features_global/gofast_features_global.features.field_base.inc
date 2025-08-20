@@ -251,6 +251,22 @@ function gofast_features_global_field_default_field_bases() {
     'type' => 'taxonomy_term_reference',
   );
 
+  // Exported field_base: 'field_bonita_id'.
+  $field_bases['field_bonita_id'] = array(
+    'active' => 1,
+    'cardinality' => 1,
+    'deleted' => 0,
+    'entity_id_type' => NULL,
+    'entity_types' => array(),
+    'field_name' => 'field_bonita_id',
+    'indexes' => array(),
+    'locked' => 0,
+    'module' => 'number',
+    'settings' => array(),
+    'translatable' => 0,
+    'type' => 'number_integer',
+  );
+
   // Exported field_base: 'field_category'.
   $field_bases['field_category'] = array(
     'active' => 1,
@@ -1508,6 +1524,33 @@ function gofast_features_global_field_default_field_bases() {
     'type' => 'list_boolean',
   );
 
+  // Exported field_base: 'field_entity'.
+  $field_bases['field_entity'] = array(
+    'active' => 1,
+    'cardinality' => 1,
+    'deleted' => 0,
+    'entity_types' => array(),
+    'field_name' => 'field_entity',
+    'indexes' => array(
+      'tid' => array(
+        0 => 'tid',
+      ),
+    ),
+    'locked' => 0,
+    'module' => 'taxonomy',
+    'settings' => array(
+      'allowed_values' => array(
+        0 => array(
+          'vocabulary' => 'entity',
+          'parent' => 0,
+        ),
+      ),
+      'options_list_callback' => 'i18n_taxonomy_allowed_values',
+    ),
+    'translatable' => 0,
+    'type' => 'taxonomy_term_reference',
+  );
+
   // Exported field_base: 'field_lien'.
   $field_bases['field_lien'] = array(
     'active' => 1,
@@ -1755,6 +1798,22 @@ function gofast_features_global_field_default_field_bases() {
     'type' => 'text',
   );
 
+  // Exported field_base: 'field_password_expiration_date'.
+  $field_bases['field_password_expiration_date'] = array(
+    'active' => 1,
+    'cardinality' => 1,
+    'deleted' => 0,
+    'entity_id_type' => NULL,
+    'entity_types' => array(),
+    'field_name' => 'field_password_expiration_date',
+    'indexes' => array(),
+    'locked' => 0,
+    'module' => 'number',
+    'settings' => array(),
+    'translatable' => 0,
+    'type' => 'number_integer',
+  );
+
   // Exported field_base: 'field_person_in_charge'.
   $field_bases['field_person_in_charge'] = array(
     'active' => 1,
@@ -1880,6 +1939,41 @@ function gofast_features_global_field_default_field_bases() {
     'settings' => array(),
     'translatable' => 0,
     'type' => 'text_long',
+  );
+
+  // Exported field_base: 'field_anonymization'.
+  $field_bases['field_anonymization'] = array(
+    'active' => 1,
+    'cardinality' => 1,
+    'deleted' => 0,
+    'entity_types' => array(),
+    'field_name' => 'field_anonymization',
+    'indexes' => array(
+      'target_id' => array(
+        0 => 'target_id',
+      ),
+    ),
+    'locked' => 0,
+    'module' => 'entityreference',
+    'settings' => array(
+      'handler' => 'base',
+      'handler_settings' => array(
+        'behaviors' => array(
+          'views-select-list' => array(
+            'status' => 0,
+          ),
+        ),
+        'sort' => array(
+          'type' => 'none',
+        ),
+        'target_bundles' => array(
+          'alfresco_item' => 'alfresco_item',
+        ),
+      ),
+      'target_type' => 'node',
+    ),
+    'translatable' => 0,
+    'type' => 'entityreference',
   );
 
   // Exported field_base: 'field_reference'.
@@ -2443,6 +2537,27 @@ function gofast_features_global_field_default_field_bases() {
     'translatable' => 0,
     'type' => 'text',
   );
+    // Exported field_base: 'field_task_color'.
+    $field_bases['field_task_color'] = array(
+      'active' => 1,
+      'cardinality' => 1,
+      'deleted' => 0,
+      'entity_id_type' => NULL,
+      'entity_types' => array(),
+      'field_name' => 'field_task_color',
+      'indexes' => array(
+        'format' => array(
+          0 => 'format',
+        ),
+      ),
+      'locked' => 0,
+      'module' => 'text',
+      'settings' => array(
+        'max_length' => 255,
+      ),
+      'translatable' => 0,
+      'type' => 'text',
+    );
 
   // Exported field_base: 'group_access'.
   $field_bases['group_access'] = array(
@@ -2925,6 +3040,25 @@ function gofast_features_global_field_default_field_bases() {
     'type' => 'list_boolean',
   );
 
+  // Exported field_base: 'search_advanced_history'.
+  $field_bases['search_advanced_history'] = array(
+    'active' => 1,
+    'cardinality' => 1,
+    'deleted' => 0,
+    'entity_types' => array(),
+    'field_name' => 'search_advanced_history',
+    'indexes' => array(
+      'format' => array(
+        0 => 'format',
+      ),
+    ),
+    'locked' => 0,
+    'module' => 'text',
+    'settings' => array(),
+    'translatable' => 0,
+    'type' => 'text_long',
+  );
+
   // Exported field_base: 'field_external_link_custom_data'.
   $field_bases['field_external_link_custom_data'] = array(
     'active' => 1,
@@ -2945,5 +3079,93 @@ function gofast_features_global_field_default_field_bases() {
     'type' => 'text_long',
   );
   
+  $field_bases['field_recurrence'] = [
+    'field_name' => 'field_recurrence',
+    'active' => 1,
+    'cardinality' => 1,
+    'deleted' => 0,
+    'entity_id_type' => NULL,
+    'entity_types' => [],
+    'indexes' => [],
+    'locked' => 0,
+    'module' => 'text',
+    'type' => 'text',
+    'settings' => [
+      'max_length' => 16_383, // 2^14 - 1
+    ],
+    'translatable' => 0,
+  ];
+
+  $field_bases['field_recurrence_end_date'] = [
+    'field_name' => 'field_recurrence_end_date',
+    'active' => 1,
+    'cardinality' => 1,
+    'deleted' => 0,
+    'entity_id_type' => NULL,
+    'entity_types' => [],
+    'indexes' => [
+      'value' => [
+        0 => 'value',
+      ]
+    ],
+    'locked' => 0,
+    'module' => 'date',
+    'type' => 'datetime',
+    'settings' => [
+      'granularity' => [
+        'day' => 'day',
+        'hour' => 'hour',
+        'minute' => 'minute',
+        'month' => 'month',
+        'second' => 0,
+        'year' => 'year',
+      ],
+      'timezone_db' => 'UTC',
+      'todate' => '',
+      'tz_handling' => 'site',
+    ],
+    'translatable' => 0,
+  ];
+  
+  // Exported field_base: 'field_custom_properties'.
+  $field_bases['field_custom_properties'] = array(
+    'active' => 1,
+    'cardinality' => 1,
+    'deleted' => 0,
+    'entity_id_type' => NULL,
+    'entity_types' => array(),
+    'field_name' => 'field_custom_properties',
+    'indexes' => array(
+      'format' => array(
+        0 => 'format',
+      ),
+    ),
+    'locked' => 0,
+    'module' => 'text',
+    'settings' => array(),
+    'translatable' => 0,
+    'type' => 'text_long',
+  );
+
+  // Exported field_base: 'field_custom_theme'.
+  $field_bases['field_custom_theme'] = array(
+    'active' => 1,
+    'cardinality' => 1,
+    'deleted' => 0,
+    'entity_id_type' => NULL,
+    'entity_types' => array(),
+    'field_name' => 'field_custom_theme',
+    'indexes' => array(
+      'format' => array(
+        0 => 'format',
+      ),
+    ),
+    'locked' => 0,
+    'module' => 'text',
+    'settings' => array(),
+    'translatable' => 0,
+    'type' => 'text_long',
+  );
+
   return $field_bases;
 }

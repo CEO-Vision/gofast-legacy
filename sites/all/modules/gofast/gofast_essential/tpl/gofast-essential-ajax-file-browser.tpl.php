@@ -60,7 +60,8 @@
               print '<li class="navi-item">' . gofast_dropdown_link(t('Share by email', array(), array('context' => 'gofast')), '/modal/nojs/manage-mail-sharing', 'linksharing_open_span', 'ctools-use-modal manage-mail-sharing', 'fa fa-envelope', $attr) . '</li>';
               print '<li class="navi-item">' . gofast_dropdown_link(t('Archive content'), '/modal/nojs/bulk-archive', 'archive_open_span', 'ctools-use-modal bulk-archive', 'fa fa-archive', $attr) . '</li>';
               print '<li class="navi-item">' . gofast_dropdown_link(t('Add to cart', array(), array('context' => 'gofast')), '/modal/nojs/bulk_add_to_cart', 'cart_open_span', 'ctools-use-modal add_to_cart', 'fas fa-shopping-basket', $attr) . '</li>';
-              print '<li class="navi-item">' .  gofast_dropdown_link(t('Compress', array(), array('context' => 'gofast:ajax_file_browser')), '/modal/nojs/compress-files', 'compress_files', 'ctools-use-modal compress-files', 'fa fa-file-archive-o n-color', $attr) . '</li>';
+              print '<li class="navi-item">' . gofast_dropdown_link(t('Compress', array(), array('context' => 'gofast:ajax_file_browser')), '/modal/nojs/compress-files', 'compress_files', 'ctools-use-modal compress-files', 'fa fa-file-archive-o n-color', $attr) . '</li>';
+              print '<li class="navi-item">' . gofast_dropdown_link(t('Extract', array(), array('context' => 'gofast')), '/modal/nojs/unzip-files', 'unzip_files', 'ctools-use-modal unzip-files', 'fa fa-file-archive-o n-color', $attr) . '</li>';
              
               print '<li class="navi-item">' . gofast_dropdown_link(t('Manage Metadata', array(), array('context' => 'gofast')), '/modal/nojs/manage-taxonomy', 'taxonomy_open_span', 'ctools-use-modal bulk_taxonomy manage-taxonomy gofast_display_none', 'fa fa-tags') . '</li>';
               print '<li class="navi-item">' . gofast_dropdown_link(t('Share/Add locations', array(), array('context' => 'gofast')), '/modal/nojs/add-locations', 'locations_open_span', 'ctools-use-modal bulk_add_locations add-locations gofast_display_none', 'fa fa-share-alt n-color') . '</li>';
@@ -68,7 +69,9 @@
               print '<li class="navi-item">' . gofast_dropdown_link(t('Share by email', array(), array('context' => 'gofast')), '/modal/nojs/manage-mail-sharing', 'linksharing_open_span', 'ctools-use-modal bulk_mail_sharing manage-mail-sharing gofast_display_none', 'fa fa-envelope') . '</li>';
               print '<li class="navi-item">' . gofast_dropdown_link(t('Archive content'), '/modal/nojs/bulk-archive', 'taxonomy_open_span', 'ctools-use-modal bulk_archive bulk-archive gofast_display_none', 'fa fa-archive') . '</li>';
               print '<li class="navi-item">' . gofast_dropdown_link(t('Add to cart'), '/modal/nojs/bulk_add_to_cart', 'taxonomy_open_span', 'ctools-use-modal bulk_add_to_cart gofast_display_none', 'fas fa-shopping-basket') . '</li>';
-              print '<li class="navi-item">' . gofast_dropdown_link(t('Compress'), '/modal/nojs/compress-files', 'taxonomy_open_span', 'ctools-use-modal compress_files gofast_display_none', 'fa fa-file-archive-o n-color') . '</li>';         ?>
+              print '<li class="navi-item">' . gofast_dropdown_link(t('Compress'), '/modal/nojs/compress-files', 'taxonomy_open_span', 'ctools-use-modal compress_files gofast_display_none', 'fa fa-file-archive-o n-color') . '</li>';
+              print '<li class="navi-item">' . gofast_dropdown_link(t('Extract'), '/modal/nojs/unzip-files', 'taxonomy_open_span', 'ctools-use-modal unzip_files gofast_display_none', 'fa fa-file-archive-o n-color') . '</li>';
+              ?>
              </div>
             </ul>
           </div>
@@ -83,7 +86,7 @@
           <?php print gofast_dropdown_link('', '/modal/nojs/bulk_add_to_cart', 'builk_open_span', 'ctools-use-modal bulk_add_to_cart gofast_display_none', 'fa fa-share-alt n-color'); ?>
           <?php if (gofast_essential_is_essential()) { ?>
             <div id="" class="btn-group">
-              <button type="button" id="file_browser_tooolbar_contextual_actions" class="btn btn-white btn-sm dropdown-toggle" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false"><i class="fa fa-bars" aria-hidden="true" disabled></i></button>
+              <button type="button" id="file_browser_tooolbar_contextual_actions" class="btn btn-white btn-sm dropdown-toggle" aria-haspopup="true" aria-expanded="false"><i class="fa fa-bars" aria-hidden="true" disabled></i></button>
             </div>
           <?php } ?>
         </div>

@@ -91,15 +91,15 @@
                 <div class="w-100 px-8">
                   <div class="d-flex justify-content-between">
                     <div id="documents_chart_container_mode_buttons" class="btn-group btn-group-sm" role="group" >
-                        <button id="space_document_charts_btn_group_evolution" type="button" data-mode="evolution" class="btn btn-default document_charts_btn_group_evolution default-value"><?php print t('Evolution', array(), array('context' => 'gofast:stats')); ?></button>
-                        <button id="space_document_charts_btn_group_periodic" type="button" data-mode="periodic" class="btn btn-default document_charts_btn_group_periodic"><?php print t('Periodic', array(), array('context' => 'gofast:stats')); ?></button>
+                        <button id="space_document_charts_btn_group_evolution" type="button" data-filter="evolution" class="btn btn-default document_charts_btn_group_evolution default-value"><?php print t('Evolution', array(), array('context' => 'gofast:stats')); ?></button>
+                        <button id="space_document_charts_btn_group_periodic" type="button" data-filter="periodic" class="btn btn-default document_charts_btn_group_periodic"><?php print t('Periodic', array(), array('context' => 'gofast:stats')); ?></button>
                     </div>
                     <div id="documents_chart_container_period_buttons" class="btn-group btn-group-sm" role="group" >
-                        <button id="space_document_charts_btn_group_1w" type="button" data-period="1week" class="btn btn-default document_charts_btn_group_1w"><?php print t('1W', array(), array('context' => 'gofast:stats')); ?></button>
-                        <button id="space_document_charts_btn_group_1m" type="button" data-period="1month" class="btn btn-default document_charts_btn_group_1m default-value"><?php print t('1M', array(), array('context' => 'gofast:stats')); ?></button>
-                        <button id="space_document_charts_btn_group_1y" type="button" data-period="1year" class="btn btn-default document_charts_btn_group_1y"><?php print t('1Y', array(), array('context' => 'gofast:stats')); ?></button>
-                        <button id="space_document_charts_btn_group_2y" type="button" data-period="2year" class="btn btn-default document_charts_btn_group_2y"><?php print t('2Y', array(), array('context' => 'gofast:stats')); ?></button>
-                        <button id="space_document_charts_btn_group_3y" type="button" data-period="3year" class="btn btn-default document_charts_btn_group_3y"><?php print t('3Y', array(), array('context' => 'gofast:stats')); ?></button>
+                        <button id="space_document_charts_btn_group_1w" type="button" data-filter="1week" class="btn btn-default document_charts_btn_group_1w"><?php print t('1W', array(), array('context' => 'gofast:stats')); ?></button>
+                        <button id="space_document_charts_btn_group_1m" type="button" data-filter="1month" class="btn btn-default document_charts_btn_group_1m default-value"><?php print t('1M', array(), array('context' => 'gofast:stats')); ?></button>
+                        <button id="space_document_charts_btn_group_1y" type="button" data-filter="1year" class="btn btn-default document_charts_btn_group_1y"><?php print t('1Y', array(), array('context' => 'gofast:stats')); ?></button>
+                        <button id="space_document_charts_btn_group_2y" type="button" data-filter="2year" class="btn btn-default document_charts_btn_group_2y"><?php print t('2Y', array(), array('context' => 'gofast:stats')); ?></button>
+                        <button id="space_document_charts_btn_group_3y" type="button" data-filter="3year" class="btn btn-default document_charts_btn_group_3y"><?php print t('3Y', array(), array('context' => 'gofast:stats')); ?></button>
                     </div>
                   </div>
                 </div>
@@ -115,9 +115,9 @@
                   <div id="radar_chart_container" class="w-100 d-flex justify-content-center card-body flex-column radar-chart-container px-0 pb-0">
                     <div class="d-flex justify-content-center">
                       <div id="documents_radar_container_metadata_buttons" class="btn-group btn-group-sm radar-chart-btn-group" role="group">
-                          <button id="space_document_charts_btn_group_category" type="button" class="btn btn-default default-value" data-metadata="category"><?php print t('Category', array(), array('context' => 'gofast:stats')); ?></button>
-                          <button id="space_document_charts_btn_group_state" type="button" class="btn btn-default" data-metadata="state"><?php print t('State', array(), array('context' => 'gofast:stats')); ?></button>
-                          <button id="space_document_charts_btn_group_criticity" type="button" class="btn btn-default" data-metadata="criticity"><?php print t('Criticity', array(), array('context' => 'gofast:stats')); ?></button>
+                          <button id="space_document_charts_btn_group_category" type="button" class="btn btn-default default-value" data-filter="category"><?php print t('Category', array(), array('context' => 'gofast:stats')); ?></button>
+                          <button id="space_document_charts_btn_group_state" type="button" class="btn btn-default" data-filter="state"><?php print t('State', array(), array('context' => 'gofast:stats')); ?></button>
+                          <button id="space_document_charts_btn_group_criticity" type="button" class="btn btn-default" data-filter="criticity"><?php print t('Criticity', array(), array('context' => 'gofast:stats')); ?></button>
                       </div>
                     </div>
                     <div class="separator separator-solid mt-5 separator-border-2 w-100 mx-auto"></div>

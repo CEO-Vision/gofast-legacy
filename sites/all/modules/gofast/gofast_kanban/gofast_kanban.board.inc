@@ -258,3 +258,27 @@ function gofast_kanban_board_get_max_column_index($kanban_nid) {
   
   return $max_index;
 }
+
+/**
+ * Given a kanban board nid, returns every tags which exist in the board
+ * but no longer exist in any card of the board.
+ * @param int $kanban_nid
+ * @return int[] array of term ids
+ */
+function gofast_kanban_board_orphan_get_tids($kanban_nid) {
+  $query = db_select('field_data_field_tags', 'kanban_fdft')
+  ->fields('kanban_fdft', array('field_tags_tid'))
+  ->condition('kanban_fdft.bundle', 'kanban')
+  ->distinct(TRUE);
+
+  // Use a NOT EXISTS clause to exclude field_tags_tid values that also have the bundle 'task'.
+  $subquery = db_select('field_data_field_tags', 'task_fdft')
+    ->fields('task_fdft')
+    ->condition('task_fdft.bundle', 'task')
+    ->where('task_fdft.field_tags_tid = kanban_fdft.field_tags_tid');
+
+  $query->condition(db_and()->notExists($subquery));
+  $result = $query->execute();
+  $field_tags_tids = $result->fetchCol();
+  return $field_tags_tids;
+}

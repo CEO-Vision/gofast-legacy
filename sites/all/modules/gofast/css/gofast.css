@@ -392,7 +392,8 @@ body > .popover-ztree{
 }
 
 .tooltip .tooltip-inner{
-    min-width:max-content;
+  min-width: min-content;
+  max-width: 1000px;
 }
 
 .ztree-location-widget {
@@ -602,8 +603,13 @@ a.level0[title="Sites"]{
   box-shadow: 1px 1px 4px rgba(0, 0, 0, 0.2);
 }
 
-.modal-content {
-    resize: both;
+.modal-content[data-resizable='true'] {
+  resize: both;
+}
+
+/** don't display slides in modal until it's properly dimensioned */
+.modal-content .slick {
+  display: none;
 }
 
 /************************************/
@@ -1441,10 +1447,17 @@ nav#gofast_nav>div>ul.menu>li.last {
 
 #block-user-login {
   width: 100%;
-  max-width: 350px;
   min-width: 175px;
   margin: auto;
   text-align: center;
+}
+
+#block-user-login .login-max-width {
+  max-width: 350px;
+}
+
+#block-user-login .login-double-max-width {
+  max-width: 700px;
 }
 
 #block-user-login-messages{
@@ -2323,7 +2336,7 @@ body.gf-full-page.navbar-is-fixed-top{
       height:100%;
   }
 
-  .col-xs-1, .col-sm-1, .col-md-1, .col-lg-1, .col-xs-2, .col-sm-2, .col-md-2, .col-lg-2, .col-xs-3, .col-sm-3, .col-md-3, .col-lg-3, .col-xs-4, .col-sm-4, .col-md-4, .col-lg-4, .col-xs-5, .col-sm-5, .col-md-5, .col-lg-5, .col-xs-6, .col-sm-6, .col-md-6, .col-lg-6, .col-xs-7, .col-sm-7, .col-md-7, .col-lg-7, .col-xs-8, .col-sm-8, .col-md-8, .col-lg-8, .col-xs-9, .col-sm-9, .col-md-9, .col-lg-9, .col-xs-10, .col-sm-10, .col-md-10, .col-lg-10, .col-xs-11, .col-sm-11, .col-md-11, .col-lg-11, .col-xs-12, .col-sm-12, .col-md-12, .col-lg-12 {
+  .col-xs-1, .col-2xl-1, .col-sm-1, .col-md-1, .col-lg-1, .col-xs-2, .col-2xl-2, .col-sm-2, .col-md-2, .col-lg-2, .col-xs-3, .col-2xl-3, .col-sm-3, .col-md-3, .col-lg-3, .col-xs-4, .col-2xl-4, .col-sm-4, .col-md-4, .col-lg-4, .col-xs-5, .col-2xl-5, .col-sm-5, .col-md-5, .col-lg-5, .col-xs-6, .col-2xl-6, .col-sm-6, .col-md-6, .col-lg-6, .col-xs-7, .col-2xl-7, .col-sm-7, .col-md-7, .col-lg-7, .col-xs-8, .col-2xl-8, .col-sm-8, .col-md-8, .col-lg-8, .col-xs-9, .col-2xl-9, .col-sm-9, .col-md-9, .col-lg-9, .col-xs-10 .col-2xl-10, .col-sm-10, .col-md-10, .col-lg-10, .col-xs-11 .col-2xl-11, .col-sm-11, .col-md-11, .col-lg-11, .col-xs-12 .col-2xl-12, .col-sm-12, .col-md-12, .col-lg-12 {
   position: relative;
   min-height: 1px;
   padding-left: 6px !important;
@@ -2440,8 +2453,9 @@ div.form-builder-placeholder-hover{
     height: 100% !important;
 }
 
-body{
-    overflow: auto !important;
+/* Prevent scroll issue on tablet but prevent breaking scroll on d7 admin pages*/
+body:not(.not-front){ 
+    overflow: hidden !important;
 }
 
 
@@ -2489,7 +2503,7 @@ a.username{
     margin-bottom: 20px;
 }
 
-#edit-saml-sp-drupal-login-links > a{
+.saml_sp_drupal_login-links .btn-primary a {
     color: white;
 }
 
@@ -2928,7 +2942,7 @@ a.username{
     height: 2.3em;
 }
 
-#forum_explorer_header {
+#forum_explorer_header, #book_explorer_header, #side_explorer_header {
     padding: 10px;
 }
 
@@ -2938,39 +2952,39 @@ a.username{
 
 /*** BOOKS IN THE FILE BROWSER ****************************************************************/
 
-.book-explorer-title {
+.book-explorer-title , .side-explorer-title {
     color: #777;
     font-weight: bold;
     cursor: initial;
     height: 32px;
 }
 
-.book-explorer-element-visible {
+.book-explorer-element-visible, .side-explorer-element-visible {
     visibility: visible;
     height: 36px;
     padding-top: 0.4em;
     padding-bottom: 0.4em;
 }
 
-.book-explorer-element-collapsed {
+.book-explorer-element-collapsed, .side-explorer-element-collapsed {
     visibility: collapse;
     height: 0px;
     padding: 0em;
 }
 
-.book-explorer-element-seechild {
+.book-explorer-element-seechild, .side-explorer-element-seechild {
     padding-left: 0.3em;
     padding-right: 0.5em;
     width: 2.1em;
     padding-top: 0.5em;
 }
 
-.book-explorer-element-icon {
+.book-explorer-element-icon, .side-explorer-element-icon {
   display: flex;
   align-items: center;
 }
 
-.book-explorer-element-table {
+.book-explorer-element-table, .side-explorer-element-table {
     width: 100% !important;
     max-width: none !important;
     display: block;
@@ -2979,17 +2993,17 @@ a.username{
     border-top: 1px solid #EBEDF3;
 }
 
-.book-explorer-element {
+.book-explorer-element, .side-explorer-element {
     display:flex;
     overflow: hidden;
     font-size: 10.8px;
 }
 
-#empty-home-page-wiki > .book-explorer-element {
+#empty-home-page-wiki > .book-explorer-element, .side-explorer-element {
   padding-left: 2px;
 }
 
-.book-explorer-element-table > td {
+.book-explorer-element-table > td, .side-explorer-element-table > td {
     padding-right: 2px;
     white-space: nowrap;
     text-overflow: ellipsis;
@@ -3000,11 +3014,11 @@ a.username{
     vertical-align: top;
 }
 
-.book-explorer-element-open {
+.book-explorer-element-open, .side-explorer-element-open {
     cursor: pointer;
 }
 
-.book-explorer-element-name > a{
+.book-explorer-element-name > a, .side-explorer-element-name > a{
     color: inherit;
     /** prevent double-line overflow of wiki article links */
     white-space: nowrap;
@@ -3013,7 +3027,7 @@ a.username{
     max-width: 150px;
     display: inline-block;
 }
-.book-file-explorer-element-name > a{
+.book-file-explorer-element-name > a, .side-file-explorer-element-name > a{
   color: inherit;
   /** prevent double-line overflow of wiki article links */
   white-space: nowrap;
@@ -3023,7 +3037,7 @@ a.username{
   display: inline-block;
 }
 
-.book-explorer-element-name {
+.book-explorer-element-name, .side-explorer-element-name {
     padding-left: 0.5em;
     vertical-align: middle;
     height: 2.3em;
@@ -3035,11 +3049,6 @@ a.username{
   color: #000;
   vertical-align: top;
   margin: 0 10px 5px 10px;
-}
-
-
-#book_explorer_header {
-    padding: 10px;
 }
 
 .select2-disabled {
@@ -3279,4 +3288,62 @@ a.cke_dialog_ui_button_ok {
 }
 .gofast-template-hoverable-row.selected {
   background-color:  #F5F5F5;
+}
+
+/* Fix tagify read-only inputs' hatching leaving a gap not covering some of the tag */
+.tagify[readonly]:not(.tagify--mix) .tagify__tag::before {
+  background: linear-gradient(45deg, var(--tag-bg) 25%, transparent 25%, transparent 50%, var(--tag-bg) 50%, var(--tag-bg) 75%, transparent 75%, transparent) 0/5px 5px;
+  content: "";
+  position: absolute;
+  border-radius: inherit;
+  left: 0;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: -1;
+  pointer-events: none;
+}
+
+/* Remove Keen's readonly tag hatching */
+.tagify[readonly]:not(.tagify--mix) .tagify__tag > div::before {
+  content: unset;
+}
+
+/*
+ * When applying the dim-readonly class on a form-control input:
+ * override Keen's behavior of not greying out the input background when readonly
+ */
+.form-control.dim-readonly[readonly] {
+  background-color: var(--input-readonly-bg-color, #F3F6F9);
+}
+
+/*
+ * Disable touch actions on kanban cards and column headers, so the browser does
+ * not scroll while we attempt to move the card by touching and dragging the card.
+ */
+.kanban-item, .kanban-board-header {
+  touch-action: none;
+}
+
+/* Class to allow elements to be, or remain in the case of disabled buttons, opaque */
+.opaque, .btn.disabled.opaque, .btn.opaque:disabled {
+  opacity: 1;
+}
+
+.co-editing-user-counter--badge {
+  font-size: 0.75em;
+  position: absolute;
+  top: 0;
+  right: 0;
+  /* size depending on size of 0 character since we display set number of digits */
+  min-width: 2ch;
+  transform: translate(30%, -40%);
+}
+
+.co-editing-lock-icon, .btn.btn-icon .co-editing-lock-icon {
+  font-size: inherit;
+  position: absolute;
+  bottom: 0;
+  right: 0;
+  transform: translate(30%, 40%);
 }

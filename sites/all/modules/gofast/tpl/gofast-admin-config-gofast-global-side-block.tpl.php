@@ -3,7 +3,7 @@
       <ul class="nav flex-column nav-pills">
           <?php foreach($settingsTabs as $tab): ?>
           <li class="nav-item mb-2">
-              <a class="nav-link <?php echo $tab['attributes']['class'] ?>" id="<?php echo $tab['attributes']['id'];?>" data-toggle="tab" href="#<?php echo $tab['attributes']['class'];?>" data-form-id="<?php echo $tab['attributes']['data-form-id'];?>">
+              <a class="nav-link <?php echo $tab['attributes']['class'] ?>" id="<?php echo $tab['attributes']['id'];?>" data-toggle="tab" href="#<?php echo $tab['attributes']['class'];?>" data-tab-id="<?php echo $tab['attributes']['class'] ?>">
                   <span class="nav-icon">
                       <i class="<?php echo $tab['icon'];?>"></i>
                   </span>

@@ -280,7 +280,10 @@
 
 
     $(".drop-area:not(.drop-area-processed)").addClass("drop-area-processed").each(function () {
-      $(this).on('drag dragstart dragend dragover dragenter dragleave drop', function (e) {
+      let $dropArea = $(this);
+      let $fileInput = $('<input type="file" style="display:none;">');
+      $dropArea.append($fileInput);
+      $dropArea.on('drag dragstart dragend dragover dragenter dragleave drop', function (e) {
         e.preventDefault();
         e.stopPropagation();
       }).on('dragleave', function (e) {       
@@ -291,23 +294,35 @@
             }, 500);
        
         var target = e.target;
-        if (target && target.id === $(this).attr("id")) {
+        if (target && target.id === $dropArea.attr("id")) {
           if (new Date().getTime() - time_drag > 1) {
-            $(this).removeClass("over");
+            $dropArea.removeClass("over");
           }
         }
       }).on('dragenter', function (e) {      
         clearTimeout(Drupal.gofast_cmis.dropzoneleave);
-        $(this).animate({height:500},600);      
+        $dropArea.animate({height:500},600);      
         var drag_date = new Date();
-        $(this).addClass("over");
+        $dropArea.addClass("over");
         time_drag = drag_date.getTime();
       }).on('drop', function (e) {
        // $("#container_pdf_iframe").css("visibility" , "visible");
         $(".drop-area").animate({height:35},600);
         traverseFiles(e.originalEvent.dataTransfer.files);
-        $(this).removeClass("over");
+        $dropArea.removeClass("over");
         updateDropZone(false);
+      });
+
+      // Trigger upload on click as well
+      $dropArea.on("click", function () {
+        $fileInput.trigger("click");
+      });
+      $fileInput.on("click", e => e.stopPropagation());
+      $fileInput.on("change", function (e) {
+        e.stopPropagation();
+        traverseFiles(e.target.files);
+        updateDropZone(false);
+        $fileInput.val("");
       });
     });
 

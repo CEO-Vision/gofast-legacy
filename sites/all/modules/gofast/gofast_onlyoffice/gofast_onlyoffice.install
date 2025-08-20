@@ -20,3 +20,10 @@ function gofast_onlyoffice_update_7001(){
 function gofast_onlyoffice_update_7002() {
   gofast_onlyoffice_configure_share();
 }
+
+/**
+ * Implements hook_update_N().
+ */
+function gofast_onlyoffice_update_7003() {
+  gofast_onlyoffice_configure_share();
+}

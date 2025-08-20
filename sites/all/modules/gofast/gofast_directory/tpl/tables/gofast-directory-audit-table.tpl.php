@@ -6,7 +6,7 @@
         <div id="gofastAuditTable" class="datatable datatable-bordered datatable-head-custom" data-type="<?php echo $type ?>" data-etid="<?php echo $etid ?>" data-columns='<?php echo $columns ?>'></div>
 <?php if ($type == "site") : ?>
         <div class="d-flex flex-column">
-            <span class="text-muted"><?= t("Export: This will export all the filtered results under a limit of 50 000 results", [], ["gofast:gofast_audit"]) ?></span>
+            <span class="text-muted"><?= t("Export: This will export all the filtered results under a limit of @max_results_size results", ["@max_results_size" => number_format(GOFAST_EXPORT_RESULTS_MAX_SIZE, 0, ".", " ")], ["gofast:gofast_audit"]) ?></span>
             <span class="text-muted"><?= t("Click for export", [], ["gofast:gofast_audit"]) ?>&nbsp;
                 <span id="audit_export_xls_button" style="display:none;">
                     <a href="/gofast_audit_xls" data-query=""></a>

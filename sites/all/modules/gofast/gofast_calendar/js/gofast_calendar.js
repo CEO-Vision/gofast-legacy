@@ -18,19 +18,42 @@
           el.attr('title', event.title)
           var skin = el.data('skin') ? 'popover-' + el.data('skin') : '';
           var triggerValue = el.data('trigger') ? el.data('trigger') : 'hover';
-          const {user} = event.extendedProps
-          
-          if(user.assigned_to){
-            el.popover({
-              trigger: triggerValue,
-              template: '<div class="popover ' + skin + ' p-0" role="tooltip"><div class="arrow"></div><div class="popover-header p-2 text-truncate"></div><div class="popover-body p-2"></div><div class="popover-footer d-flex p-2 d-flex font-size-sm"> <span class="text-muted mr-4">' + Drupal.t('Assigned to') + ':</span> <div class="d-flex"> <div class="symbol symbol-circle symbol-20 mr-2 d-flex align-items-center"> <img alt="Pic" style="max-width: 15px; height: 15px;" src="' + user.picture + '"/> </div> <div class="text-muted">' + user.firstname + ' ' + user.lastname + '</div> </div></div></div>',
-            });
-          }else{
-            el.popover({
-              trigger: triggerValue,
-              template: '<div class="popover ' + skin + ' p-0" role="tooltip"><div class="arrow"></div><div class="popover-header p-2 text-truncate"></div><div class="popover-body p-2"></div><div class="popover-footer d-flex p-2 d-flex font-size-sm"> <span class="text-muted mr-4">' + Drupal.t('Created by') + ':</span> <div class="d-flex"> <div class="symbol symbol-circle symbol-20 mr-2 d-flex align-items-center"> <img alt="Pic" style="max-width: 15px; height: 15px;" src="' + user.picture + '"/> </div> <div class="text-muted">' + user.firstname + ' ' + user.lastname + '</div> </div></div></div>',
-            });
-          }
+          const { user, isRecurrent, humanReadableRecurrence } = event.extendedProps;
+
+          const attributionMessage = user.assigned_to ? Drupal.t('Assigned to') : Drupal.t('Created by');
+
+          el.popover({
+            trigger: triggerValue,
+            template: `
+            <div class="popover ${skin} p-0" role="tooltip">
+              <div class="arrow"></div>
+              <div class="d-flex align-items-baseline">
+                <div class="popover-header p-2 text-truncate flex-grow-1"></div>
+              </div>
+              <div class="popover-body p-2"></div>
+              ${
+                isRecurrent
+                  ? `<div class="gf-recurrence-hr ml-2">
+                      <i class="far fa-repeat mr-2"></i> ${Drupal.t(
+                        "Repeats @pattern",
+                        { "@pattern": humanReadableRecurrence },
+                        { context: "gofast:gofast_conference" },
+                      )}
+                    </div>`
+                  : ""
+              }
+              <div class="popover-footer d-flex p-2 d-flex font-size-sm">
+                <span class="text-muted mr-4">${attributionMessage}:</span>
+                <div class="d-flex">
+                  <div class="symbol symbol-circle symbol-20 mr-2 d-flex align-items-center">
+                    <img alt="Pic" style="max-width: 15px; height: 15px;" src="${user.picture}"/>
+                  </div>
+                  <div class="text-muted">${user.firstname} ${user.lastname}</div>
+                </div>
+              </div>
+            </div>
+            `,
+          });
         }
 
         let getPopOverContent = (event) => {
@@ -45,11 +68,33 @@
             }
         }
 
+        /**
+         * Object that maps gofast locales to their calendar options
+         * @satisfies {Record<string, {localeCode: string, firstDay: number}>}
+         */
+        const localeOptionsMap = {
+          en: {
+            localeCode: "en-gb", // map base english locale to UK English
+            firstDay: 1, // start week on Monday
+          },
+          fr: {
+            localeCode: "fr",
+            firstDay: 1, // start week on Monday
+          },
+        };
+
+        const getLocaleOptions = (locale) => {
+          if (locale in localeOptionsMap) {
+            return localeOptionsMap[locale];
+          }
+          return localeOptionsMap["en"];
+        };
+
         return {
           //main function to initiate the module
           init: function () {
             var User = Gofast.get("user");
-            var user_language = User.language;
+            const userLanguage = User.language;
             
             if (Gofast._settings.gofast_bluemind_is_feature_active && Gofast._settings.gofast_bluemind_is_feature_active_for_user) {
               const lastSyncTimestamp = Gofast._settings.gofast_bluemind_user_last_sync;
@@ -133,7 +178,11 @@
               slotMinTime:'08:00:00',
               defaultView: 'timeGridWeek',
               allDayText: Drupal.t('all-day'),
-              locale: user_language,
+
+              // locale-dependent options
+              locale: getLocaleOptions(userLanguage).localeCode,
+              firstDay: getLocaleOptions(userLanguage).firstDay,
+
               plugins: ['bootstrap', 'interaction', 'dayGrid', 'timeGrid', 'list','locales'],
               isRTL: KTUtil.isRTL(),
 
@@ -157,6 +206,16 @@
                 element.attr('href', '/node/' + info.event.extendedProps.nid);
 
                 if(info.event.extendedProps && info.event.extendedProps.type){
+                    // transform title element into flex row
+                    const titleRowContainer = element.find('.fc-title');
+                    titleRowContainer.addClass(['d-flex', 'align-items-baseline']);
+                    // move text content into element that expands to take as
+                    // much space as possible, pushing elements after to algin
+                    // with the right of the event box
+                    const title = titleRowContainer.text();
+                    const titleContainer = $('<span class="flex-fill text-truncate"></span>').text(title);
+                    titleRowContainer.text('').append(titleContainer);
+
                     let icon = "";
                     if(info.event.extendedProps.type == 'conference'){
                         let start = new Date(info.event.start)
@@ -175,6 +234,12 @@
                       icon = '<i class="far fa-file icon-nm mr-2"></i>'
                     }
                     element.find('.fc-title').prepend(icon);
+
+                    // Add recurrence icon
+                    if (info.event.extendedProps.isRecurrent) {
+                      element.find('.fc-title').append('<i class="far fa-repeat icon-nm ml-2"></i>');
+                    }
+
                     if (info.event.extendedProps.task_details) {
                       element.find('.fc-title').prepend("<div class=\"fc-state mb-2\"></div>");
                       element.find('.fc-state').append('<span class="text-wrap h-100 label label-sm label-outline-' + info.event.extendedProps.task_details.localized_state_indicator + ' label-pill label-inline">' +
@@ -187,7 +252,7 @@
                         element.attr('data-scroll', 'true')
                         element.attr('data-wheel-propagation', 'true')
                         let desc = typeof info.event.extendedProps.description.und !== "undefined" ? info.event.extendedProps.description.und[0].value : Drupal.t("No description");
-                        element.find('.fc-title').append("<div class=\"fc-description\"></div>");
+                        element.find('.fc-title').after("<div class=\"fc-description font-weight-bolder\"></div>");
                         element.find('.fc-description').css({whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis'}).append(desc);
                     } else if (element.find('.fc-list-item-title').length !== 0) {
                         element.find('.fc-list-item-title').append('<div class="fc-description">' + info.event.title + '</div>');

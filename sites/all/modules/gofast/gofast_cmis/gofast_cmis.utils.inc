@@ -35,7 +35,7 @@ function gofast_cmis_unset_user_ticket() {
  */
 function gofast_cmis_check_alfresco_status() {
   // This is alfresco service status verification, if != 200, alfresco is down
-  if (200 !== gofast_get_http_code('http://localhost:8080' . '/alfresco/')) {
+  if (200 !== gofast_get_http_code('http://localhost:8080' . '/alfresco/', 7)) {
     return FALSE;
   }
   else {
@@ -57,7 +57,7 @@ function gofast_cmis_ticket_validate() {
 
   $user_ticket = gofast_cmis_get_user_ticket();
   $url = "http://localhost/alfresco/service/api/login/ticket/" . $user_ticket . "?alf_ticket=" . $user_ticket;
-  if ($user_ticket === NULL || 200 !== gofast_get_http_code($url)) {
+  if ($user_ticket === NULL || 200 !== gofast_get_http_code($url, 3)) {
     $user_ticket = gofast_cmis_retrieve_and_store_ticket($user);
     return $user_ticket;
   }
@@ -567,7 +567,7 @@ function gofast_cmis_item_rename($item_id, $new_name, $asAdmin = TRUE) {
  * @param string $title the title of the folder item to insert
  * @param string $parent_item_id parent of the new item folder to insert
  * @param boolean $asAdmin execute as admin? Defaults to TRUE.
- * @return $created_item the item created
+ * @return object $created_item the item created
  */
 function gofast_cmis_item_folder_insert($title, $parent_item_id, $asAdmin = TRUE) {
   $repository_id = gofast_cmis_get_repository();
@@ -1930,6 +1930,103 @@ function gofast_cmis_convert_old_office_format_to_new($node){
     }
 }
 
+/**
+ * Given an already signed OO token for conversion, trigger the conversion.
+ * Intended as a front-end callback.
+ */
+function gofast_cmis_convert_async() {
+  $request_body = gofast_xss_clean(json_decode(file_get_contents('php://input'), true));
+
+  $url = DOC_SERV_CONVERTER_URL;
+  $url = str_replace("https://", "https://internal-", $url);
+  $ch = curl_init();
+  curl_setopt($ch, CURLOPT_URL, $url);
+  curl_setopt($ch, CURLOPT_HTTPHEADER, array('Content-Type: application/json'));
+  curl_setopt($ch, CURLOPT_POST, 1);
+  curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($request_body));
+  curl_setopt($ch, CURLOPT_RETURNTRANSFER, TRUE);
+  curl_setopt($ch, CURLOPT_PROXY, '');
+  curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, false);
+  curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+  $exec = curl_exec($ch);
+
+  $xml = simplexml_load_string($exec);
+  $response = json_decode(json_encode($xml));
+  drupal_json_output(["url" => $response->FileUrl, "percent" => $response->Percent, "type" => $response->FileType]);
+  drupal_exit();
+}
+
+/**
+ * Callback used after conversion if needed to set the converted file as a new document version.
+ * Intended as a front-end callback.
+ */
+function gofast_cmis_converted_async($node) {
+  if(!node_access("update", $node)){
+    drupal_add_http_header("Status", "403 Forbidden");
+    drupal_json_output(["error" => t("Operation not allowed")]);
+    drupal_exit();
+  }
+  $request_body = gofast_xss_clean(json_decode(file_get_contents('php://input'), true));
+  $file_url = $request_body['fileUrl'];
+  $file_type = $request_body['fileType'];
+
+  // We download the converted file and set it as the new Alfresco item content
+  $ch = curl_init();
+  curl_setopt($ch, CURLOPT_URL, $file_url);
+  curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+  curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+  curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, false);
+  $file_content = curl_exec($ch);
+  if(curl_errno($ch)) {
+      watchdog("gofast_onlyoffice", "cURL error: " . curl_error($ch), [], WATCHDOG_ERROR);
+  }
+
+  if (!$file_content) {
+      drupal_add_http_header("Status", "500 Internal Server Error");
+      drupal_json_output(["error" => t('There was a problem getting the converted file', [], ["context" => "gofast:gofast_onlyoffice"])]);
+      drupal_exit();
+  }
+
+  $updated_item = gofast_cmis_item_set_content($node->{GOFAST_CMIS_REFERENCE_FIELD}[LANGUAGE_NONE][0]['value'], $file_content);
+
+  if (!$updated_item) {
+    drupal_add_http_header("Status", "500 Internal Server Error");
+    drupal_json_output(["error" => t('There was a problem updating the document content', [], ["context" => "gofast:gofast_onlyoffice"])]);
+    drupal_exit();
+  }
+
+  // Also set new mimetype on Alfresco
+  $new_mimetype = gofast_cmis_get_mimetype_extension_match_array()[$file_type];
+  if ($new_mimetype) {
+    $cmis_object = gofast_cmis_node_edit_item_get($node);
+    $new_mimetype = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+    $item_id = $cmis_object->properties["alfcmis:nodeRef"];
+    $properties = array("cmis:mimetype" => $new_mimetype);
+    gofast_cmis_item_update_properties($item_id, $properties, FALSE, TRUE);
+  }
+
+  // Alter audit line insertion
+  $_POST['is_convert_node'] = TRUE;
+
+  $extension = strtolower(gofast_cmis_node_get_extension($node));
+
+  // Finally we change the extension on the Drupal node
+  $new_title = str_replace(".".$extension, ".".$file_type, $node->title);
+  $node->title = $new_title;
+  $new_filename = str_replace(".".$extension, ".".$file_type, $node->field_filename[LANGUAGE_NONE][0]["value"]);
+  $node->field_filename[LANGUAGE_NONE][0]["value"] = $new_filename;
+  $node = gofast_prepare_node_save_technically($node);
+  $ruid = $node->revision_uid;
+  node_save($node);
+  db_update('node_revision')
+    ->fields(array('uid' => $ruid))
+    ->condition('nid', $node->nid)
+    ->execute();
+
+  drupal_json_output(["success" => t('The conversion process was successful', [], ["context" => "gofast:gofast_onlyoffice"])]);
+  drupal_exit();
+}
+
 function gofast_cmis_get_all_multifilled_documents_from_gid($gid){
 
   $res = db_query("select node.nid,node.title,og_membership.gid from {node} INNER JOIN {og_membership} ON node.nid=og_membership.etid WHERE (SELECT COUNT(*) FROM og_membership where og_membership.etid=node.nid AND og_membership.field_name='og_group_content_ref')>1 AND node.status=1 AND og_membership.gid=:gid", array(":gid" => $gid));
@@ -2043,42 +2140,159 @@ function gofast_cmis_check_mirroring($path) {
   }
 }
 
-// check if a path is mirrored _or_ inside a mirrored location
-function gofast_cmis_is_path_mirrored() {
-  global $user;
+/**
+ * API endpoint callback function to know if a path in GET params is mirrored
+ *
+ * Prints 0 or 1 as the response body
+ *
+ * @return void
+ */
+function gofast_cmis_is_path_mirrored_api_callback() {
   // Get item
   if (!isset($_GET["path"])) {
     echo "0";
     exit;
   }
+  $path = gofast_xss_clean($_GET['path']);
+  if (substr($path, -1) === ';') {
+    $path = substr($path, 0, -1);
+  }
+  $is_mirrored = gofast_cmis_is_path_mirrored($path);
+  echo $is_mirrored ? "1" : "0";
+  exit;
+}
 
-  $is_mirror = FALSE;
-  $is_root = FALSE;
-  $paths = [gofast_xss_clean($_GET["path"])];
-  // we added a standalone "/Sites" entry as a failsafe just in case
-  $root_spaces_paths = ["/Sites/_Groups" , "/Sites/_Extranet", "/Sites/_Public", "/Sites/_" . $user->name, "/Sites"];
+/**
+ * Get parents of a path taking mirroring into account
+ *
+ * Note: calls CMIS API and gofast_cmis_webservice_get_node_parents
+ *
+ * @param string $path Path of the item
+ * @return string[] Paths of the parents
+ */
+function gofast_cmis_get_path_parents($path) {
+  $item = gofast_cmis_item_get_by_path($path);
+  $reference = $item->properties['alfcmis:nodeRef'];
+  return gofast_cmis_webservice_get_node_parents($reference);
+}
 
-  while(!$is_mirror && !$is_root) {
-    foreach ($paths as $path) {
-      // we may have some semi-colons appended to paths, in this case the subsequent cmis request would just timeout after 60 seconds of wait
-      if (substr($path, -1) == ";") {
-        $path = substr($path, 0, -1);
-      }
-      if (in_array($path, $root_spaces_paths)) {
-        $is_root = TRUE;
-        break;
-      }
-      $result = gofast_cmis_check_mirroring($path);
-      if ($result === TRUE) {
-        $is_mirror = TRUE;
-        break;
-      }
-      $paths = $result;
+/**
+ * Fetch a value from the given path prefix cache given the split path segments.
+ *
+ * Successively checks prefix values of given segments in cache. e.g.:
+ * when $path_segments = ['foo', 'bar', 'baz'], checks in order:
+ * 1. '/foo'
+ * 2. '/foo/bar'
+ * 3. '/foo/bar/baz'
+ *
+ * Stops checking once the $search value is found, an entry in the cache is not
+ * set, or after all paths have been checked.
+ *
+ * @template TDefault
+ * @param string[] $path_segments The split path to check for.
+ * @param array<string,bool|null> $cache The cache array
+ * @param bool $search The searched value, defaults to TRUE
+ * @param TDefault $default The default value when not found, defaults to NULL.
+ * @return bool|TDefault The found value in cache or default
+ */
+function _gofast_cmis_get_value_from_prefix_cache($path_segments, $cache, $search = TRUE, $default = NULL) {
+  $prefix = '';
+  for ($i = 0; $i < count($path_segments); ++$i) {
+    $prefix .= '/' . $path_segments[$i];
+    if (!isset($cache[$prefix])) {
+      return $default; // not in cache
+    }
+    if ($cache[$prefix] === $search) {
+      return $search; // is searched value
+    }
+  }
+  return $cache[$prefix]; // not searched value
+}
+
+/**
+ * check if a path is mirrored _or_ inside a mirrored location
+ *
+ * The passed-in path must start with /Sites, and have each segment separated
+ * by a single slash (/)
+ *
+ * Note: paths to multitiled documents may also mark them as mirrored. Try
+ * using this function on a document's parent(s) to check for mirrored folders.
+ *
+ * @param string $location_path The path to check if it is within a mirrored location
+ * @return bool True if the path is mirrored, false otherwise.
+ */
+function gofast_cmis_is_path_mirrored($location_path) {
+  // Cached implementation relies on these invariants:
+  // 1. spaces cannot be mirrored or be in a mirrored locations
+  // 2. $location_path is an absolute path including /Sites
+  // 3. each path segment is separated by a single /
+
+  // prefix cache stores a map of path prefixes to their mirrored status.
+  // fast drupal static pattern
+  static $drupal_static_fast = NULL;
+  // initialize cache, user spaces will be added as needed when paths within
+  // are checked, spaces cannot be mirrored and so are almost free to add to
+  // cache on the fly
+  if (!isset($drupal_static_fast['prefix_cache'])) {
+    $drupal_static_fast['prefix_cache'] = &drupal_static(__FUNCTION__, [
+      '/Sites' => FALSE,
+      '/Sites/_Groups' => FALSE,
+      '/Sites/_Extranet' => FALSE,
+      '/Sites/_Public' => FALSE,
+    ]);
+  }
+  $cache = &$drupal_static_fast['prefix_cache'];
+
+  // try get cached value
+  $location_segments = explode('/', trim($location_path, '/'));
+  $cached_value = _gofast_cmis_get_value_from_prefix_cache($location_segments, $cache);
+  if ($cached_value !== NULL) {
+    return $cached_value;
+  }
+  // cache miss, compute path mirror status and update cache
+
+  // find number of segments after which spaces end.
+  for ($i = count($location_segments); $i !== 0; --$i) {
+    if (str_starts_with($location_segments[$i - 1], '_')) {
+      break;
+    }
+  }
+  $space_segments_length = $i;
+
+  // Add all spaces' prefix paths to cache as not mirrored. (invariant 1)
+  $prefix = '';
+  for ($i = 0; $i < $space_segments_length; ++$i) {
+    $prefix .=  '/' . $location_segments[$i];
+    if (!isset($cache[$prefix])) {
+      $cache[$prefix] = FALSE; // space cannot be mirrored
     }
   }
 
-  echo $is_mirror ? "1" : "0";
-  exit;
+  // check for each subpath in space if it has multiple locations, and cache result
+  $is_mirrored = FALSE;
+  // continue with $i from end of last loop (start where last loop stopped)
+  // loop until either we reached the end of the path, or we found a mirrored location
+  for (; $i < count($location_segments) && !$is_mirrored; ++$i) {
+    $prefix .= '/' . $location_segments[$i];
+    if (isset($cache[$prefix])) {
+      // in case previously mirrored path was added but some parents were missing.
+      $is_mirrored = $cache[$prefix];
+      continue;
+    }
+
+    // check current path mirroring
+    $prefix_parents = gofast_cmis_get_path_parents($prefix);
+    $is_mirrored = count($prefix_parents) > 1;
+    // add all retrieved values to cache
+    foreach ($prefix_parents as $prefix_parent) {
+      $prefix_parent .= '/' . $location_segments[$i];
+      if (!isset($cache[$prefix_parent])) {
+        $cache[$prefix_parent] = $is_mirrored;
+      }
+    }
+  }
+
+  return $is_mirrored;
 }
 
 /** this is a temporary logic, we should add a "path" column to gofast_bookmark_folder to avoid such heavy treatment and get the actual location which was selected instead of a location with the same content */
@@ -2248,4 +2462,44 @@ function gofast_cmis_item_get_mirrored_parent_spaces($item_id) {
 function gofast_cmis_node_get_mirrored_parent_spaces($node) {
   $node_item_id = gofast_cmis_node_get_item_id($node);
   yield from gofast_cmis_item_get_mirrored_parent_spaces($node_item_id);
+}
+
+/**
+ * Given an Alfresco prop name, get the matching QName ID.
+ */
+function gofast_cmis_get_qname_id($prop_name, $namespace = FALSE) {
+    // If needed to disambiguate the prop name with a namespace (e. g. "gofast.model")
+    if ($namespace) {
+      $namespace_id = db_select('alf_namespace', 'a', ["target" => "alfresco"])
+      ->fields('a', ['id'])
+      ->condition('uri', $namespace, '=')
+      ->execute()->fetchField();
+    }
+
+    $qname_id = db_select('alf_qname', 'qn', ["target" => "alfresco"])
+      ->fields('qn', ['id'])
+      ->condition('local_name', $prop_name, '=');
+    if ($namespace) {
+      $qname_id->condition('ns_id', $namespace_id, '=');
+    }
+    $qname_id = $qname_id->execute()->fetchField();
+
+  return $qname_id;
+}
+
+function gofast_cmis_get_file_size($nid){
+  $node = node_load($nid);
+  $reference = gofast_cmis_node_get_item_id($node);
+  $item = gofast_cmis_item_get($reference);
+  
+  //Check if the file exists in the filesystem
+  $content_stream = $item->properties['cmis:contentStreamId'];
+  $content_stream = str_replace("store://", "", $content_stream);
+  $file_size = filesize("/var/alfresco/alf_data/contentstore/" . $content_stream);
+
+  return $file_size;
+}
+
+function gofast_cmis_node_can_preview_dwg($nid){
+  return gofast_cmis_get_file_size($nid) < GOFAST_CMIS_DWG_PREVIEW_MAX_SIZE;
 }

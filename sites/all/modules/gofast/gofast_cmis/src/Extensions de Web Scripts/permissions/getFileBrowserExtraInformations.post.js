@@ -42,6 +42,7 @@ var JSONgf = {
 function getFinalPermission(user_groups, permissions, node, ownerifro) {
     var readonly = false;
     var contributor = false;
+    var groupmanager = false;
     var administrator = false;
 
     //Content that does not include any edition permission
@@ -81,7 +82,7 @@ function getFinalPermission(user_groups, permissions, node, ownerifro) {
             permission: permissions[k].substr(permissions[k].lastIndexOf(";") + 1)
         };
 
-        if (permission.permission === "Coordinator" || permission.permission === "Standard") {
+        if (permission.permission === "Coordinator" || permission.permission === "GroupManager" || permission.permission === "Standard") {
             //This content is not archived, DUA...
             onlyreadonly = false;
         }
@@ -91,6 +92,8 @@ function getFinalPermission(user_groups, permissions, node, ownerifro) {
             if (user_groups[j] === permission.name) { //This group permissions match one of our permissions
                 if (permission.permission === "Coordinator") {
                     administrator = true;
+                } else if (permission.permission === "GroupManager") {
+                    groupmanager = true;
                 } else if (permission.permission === "Standard") {
                     contributor = true;
                 } else if (permission.permission === "Consumer") {
@@ -107,6 +110,8 @@ function getFinalPermission(user_groups, permissions, node, ownerifro) {
         //Special case when we are owner of a folder but RO in the space
         //This case is treated here in order not to return "contributor"
         return "owner";
+    } else if (groupmanager) {
+        return "groupmanager";
     } else if (contributor) {
         return "contributor";
     } else if (onlyreadonly) {

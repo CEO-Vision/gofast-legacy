@@ -1,0 +1,10 @@
+name = Gofast Import
+description = "Allow mass import from files"
+core = 7.x
+package = Gofast
+
+version = "7.x-4.3.0_r3"
+project = "gofast_import"
+datestamp = "1730976504"
+
+dependencies[] = gofast

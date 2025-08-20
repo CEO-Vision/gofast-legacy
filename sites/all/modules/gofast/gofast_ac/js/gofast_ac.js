@@ -12,11 +12,11 @@
       if (typeof Tagify == "undefined") {
         return;
       }
-      var inputElmList = document.querySelectorAll('input[name^="ac-list-tags"]'); // get all inputs whose attribute name begins with substring 'ac-list-tags'
+      var inputElmList = document.querySelectorAll('input[name^="ac-list-tags"], input[data-tagify-name^="ac-list-tags"]'); // get all inputs whose attribute name begins with substring 'ac-list-tags'
         inputElmList.forEach(function (inputElm) {
           if (!$(inputElm).hasClass('js-tagify-processed')) {
             var dataList = null;
-            var elementValue = $("#edit-actagify-" + inputElm.name).val() || inputElm.value || inputElm.defaultValue;
+            var elementValue = $(inputElm).parent().find("#edit-actagify-" + inputElm.name).val() || inputElm.value || inputElm.defaultValue;
 
             if (elementValue != undefined && elementValue != "null" && elementValue != "") {
               dataList = elementValue;
@@ -37,13 +37,14 @@
         var vid = inputElm.hasAttribute("data-vid") == true ? inputElm.getAttribute("data-vid") : null
         var node_name = inputElm.hasAttribute("data-name") == true ? inputElm.getAttribute("data-name") : null
         var is_metadata = new RegExp(/edit.*taget-link/).test(input_id) || new RegExp(/edit.*keywords/).test(input_id) || new RegExp(/edit.*nodes/).test(input_id);
-        var custom_dropdown = new RegExp(/edit.*taget-link/).test(input_id) || input_id == "edit-list-documents" ||  new RegExp(/edit.*keywords/).test(input_id) || input_id.startsWith("edit-translations") || new RegExp(/edit.*nodes/).test(input_id);
+        var custom_dropdown = inputElm.hasAttribute("data-dropdown-class") || new RegExp(/edit.*taget-link/).test(input_id) || input_id == "edit-list-documents" ||  new RegExp(/edit.*keywords/).test(input_id) || input_id.startsWith("edit-translations") || new RegExp(/edit.*nodes/).test(input_id);
         var has_draft_mode = inputElm.classList.contains("tagify-draft");
         var max_tags = inputElm.hasAttribute("data-ac-max-tags") ? inputElm.getAttribute("data-ac-max-tags") : Infinity;
         var tagify = new Tagify(inputElm, {
           tagTextProp: 'value', // allows typing a "value" or a "name" to match input with whitelist
           enforceWhitelist: enforce, // true : Do Not allow adding value that not in the whitelist
           skipInvalid: false, // do not temporarily add invalid tags
+          addTagOnBlur: false, // add only actually selected tags
           dropdown: {
             classname: custom_dropdown ? "gofast_tagify_dropdown" : "",
             enabled: 3,            // show suggestion after 3 typed character
@@ -323,6 +324,7 @@
           formData.append('input_id', input_id);
           formData.append('get_email', inputElm.hasAttribute("data-email"));         
           // Additional data
+          inputElm.hasAttribute("data-filters") ? formData.append("filters", inputElm.getAttribute("data-filters")) : false;
           inputElm.hasAttribute("data-space-nid") == true ? formData.append('space_nid', inputElm.getAttribute("data-space-nid")) : false;
           inputElm.hasAttribute("data-language") == true ? formData.append('node_language', inputElm.getAttribute("data-language")) : false;
           inputElm.hasAttribute("data-translate") ? formData.append("translate", true) : false;
@@ -458,7 +460,9 @@
             imageData = "<div class='tagify__tag__avatar-wrap'><i class=\"" + tagClass + " icon-2x text-info\"></i></div>";
           }
 
-          tempate += imageData + " <strong>" + tagData.name + "</strong> ";
+          const existenceTemplate = tagData.exists === false ? "&nbsp;<span class='label label-inline label-rounded label-success ml-2'>" + Drupal.t("Add") + "</span>" : "";
+
+          tempate += imageData + " <strong>" + tagData.name + existenceTemplate + "</strong> ";
 
           if (typeof tagData.email !== 'undefined') {
             tempate += "<span>" + tagData.email + "</span>";
@@ -483,9 +487,9 @@
             if (tagData.node_type == 'alfresco_item' || tagData.node_type == 'article') {
               tagColorClass = "tagify__tag-light";
               if (typeof (tagData.icon) != "undefined" && tagData.icon !== null){
-                imageData = "<div><i class=\"" + tagData.icon + " icon-nm mr-2\"></i></div>";
+                imageData = "<i class=\"" + tagData.icon + " icon-nm mr-2\"></i>";
               }else{
-                imageData = "<div><i class=\"fas fa-file mr-2\"></i></div>";
+                imageData = "<i class=\"fas fa-file mr-2\"></i>";
               }
             }else if(tagData.node_type == 'article'){
                 tagColorClass = "tagify__tag-light";
@@ -499,7 +503,7 @@
             imageData = "<div><i class=\"flaticon-users-1 text-warning\"></i></div>";
           } else if (tagData.type == 'taxonomy_term') {
             if (tagData.subButton === true){
-              subButtonHtml = Drupal.getSubButtonHtml(tagData.value);
+              subButtonHtml = Gofast.metadata.getSubButtonHtml(tagData.value);
               subButtonHtml = "<div class='gofast-sub-icon'>" + subButtonHtml.responseText + " </div>";
             }
             let tagClass = "flaticon2-tag";

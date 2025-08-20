@@ -1,0 +1,8 @@
+name = Gofast metadata test
+description = Test deployment of new Drupal fields
+
+core = 7.x
+package = Gofast
+version = "7.x-4.3.0"
+
+dependencies[] = gofast_metadata_test_features

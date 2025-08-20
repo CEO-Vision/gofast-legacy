@@ -133,6 +133,11 @@ function gofast_essential_poll($poll_name, $poll_info, $context) {
 function gofast_essential_library() {
   $libraries = array();
   $path = drupal_get_path('module', 'gofast_essential');
+
+  if(!gofast_essential_is_essential()){
+    return $libraries;
+  }
+  
   $libraries['gofast_essential'] = array(
     'title' => 'Gofast Essential Libs',
     'version' => '1.0',
@@ -223,7 +228,9 @@ function gofast_essential_theme() {
 }
 
 function gofast_essential_error_handler_alter(&$info) {
-  if(!gofast_essential_is_essential()) {
+  global $user;
+  // we don't want to show page_content template on login page either
+  if(!gofast_essential_is_essential() || !$user->login) {
     return;
   }
   foreach ($info as $key => $tpl) {
@@ -290,8 +297,6 @@ function gofast_essential_get_node_content_part($part, $nid){
     $is_space_admin = true;
   }
 
-  $partContent = "";
-
   switch($part){
     case "pageContent":
       $partContent = theme("essential_page_content");
@@ -351,10 +356,31 @@ function gofast_essential_get_node_content_part($part, $nid){
       
       module_load_include('inc', 'apachesolr','apachesolr_search.pages');
       $_GET["content_part"] = TRUE;
-      $partContent = drupal_render(apachesolr_search_custom_page("core_search", $text));
+      $content = drupal_render(apachesolr_search_custom_page("core_search", $text));
+      $content .= "
+        <script src='/sites/all/modules/facetapi/facetapi.js'></script>
+        <script src='/sites/all/modules/gofast/gofast_search/js/facetapi_collapsible.js'></script>
+        <script>
+          $('head').append('<link rel=\"stylesheet\" type=\"text/css\" href=\"/sites/all/modules/gofast/gofast_search/css/gofast_search.css\">');
+          $('head').append('<link rel=\"stylesheet\" type=\"text/css\" href=\"/sites/all/modules/gofast/gofast_search/css/facetapi_collapsible.css\">');
+        </script>
+      ";
+      $partContent["content"] = $content;
+      $scripts = drupal_add_js();
+      if (!empty($scripts['settings'])) {
+        $settings = $scripts['settings'];
+        
+        $datas = array_values($settings['data']);
+        $datas = array_filter($datas, fn($data) => is_array($data));
+        
+        $command = ajax_command_settings(array_merge_recursive(...$datas));
+        $command["merge"] = true;
+        $commands[] = $command;
+      }
+      $partContent["commands"] = $commands;
       break;
     case "forumTab": 
-      $partContent = gofast_forum_get_forums_view(true);
+      $partContent = gofast_forum_get_forums_view();
       break;
     case "forum":
       foreach(module_implements("node_view") as $module) {
@@ -373,7 +399,7 @@ function gofast_essential_get_node_content_part($part, $nid){
       break;
   }
 
-  echo $partContent;
+  drupal_json_output($partContent);
 }
 
 /**

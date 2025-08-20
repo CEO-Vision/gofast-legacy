@@ -320,7 +320,7 @@ function gofast_api_node_preview_link($params){
     $extension = strtolower(gofast_cmis_node_get_extension($node));
 
     // Document is not previewable: don't show anything
-    if($extension != "pdf" && !in_array($extension, gofast_onlyoffice_previewable_document_extensions()) && !in_array($extension, gofast_manual_previewable_document_extensions()) && !in_array($extension, gofast_onlyoffice_convertible_document_extensions())) {
+    if(!in_array($extension, gofast_cmis_browser_previewable_extensions()) && !in_array($extension, gofast_onlyoffice_previewable_document_extensions()) && !in_array($extension, gofast_manual_previewable_document_extensions()) && !in_array($extension, gofast_onlyoffice_convertible_document_extensions())) {
         gofast_api_success(array('link' => ""));
         return;
     }
@@ -331,7 +331,7 @@ function gofast_api_node_preview_link($params){
         if(isset($url_object->FileUrl)) {
             // File has been converted to pdf by OO: use the generated preview link directly
             $inner_url = rawurlencode($url_object->FileUrl . "?caseId=" . $case_id);
-            $url = "/sites/all/libraries/pdf/web/viewer_gofast.html?v=252&file=".$inner_url;
+            $url = "/sites/all/libraries/pdf/web/viewer_gofast.html?v=253&file=".$inner_url;
         }elseif ($extension == "pdf") {
             // File could not be converted beacuse it's a .pdf: copy the file content in a temp location and use this link
             $url = gofast_cmis_webservice_item_generate_notconverted_preview($node->nid, $url) . "?caseId=" . $case_id;
@@ -345,7 +345,7 @@ function gofast_api_node_preview_link($params){
 
     // We didn't use the admin ticket: use an OO preview link, otherwise keep the original Alfresco link
     if(isset($url_object->FileUrl)) {
-        $url = "/sites/all/libraries/pdf/web/viewer_gofast.html?v=252&file=".rawurlencode($url_object->FileUrl);
+        $url = "/sites/all/libraries/pdf/web/viewer_gofast.html?v=253&file=".rawurlencode($url_object->FileUrl);
     }
     gofast_api_success(array('link' => $url));
 }
@@ -385,6 +385,50 @@ function gofast_api_node_versions($params){
         default:
             gofast_api_not_implemented("This method");
     }
+}
+
+/*
+ * Implements gofast_api_RESSOURCE_ACTION
+ * @ressource node
+ * @action replicate
+ * @methods POST
+ */
+function gofast_api_node_replicate($params){
+    switch($params['method']){
+        case 'POST':
+            gofast_cmis_api_post_node_replicate($params);
+            break;
+        default:
+            gofast_api_not_implemented("This method");
+    }
+}
+
+/**
+ * Handle instant replication calls from Alfresco
+ */
+function gofast_cmis_api_post_node_replicate($params){
+    // Get params
+    $noderef = gofast_xss_clean($params["noderef"]);
+    $name = gofast_xss_clean($params["name"]);
+    $person = gofast_xss_clean($params["person"]);
+    $path = gofast_xss_clean($params["path"]);
+    $gid = gofast_xss_clean($params["gid"]);
+    $author = gofast_xss_clean($params["author"]);
+    $aid = gofast_xss_clean($params["aid"]);
+
+    //Process the item
+    module_load_include('inc', 'gofast_cmis', 'gofast_cmis_cron');
+    gofast_cmis_write_log_info("Mode : Instant replication", FALSE);
+    $return = gofast_cmis_process_item($noderef, $name, $person, $path, $gid, $author);
+
+    usurp(-1);
+    //Delete the row at the end of the process
+    if($return != 2){
+        db_delete('alfresco_replication')
+        ->condition('aid', $aid)
+        ->execute();
+    }
+    gofast_api_success("OK");
 }
 
 /*
@@ -1026,7 +1070,7 @@ function gofast_cmis_api_set_node_publication($params){
         $new_field_publication_history[LANGUAGE_NONE][0]["value"]  = json_encode($existing_field_publication_history_value);
 
         $node->field_publication_history = $new_field_publication_history;
-        field_attach_update('node', $node);
+        gofast_update_field_database($node, "field_publication_history");
 
           if($synchro_metadata  == "true"){
                 $publicated_node->field_category = $node->field_category;

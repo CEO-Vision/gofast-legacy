@@ -95,7 +95,9 @@ function saml_sp__endpoint() {
        if( $request['callback']){
         // Invoke the callback function.
         $callback = $request['callback'];
-        $result = $callback($is_valid, $saml_response);
+        // @CEO-Vision patch : GOFAST-11430 - Make login form(s) able to use an arbitrary amount of id providers
+        $result = $callback($is_valid, $saml_response, $idp);
+        // @CEO-Vision patch end : GOFAST-11430 - Make login form(s) able to use an arbitrary amount of id providers
 
         // The callback *should* redirect the user to a valid page.
         // Provide a fail-safe just in case it doesn't.

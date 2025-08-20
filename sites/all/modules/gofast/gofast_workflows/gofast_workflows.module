@@ -23,9 +23,6 @@ define( 'BONITA_TECHNICAL_LOGIN' , $conf['bonita_tech_user']);
 //chemin serveur de l'installation de Bonita
 define( 'SERVER_PATH_BONITA' , $conf['bonita_home_path']);
 
-//nom de la variable Drupal qui contient l'association entre les drupal_id et les bonita_id
-define( 'VARIABLE_NAME_ID_BONITA' , "gofast_bonita_ids");
-
 //nom de la variable global dans Bonita qui correspond au titre du processus
 define( 'BONITA_TITLE_PROCESS' , "gofast_titre_processus");
 
@@ -205,6 +202,14 @@ function gofast_workflows_menu() {
          'access callback'=>'user_access',
     );
 
+    $items['workflow/api/validate/contribute_document'] = array(
+      'page callback' =>'gofast_workflows_api_validate_contribute_document',
+      'page arguments' => array(),
+      'type' => MENU_CALLBACK,
+      'access arguments' =>array('access content'),
+         'access callback'=>'user_access',
+    );
+
     $items['workflow/api/validate/access_path'] = array(
         'page callback' => 'gofast_workflows_api_validate_access_path',
         'page arguments' => array(),
@@ -292,8 +297,7 @@ function gofast_workflows_menu() {
          'access arguments' =>array('access content'),
          'access callback'=>'user_access',
     );
-
-
+    
    /* END API Webservices */
 
   $items['signature/yousign/api/validate/procedure'] = array(
@@ -773,8 +777,8 @@ function gofast_workflows_prepare_post_fields($array) {
 }
 
 
-/*
- * fonction qui renvoit l'id bonita du user recu en parametre
+/**
+ * Function that returns the bonita id of the user received as a parameter
  */
 function gofast_workflows_get_user_id($myuser){
    $cookie_name = "cookie_bonita".BONITA_TECHNICAL_LOGIN.".txt";
@@ -786,31 +790,25 @@ function gofast_workflows_get_user_id($myuser){
     if($myuser->name == BONITA_TECHNICAL_LOGIN){
          return true;
     }
+    $bonita_id = gofast_workflows_get_bonitaid_from_database($myuser->uid);
 
-    //on charge la variable Drupal qui contient l'association entre le drupal_id et le bonita_id
-    $variable_association = variable_get(VARIABLE_NAME_ID_BONITA, array());
-
-    if(isset($variable_association[$myuser->uid])){
-        return $variable_association[$myuser->uid];
+    if($bonita_id){
+        return $bonita_id;
     }else{
-       gofast_workflows_get_cookie(true);
-       $array_results = (array) gofast_workflows_curl_get_user($myuser,$cookie_name);
+        gofast_workflows_get_cookie(true);
+        $array_results = (array) gofast_workflows_curl_get_user($myuser,$cookie_name);
 
-       if(count($array_results) > 0){
-           if(isset($array_results[0])){
-            $id = $array_results[0]["id"];
-           }
-         $variable_association[$myuser->uid] = $id;
-          variable_set(VARIABLE_NAME_ID_BONITA, $variable_association);
-
-       }else{
-           $id = null;
-       }
-
+        if(count($array_results) > 0){
+            if(isset($array_results[0])){
+                $id = $array_results[0]["id"];
+            }
+            gofast_workflows_set_bonitaid_in_database($myuser->uid, $id);
+        }else{
+            $id = null;
+        }
 
         return $id;
     }
-
 }
 
 /*
@@ -903,7 +901,6 @@ function gofast_workflow_dashboard_search_form(){
         '#name' => 'ac-list-tags-list-creator',
         '#attributes' => [
             'class' => ['form-control-tags js-tagify'],
-            'data-enforce' => '', //  Comment : Do not allow putting data that dose not exist | Decomment : allow putting data that dose not exist
             'data-user' => '', // show ac users
             'data-userlist' => '', // show ac userlist
             'data-extract-user' => '', // extract user from space
@@ -932,7 +929,6 @@ function gofast_workflow_dashboard_search_form(){
         '#name' => 'ac-list-tags-list-users',
         '#attributes' => [
             'class' => ['form-control-tags js-tagify'],
-            'data-enforce' => '', //  Comment : Do not allow putting data that dose not exist | Decomment : allow putting data that dose not exist
             'data-user' => '', // show ac users
             'data-userlist' => '', // show ac userlist
             'data-extract-user' => '', // extract user from space
@@ -987,15 +983,56 @@ function gofast_workflow_dashboard_search_form(){
     return $form;
 }
 
+/**
+ * Given a Bonita ID, return the matching Drupal ID from Drupal database
+ * @return int|false
+ */
+function gofast_workflows_get_uid_from_database($bid) {
+    $users = db_select("field_data_field_bonita_id", "bid")->fields("bid", ["entity_id"]);
+    $users->innerJoin("users", "u", "bid.entity_id = u.uid");
+    $users->condition("bid.field_bonita_id_value", $bid);
+    $users = $users->execute()->fetchCol(); 
+    return reset($users);
+}
+
+/**
+ * Given a Drupal ID, return the matching Bonita ID from Drupal database
+ * @return int|false
+ */
+function gofast_workflows_get_bonitaid_from_database($uid) {
+    return reset(db_select("field_data_field_bonita_id", "bid")->fields("bid", ["field_bonita_id_value"])->condition("entity_id", 
+    $uid)->execute()->fetchCol());
+}
+
+/**
+ * Insert a Drupal ID / Bonita ID association to the database
+ */
+function gofast_workflows_set_bonitaid_in_database($uid, $bid) {
+    db_delete("field_data_field_bonita_id")->condition("entity_id", $uid)->execute();
+    $fields = [
+        "entity_type" => "user",
+        "bundle" => "user",
+        "deleted" => 0,
+        "entity_id" => $uid,
+        "revision_id" => $uid,
+        "language" => LANGUAGE_NONE,
+        "delta" => 0,
+        "field_bonita_id_value" => $bid,
+    ];
+    db_insert("field_data_field_bonita_id")->fields($fields)->execute();
+    entity_get_controller('user')->resetCache([$uid]);
+    cache_clear_all("field:user:$uid", 'cache_field');
+}
+
 /*
  * Return bonita ids from an array of uids
  */
 function gofast_workflows_get_bonitaids_from_uids($uids = null){
-    if($uids == null){
+    if($uids == null && isset($_GET["uids"])){
         //This is an ajax call
         $ajax = true;
 
-        $uids = $_GET['uids'];
+        $uids = is_array($_GET['uids']) ? $_GET['uids'] : [];
     }
 
     $output = array();
@@ -1141,9 +1178,9 @@ function gofast_api_workflows_search_permissions(){
   * This API replaces the old Java / Bonita API to retrieve elements to display in
   * the workflows dashboard with filters, sorting and pagination
   */
-function gofast_api_workflows_dashboard($params, $api = TRUE){
+function gofast_api_workflows_dashboard($params, $api = TRUE, $bypass_access = FALSE){
     //Don't allow external access to this API as it's called by the old Java API internally
-    if($_SERVER['REMOTE_ADDR'] !== "127.0.0.1" && $_SERVER['REMOTE_ADDR'] !== "localhost" && $_SERVER['REMOTE_ADDR'] !== "::1" && !$api){
+    if(gofast_workflows_is_external_api() && !$api && !$bypass_access){
         gofast_api_forbidden("Unavailable action for external requester");
     }
 
@@ -1489,12 +1526,13 @@ function gofast_api_get_case_ids($params){
         $query->condition("pi.name", $type, "=");
     }
     //Filter by title
+    $title = trim($title);
     if(!empty($title)){
         if(!$join_processcurrent){
             $query->join("bonita_bdm.PROCESSCURRENT", "PC", "PC.PID = pi.rootProcessInstanceId");
             $join_processcurrent = true;
         }
-        $query->condition("PC.TITLE", $title, "=");
+        $query->condition("PC.TITLE", "%$title%", "LIKE");
     }
     //Filter by start date
     if(!empty($started)){
@@ -1509,6 +1547,9 @@ function gofast_api_get_case_ids($params){
         $query->condition("PC.END_DATE", $deadline, "<");
     }
 
+    //Get Bonita search permissions
+    $permissions = gofast_api_workflows_search_permissions();
+
     //Implements default permissions
     foreach(gofast_workflows_get_list_available_processes(false, false, $current_user) as $definition){
         if(!empty($type) && $type != "all" && $type != $definition['name']){
@@ -1522,6 +1563,15 @@ function gofast_api_get_case_ids($params){
         //Prepare / Reset variables
         $rule_action = "default";
 
+        foreach($permissions as $permission){
+          //Process name condition
+          if($permission['type'] == "process_name"){
+            //Check if our condition is matching the current process_name
+            if(($permission['condition'] == $definition['name'] || $permission['condition'] == "*") && $definition['name'] != $permission['exclusion_condition']){
+              $rule_action = $permission['action'];
+            }
+          }
+        }
         if($rule_action == "deny"){
             //Don't display this process
             $query->condition("pi.name", $definition["name"], "!=");
@@ -1757,10 +1807,11 @@ function gofast_workflows_add_node_to_resync_oncron($nid){
 }
 
 function gofast_workflows_is_external_api(){
-    if($_SERVER['SERVER_PORT'] == "7443"){
-        return true;
-    }else{
+    
+    if($_SERVER['SERVER_NAME'] === "localhost" && $_SERVER['REQUEST_SCHEME'] === "http" ){
         return false;
+    }else{
+        return true;
     }
 }
 
@@ -1792,7 +1843,7 @@ function gofast_api_workflows_token($params){
 /**
  *  Updates the user's bonita login details.
  */
-function gofast_workflows_change_bonita_username($details): void {
+function gofast_workflows_change_username($details): void {
   $new_username  = $details->new_username;
   $account       = $details->account;
   $old_username  = $details->old_username;

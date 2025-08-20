@@ -3,7 +3,7 @@
     <div class="container-fluid h-100 py-0" id="kt_content">
       <div id="messages-placeholder"></div>
       <div class="gofast-content h-100">
-        <div id="gofastContainer" class="gofast-content--full mainContent fullScreen"><?= $content ?></div>
+        <div id="gofastContainer" class="gofast-content--full mainContent gofast-space--collapsible-side fullScreen"><?= $content ?></div>
       </div>
     </div>
   </div>

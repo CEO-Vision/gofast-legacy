@@ -1,4 +1,4 @@
-<?php global $user; ?>
+<?php global $user; $rand = rand(0, 1000); // avoid caching ?>
 <script type="text/javascript" src="<?php print DOC_SERV_API_URL ?>"></script>
 
 <script type="text/javascript">
@@ -6,58 +6,13 @@
     Gofast.load_onlyoffice_compare = function() {
         var docEditor;
 
-        var fileType = "<?php echo $extension ?>";
-        var documentType = "<?php echo getDocumentType($extension) ?>";
-        var fileUri = "<?php echo $version_source_link ?>";
-        var lang = "<?php echo $user->language ?>";
-        var key = "<?php echo gofast_generate_uuid() ?>";
-
         Gofast = Gofast || {};
-        Gofast.docCompare = new DocsAPI.DocEditor("iframeCompareEditor", {
-            width: "100%",
-            height: "95%",
-            type: "desktop",
-            documentType: documentType,
-            document: {
-                title: "<?= $node->title ?>",
-                url: fileUri,
-                fileType: fileType,
-                key: key,
-                permissions: {
-                    edit: true,
-                    print: false,
-                    download: false,
-                    comment: false,
-                }
-            },
-            editorConfig: {
-                mode: "edit",
-                lang: lang,
-                user: {
-                    id: "<?= $user->uid ?>",
-                    name: "<?= $user->name ?>"
-                },
-                embedded: {
-                    saveUrl: fileUri,
-                    embedUrl: fileUri,
-                    shareUrl: fileUri,
-                    toolbarDocked: "top"
-                },
-                customization: { // not support to customize logo
-                    logUrl: 'https://gofast.ceo-vision.com/sites/default/files/pictures/162/3070-logo-gofast.png.thumbnail-162.png',
-                    logUrlEmbedded: 'https://gofast.ceo-vision.com/sites/default/files/pictures/162/3070-logo-gofast.png.thumbnail-162.png',
-                    about: false,
-                    feedback: false,
-                    chat: false,
-                    comments: false,
-                    hideRightMenu: true,
-                    plugins: false,
-                }
-            },
-            events: {
-                "onDocumentReady": onDocumentReady,
-            }
-        });
+        const docConfig = JSON.parse('<?= $docConfig ?>');
+        docConfig.events = {
+            "onDocumentReady": onDocumentReady,
+        };
+        docConfig.token = "<?= $token ?>";
+        Gofast.docCompare = new DocsAPI.DocEditor("iframeCompareEditor<?= $rand ?>", docConfig);
     }
 
     function onDocumentReady() {
@@ -69,11 +24,9 @@
         Gofast.docCompare.denyEditingRights("");
         Gofast.docCompare.iframe.contentWindow.postMessage({op: "confirm", button: "ok"}, "https://" + Drupal.settings.GOFAST_COMM);
         // Trigger the actual compare process
-        Gofast.docCompare.setRequestedDocument({
-            "c": "compare",
-            "filetype": "<?= $extension ?>",
-            "url": "<?= $version_dest_link ?>"
-        })
+        const docRequestConfig = JSON.parse('<?= $docRequestConfig ?>');
+        docRequestConfig.token = "<?= $docRequestToken ?>";
+        Gofast.docCompare.setRequestedDocument(docRequestConfig);
         // Confirm dialog and show iframe
         Gofast.docCompare.iframe.contentWindow.postMessage({op: "confirm", button: "ok"}, "https://" + Drupal.settings.GOFAST_COMM);
         Gofast.docCompare.iframe.contentWindow.postMessage({op: "confirm", button: "yes"}, "https://" + Drupal.settings.GOFAST_COMM);
@@ -99,7 +52,7 @@
             <span class="h3"><?php print t("Version comparator : Version", array(), array("context" => "gofast:gofast_pdf_compare")) . " " . $version_source . " " . t("to", array(), array("context" => "gofast:gofast_pdf_compare"))  . " " . $version_dest; ?></span>
         </div>
         <form id="iframeCompareEditorContainer" class="position-absolute card-body w-100 h-100" style="transition: opacity .5s; opacity: 0; top: 70px;">
-            <div id="iframeCompareEditor">
+            <div id="iframeCompareEditor<?= $rand ?>">
             </div>
         </form>
         <div id="iframeCompareEditorLoader" class="position-absolute card-body w-100" style="transition: opacity .5s; opacity: 100; top: 70px;">

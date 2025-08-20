@@ -19,9 +19,11 @@
       justify-content: center;
       background: #eaf1f7;
       padding: 0 1rem;
+      height: calc(100% - 55px); // 55px is the size of the #kt_header element
       & .mainContent {
         min-width: calc(98vw - 68px);
         margin: 0 1vw;
+        height: 100%;
         & .isStackedLayer {
           box-shadow: rgba(0, 0, 0, 0.33) 0px -1px 10px;
         }

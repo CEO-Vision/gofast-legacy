@@ -162,7 +162,6 @@ is_no_print = function () {
 
           if(/Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent)){
             pdf_frame.annotator("addPlugin", "Touch", {force: true});
-            document.querySelector("#viewerContainer").style.overflow = "unset";
           }
           // GOFAST-6584
           var params = getQueryVariables();
@@ -190,14 +189,17 @@ is_no_print = function () {
             $("#outerContainer").css("opacity", "100");
             $(".spinner").css("opacity", "0");
           });
-          if(window.parent.Gofast.isMobile() || window.parent.Gofast.isTablet()){
+          if(window.parent.Gofast && (window.parent.Gofast.isMobile() || window.parent.Gofast.isTablet())){
             var observer = new MutationObserver(() => {
+              
               show_again_annotation()
               let parentContainer = $(window.parent.document).find(".gofast-content__node__essential").parent()
-              if($("#pdf_frame").hasClass("mode-gf-full")){
+              if($(window.parent.document).find("#pdf_frame").hasClass("mode-gf-full")){
                 parentContainer.css("z-index", "")
+                parentContainer.addClass("active")
               } else {
                 parentContainer.css("z-index", 999)
+                parentContainer.removeClass("active")
               }
             });
             var target = $(window.parent.document).find("#pdf_frame").get(0)

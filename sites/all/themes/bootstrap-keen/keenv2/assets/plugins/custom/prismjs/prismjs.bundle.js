@@ -13,4 +13,3 @@ var __webpack_exports__ = {};
 
 /******/ })()
 ;
-//# sourceMappingURL=prismjs.bundle.js.map

@@ -2,6 +2,8 @@
 
 module_load_include('inc', 'gofast_onlyoffice', 'gofast_onlyoffice_config');
 module_load_include('inc', 'gofast_onlyoffice', 'gofast_onlyoffice_common');
+require_once(DRUPAL_ROOT .'/sites/all/libraries/firebase-jwt/vendor/autoload.php');
+use Firebase\JWT\JWT;
 
 /**
  * @deprecated
@@ -117,13 +119,18 @@ function GetExternalFileUri($local_uri) {
  * @deprecated
  */
 function generateUrlToConverter($document_uri, $from_extension, $to_extension, $title, $document_revision_id, $validateKey, $is_async) {
+  global $user;
+  global $conf;
+
   $urlToConverterParams = array(
     "url" => $document_uri,
     "outputtype" => trim($to_extension, '.'),
+    "region" => $user->language == "fr" ? "fr-FR" : "en-US",
     "filetype" => trim($from_extension, '.'),
     "title" => $title,
     "key" => $document_revision_id,
     "vkey" => $validateKey);
+  $urlToConverterParams = ["token" => JWT::encode($urlToConverterParams, $conf['oo_jwt_secret'], "HS256")];
 
   $urlToConverter = DOC_SERV_CONVERTER_URL . "?" . http_build_query($urlToConverterParams);
 
@@ -137,11 +144,12 @@ function generateUrlToConverter($document_uri, $from_extension, $to_extension, $
  * @deprecated
  */
 function generateUrlToStorage($document_uri, $from_extension, $to_extension, $title, $key, $validateKey) {
-
+  global $user;
   return DOC_SERV_STORAGE_URL . "?" . http_build_query(
                   array(
                     "url" => $document_uri,
                     "outputtype" => trim($to_extension, '.'),
+                    "region" => $user->language == "fr" ? "fr-FR" : "en-US",
                     "filetype" => trim($from_extension, '.'),
                     "title" => $title,
                     "key" => $key,

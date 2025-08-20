@@ -146,6 +146,12 @@ define('GOFAST_CMIS_PATH_CACHE', '/var/www/d7/sites/default/files/swf');
 /** Limit (in megabytes) beyond which metadata extraction becomes too time-costly */
 define('GOFAST_CMIS_METADATA_EXTRACTION_THRESHOLD', 50);
 
+/**
+ * Define max size in byte of dwg file for preview generation
+ * @package gofast_cmis
+ */
+define('GOFAST_CMIS_DWG_PREVIEW_MAX_SIZE', variable_get("gofast_cmis_dwg_preview_max_size", 15728640));
+
 function gofast_cmis_enable() {
   $gofast_weight = db_select('system')
           ->fields('system', array('weight'))
@@ -228,13 +234,15 @@ function gofast_cmis_cmis_invoke($url, $properties, $settings) {
       return;
     }*/
     $ticket_admin_file = "sites/default/files/swf/alfresco_ticket_admin.txt";
-    $file = fopen($ticket_admin_file, "r");
-    $admin_filesize = filesize($ticket_admin_file);
     $ticket_admin = false;
-    if ($admin_filesize) {
-      $ticket_admin = fread($file, filesize($ticket_admin_file));
+    if (file_exists($ticket_admin_file)){
+      $file = fopen($ticket_admin_file, "r");
+      $admin_filesize = filesize($ticket_admin_file);
+      if ($admin_filesize) {
+        $ticket_admin = fread($file, filesize($ticket_admin_file));
+      }
+      fclose($file);
     }
-    fclose($file);
 
     //there is no ticket file
     if($ticket_admin == false){
@@ -245,7 +253,7 @@ function gofast_cmis_cmis_invoke($url, $properties, $settings) {
     }else{
         // check ticket validity
         $check_url = "http://localhost/alfresco/service/api/login/ticket/" . $ticket_admin . "?alf_ticket=" . $ticket_admin;
-            if ( 200 !== gofast_get_http_code($url)) {
+            if ( 200 !== gofast_get_http_code($url, 3)) {
                $ticket_admin = gofast_cmis_webservice_generate_alfresco_ticket("admin");
                 $file = fopen("sites/default/files/swf/alfresco_ticket_admin.txt", "w+");
                 fwrite($file, $ticket_admin);
@@ -376,7 +384,7 @@ function gofast_cmis_init() {
     $default_documents_form_configuration = array(
         'ticket' => 1,
         'ticket_path_length' => 200,
-        'gofast_onlyoffice_ro_preview' => FALSE,
+        'gofast_onlyoffice_ro_preview' => TRUE,
         'edit_libreoffice_documents' => FALSE
     );
     $documents_form_defaults = variable_get("documents_form_defaults", $default_documents_form_configuration);
@@ -504,6 +512,7 @@ function gofast_cmis_form_article_node_form_alter(&$form, &$form_state, $form_id
     unset($form['book']);
     gofast_book_render_page_selector($form);
 
+    $form["#after_build"][] = "gofast_cmis_node_form_after_build";
     $form['#attributes']['class'][] = 'GofastForm GofastForm__ArticleItem';
     gofast_add_cancel_button_to_form($form);
 }
@@ -845,9 +854,33 @@ function gofast_cmis_form_alfresco_item_node_form_alter(&$form, &$form_state, $f
   }
 
   unset($form['field_esup_request_id']['und']['add_more']);
-
+  $form["#after_build"][] = "gofast_cmis_node_form_after_build";
   $form['#attributes']['class'][] = 'GofastForm GofastForm__AlfrescoItem';
   gofast_add_cancel_button_to_form($form);
+}
+
+/**
+ * If we have an already existing date field in the source node of an alfresco item
+ * Then we have to put its value in a form input and format it as expected by the field widget
+ */
+function gofast_cmis_node_form_after_build($form, &$form_state) {
+  if (!isset($form['#node']->translation_source)) {
+    return $form;
+  }
+  $original_date_items = field_get_items('node', $form['#node']->translation_source, 'field_date');
+  $original_date = $original_date_items[0]['value'] ?? "";
+  if (!empty($original_date)) {
+    $input_format = variable_get('date_format_short', 'm/d/Y - H:i');
+    $input_formats = explode("-", $input_format);
+    $date_format = trim($input_formats[0]);
+    $time_format = trim($input_formats[1]);
+    $timestamp = strtotime($original_date);
+    $date = date($date_format, $timestamp); // the format is declared in the field instance
+    $time = date($time_format, $timestamp);
+    $form_state['input']['field_date'][LANGUAGE_NONE][0]['value']['date'] = $date;
+    $form_state['input']['field_date'][LANGUAGE_NONE][0]['value']['time'] = $time;
+  }
+  return $form;
 }
 
 /**
@@ -1046,7 +1079,7 @@ function gofast_cmis_form_alter(&$form, &$form_state, $form_id) {
       $form['#disabled'] = TRUE;
       $form['locked'] = array(
         '#markup' => t('The user !user is currently locking the document %document. Please wait or try to <a href="@onlyoffice-link">edit with OnlyOffice</a>.',
-                        array('%document' => $node->title, '!user' => $user_picture, '@onlyoffice-link' => '/onlyoffice/editor/' . $node->nid),
+                        array('%document' => $node->title, '!user' => $user_picture, '@onlyoffice-link' => '/onlyoffice/editor/' . $node->nid . '?start=' . time()),
                         array('context' => 'gofast:gofast_cmis')),
         '#weight' => -1,
         '#prefix' => '<div class="alert alert-block alert-danger">',
@@ -1307,9 +1340,9 @@ function gofast_cmis_menu() {
     'type' => MENU_CALLBACK,
   );
   
-  $items['gofast/ajax/generate_dwg_preview/%'] = array(
+  $items['gofast/ajax/generate_dwg_preview/%/%'] = array(
     'page callback' => 'gofast_cmis_webservice_item_generate_dwg_preview',
-    'page arguments' => array(3),
+    'page arguments' => array(3,4),
     'access arguments' => array('access content'),
     'delivery callback' => 'gofast_ajax_delivery',
     'type' => MENU_CALLBACK,
@@ -1407,7 +1440,7 @@ function gofast_cmis_menu() {
   );
 
   $items['gofast/cmis/is_path_mirrored'] = array(
-    'page callback' => 'gofast_cmis_is_path_mirrored',
+    'page callback' => 'gofast_cmis_is_path_mirrored_api_callback',
     'access arguments' => array('access content'),
     'access callback' => 'user_access',
     'type' => MENU_CALLBACK,
@@ -1431,6 +1464,21 @@ function gofast_cmis_menu() {
 
   $items["gofast_cmis/convert_file_to_new_format/%node"] = array(
     'page callback' => 'gofast_cmis_convert_old_office_format_to_new',
+    'type' => MENU_CALLBACK,
+    'access arguments' => array('access content'),
+    'access callback' => 'user_access',
+    'page arguments' => array(2),
+  );
+
+  $items["gofast_cmis/convert_async"] = array(
+    'page callback' => 'gofast_cmis_convert_async',
+    'type' => MENU_CALLBACK,
+    'access arguments' => array('access content'),
+    'access callback' => 'user_access',
+  );
+
+  $items["gofast_cmis/converted_async/%node"] = array(
+    'page callback' => 'gofast_cmis_converted_async',
     'type' => MENU_CALLBACK,
     'access arguments' => array('access content'),
     'access callback' => 'user_access',
@@ -1893,7 +1941,12 @@ function gofast_cmis_entity_presave($entity, $type) {
     $first_level_space = gofast_og_is_root_space($entity);
     $private_space = gofast_og_is_user_private_space($entity);
     $run_as_admin = true;
-
+    // Verify if the space is already created on Alfresco and is'nt associated with a user in database
+    $private_space  = gofast_og_get_private_space_by_username($entity->name);
+    $alfresco_item = gofast_cmis_item_get_by_path("/Sites/_".$entity->name);
+    if(empty($private_space )&& isset($alfresco_item)){
+      gofast_cmis_item_remove_folder($alfresco_item->properties['alfcmis:nodeRef']);
+    }
     //if it's a group, create the corresponding folder on Alfresco, then record the folder id in a node field
     $remote_item = gofast_cmis_node_edit_item_folder_insert($entity, $run_as_admin);
     // If the item is well created
@@ -1956,28 +2009,8 @@ function gofast_cmis_node_insert($node) {
 
   $moving = variable_get("cmis_moving_" . $reference, "false");
   if ($node_is_group) {
-    $unique_name = rawurlencode(str_replace("\,", ",", gofast_ldap_space_cn($node)));
-    $node_location_path = gofast_cmis_space_get_webdav_path($node->nid);
-    $node_location_path .= "/TEMPLATES/";
-    $item = gofast_cmis_item_get_by_path($node_location_path);
-    $template_folder = true;
+    // Will set expected permissions Alfresco-side for the space (and its TEMPLATES folder as well)
     gofast_cmis_node_update_permissions($node);
-    
-    $node_is_group_not_private = gofast_og_is_space($node, FALSE);
-    if($node_is_group_not_private){
-        $ch = curl_init();
-        curl_setopt($ch, CURLOPT_HEADER, 0);
-        curl_setopt($ch, CURLOPT_RETURNTRANSFER, 1);
-    curl_setopt($ch, CURLOPT_USERPWD, 'admin:' . gofast_get_admin_pwd());
-    $url = "http://localhost:8080/alfresco/service/set/subfolder/permission/?nodeRef=" . $item->properties['alfcmis:nodeRef'] . "&unique_name=" . $unique_name . "&template_folder=" . $template_folder;
-    curl_setopt($ch, CURLOPT_URL, $url);
-        curl_setopt($ch, CURLOPT_TIMEOUT, 5);
-
-        curl_exec($ch);
-    }
-    //$buffer = curl_exec($ch);
-    //$buf = strip_tags($buffer);
-    //$result = json_decode($buf);
   }
   elseif (($node->type === "alfresco_item") && $moving === "false") {
     gofast_cmis_automatic_multifilling($node);
@@ -2034,16 +2067,16 @@ function gofast_cmis_node_update($node) {
       variable_del("cmis_delete_" . $node_reference);
       return;
     }
-  if (in_array($node->type, array_merge(array('alfresco_item', 'article'), array_keys(gofast_og_node_types())))) {
-    $node_reference = gofast_cmis_node_get_item_id($node);
-    $node_is_space = gofast_og_is_space($node);
-    $renamed = $node->title !== $node->original->title;
+    if (in_array($node->type, array_merge(array('alfresco_item', 'article', "group", "organisation", "extranet", "public"), array_keys(gofast_og_node_types())))) {
+      $node_reference = gofast_cmis_node_get_item_id($node);
+      $node_is_space = gofast_og_is_space($node);
+      $renamed = $node->title !== $node->original->title;
 
     $wrapper_original = isset($node->original) ? entity_metadata_wrapper('node', $node->original) : null;
-    $wrapper_new = isset($node) ? entity_metadata_wrapper('node', $node) : null;
-
-    // If node is replicated (Space / alfresco_item / article)
-    if (in_array($node->type, array_merge(array_keys(gofast_og_node_types()), array('alfresco_item', 'article')))) {
+      $wrapper_new = isset($node) ? entity_metadata_wrapper('node', $node) : null;
+      
+      // If node is replicated (Space / alfresco_item / article)
+      if (in_array($node->type, array_merge(array_keys(gofast_og_node_types()), array('alfresco_item', 'article', "group", "organisation", "extranet", "public")))) {
       gofast_cmis_update_aspect_properties($node, "update");
     }
     if ($renamed) {
@@ -2258,7 +2291,7 @@ function gofast_cmis_update_aspect_properties($node, $op = null) {
     $properties['gofast:nid'] = $wrapper->getIdentifier();
     $properties['gofast:language'] = $node->language;
     $properties['gofast:date'] = "";
-    if (in_array($node->type, gofast_og_content_bundles()) && $node->type !== 'conference' && !empty($node->field_custom_date[LANGUAGE_NONE]) && isset($node->field_custom_date[LANGUAGE_NONE][0]["value"])) {
+    if (isset($node->field_custom_date) && $node->type !== 'conference' && !empty($node->field_custom_date[LANGUAGE_NONE]) && isset($node->field_custom_date[LANGUAGE_NONE][0]["value"])) {
       $custom_date_value = $node->field_custom_date[LANGUAGE_NONE][0]["value"];
       $custom_datetime = new DateTime($custom_date_value);
       $custom_date_iso8601 = $custom_datetime->format('c');
@@ -2274,28 +2307,48 @@ function gofast_cmis_update_aspect_properties($node, $op = null) {
         $properties['gofast:preventDelete'] = 'false';
     }
 
-    if (!$node_is_group) {
 
+    if(isset($wrapper->{"field_tags"})){
       $tag_names = array_map(function($item) {
         return $item->name;
       }, $wrapper->field_tags->value());
 
       $properties['gofast:tags'] = implode(', ', $tag_names);
+    }
+    if(isset($wrapper->{"field_category"})){
       $properties['gofast:category'] = $wrapper->field_category->value() !== null ? $wrapper->field_category->value()->name : "";
-      $properties['gofast:criticity'] = $wrapper->field_criticity->value() !== null ? $wrapper->field_criticity->value()->name : "";
-      $properties['gofast:state'] = $wrapper->field_state->value() !== null ? $wrapper->field_state->value()->name : "";
-      $properties['gofast:document_reference'] = $wrapper->field_document_reference->value() !== null ? $wrapper->field_document_reference->value() : "";
-      $properties['cm:title'] = !empty(trim($wrapper->field_title->value()))? $wrapper->field_title->value() : $properties['cm:title'];
+    }
 
+    if(isset($wrapper->{"field_criticity"})){
+      $properties['gofast:criticity'] = $wrapper->field_criticity->value() !== null ? $wrapper->field_criticity->value()->name : "";
+    }
+
+    if(isset($wrapper->{"field_state"})){
+      $properties['gofast:state'] = $wrapper->field_state->value() !== null ? $wrapper->field_state->value()->name : "";
+    }
+
+    if(isset($wrapper->{"field_document_reference"})){
+      $properties['gofast:document_reference'] = $wrapper->field_document_reference->value() !== null ? $wrapper->field_document_reference->value() : "";
+    }
+
+    if(isset($wrapper->{"field_title"})){
+      $properties['cm:title'] = !empty(trim($wrapper->field_title->value()))? $wrapper->field_title->value() : $properties['cm:title'];
+    }
+
+    if(isset($wrapper->{"field_target_link"})){
       $target_node_ids = array_map(function($element) {
         return $element->nid;
       }, $wrapper->{'field_target_link'}->value());
       $properties['gofast:linkedContent'] = implode(', ', $target_node_ids);
+    }
 
-      foreach(module_implements('alter_cmis_update_aspect_properties') as $module) {
-        $function = $module . '_alter_cmis_update_aspect_properties';
-        $properties = call_user_func($function, $wrapper, $properties, $node);
-      }
+    if(isset($wrapper->{"field_classification"})){
+      $properties['gofast:classification'] = $wrapper->field_classification->value() !== null ? $wrapper->field_classification->value()->name : "";
+    }
+
+    foreach(module_implements('alter_cmis_update_aspect_properties') as $module) {
+      $function = $module . '_alter_cmis_update_aspect_properties';
+      $properties = call_user_func($function, $wrapper, $properties, $node);
     }
 
     $first_level_space = gofast_og_is_root_space(gofast_og_get_parent($node, TRUE));
@@ -2305,7 +2358,19 @@ function gofast_cmis_update_aspect_properties($node, $op = null) {
     if ($node_is_group) {
         $run_as_admin = true;
     }
-    // finish drupal node transaction _before_ updating the cmis properties
+
+    $old_props = $item->properties;
+    $blocking_props = ['gofast:preventDelete'];
+
+    $blocking_changed_detected = !empty(array_filter($blocking_props, function($key) use ($properties, $old_props) {
+        return $properties[$key] != $old_props[$key];
+    }));
+    // a potentially transaction-blocking property (preventDelete) has been updated, set properties now
+    if ($blocking_changed_detected) {
+      gofast_cmis_item_update_properties($reference, $properties, $run_as_admin, true);
+      return;
+    }
+    // else don't slow down drupal node transaction and finish it _before_ updating the cmis properties
     drupal_register_shutdown_function("gofast_cmis_item_update_properties", $reference, $properties, $run_as_admin, true);
   }
 }
@@ -2322,12 +2387,6 @@ function gofast_cmis_node_delete($node) {
   if (isset($_GET["bypass_gofast_cmis_node_delete"])) {
     return;
   }
-  if (isset($_GET["bypass_gofast_cmis_node_delete"])) {
-
-    return;
-
-  }
-
   if (gofast_og_is_space($node) || $node->type === "alfresco_item" || $node->type === "article") {
     $item_id = gofast_cmis_node_get_item_id($node);
     $item = gofast_cmis_item_get($item_id);
@@ -2726,7 +2785,7 @@ function gofast_cmis_create_article_node_programmatically($node_ref, $article_co
     // add homepage field to group
     $group = node_load($gid);
     $group->{GOFAST_BOOK_HOMEPAGE_FIELD}[LANGUAGE_NONE][0]['value'] = $node->nid;
-    field_attach_update("node", $group);  
+    gofast_update_field_database($group, GOFAST_BOOK_HOMEPAGE_FIELD);
     // apply special permissions, only allow the space administrators to edit this document
     gofast_cmis_webservice_item_assign_homepage_permissions($node_ref, [$gid]);
   }
@@ -3041,7 +3100,7 @@ function gofast_cmis_block_view($delta = '') {
         if ($mynode->type === "alfresco_item" || $mynode->type === "article") {
           $upload_new_version = "true";
           $block['subject'] = '';
-          $help_text = t("Drag&Drop new version here", array(), array('context' => 'gofast:gofast_cmis'));
+          $help_text = '<span class="drop_area_label">'.t("Drag&Drop new version here", array(), array('context' => 'gofast:gofast_cmis')).'</span>';
         }
       }
       // disable page caching if this block is displayed
@@ -3107,7 +3166,7 @@ function gofast_cmis_article_node_update($form, $form_state) {
         try {
 
         $mimetype = "text/html";
-        $comment_message = $form_state['values']['tag_comment'];
+        $comment_message = $form_state['values']['tag_comment_body']["value"];
         $node_reference = gofast_cmis_node_get_item_id($node);
         $new_title = $form_state['values']['title'];
         if (substr($new_title, -strlen(".html")) != ".html") {
@@ -3117,8 +3176,6 @@ function gofast_cmis_article_node_update($form, $form_state) {
         if (!strlen($article_content)) {
           $article_content = "<p></p>"; // prevent empty article content to avoid filesize integrity check error
         }
-        $article_content = gofast_cmis_ckeditor_classes_to_style($article_content);
-        $article_content = gofast_cmis_ckeditor_smiley_path_update($article_content);
 
         $node->title = $new_title;
         $node->{GOFAST_CMIS_FILENAME_FIELD}[LANGUAGE_NONE][0]['value'] = $new_title;
@@ -3136,7 +3193,7 @@ function gofast_cmis_article_node_update($form, $form_state) {
 
         // On crée un commentaire sur le noeud avec le commentaire entré par l'utilisateur (ou celui par défaut)
         if (!empty($comment_message)) {
-          $comment_body = $form_state['values']['tag_comment'];
+          $comment_body = $form_state['values']['tag_comment_body']["value"];
           $comment = (object) array(
                   'nid' => $node->nid,
                   'cid' => 0,
@@ -3194,6 +3251,8 @@ function gofast_cmis_form_article_node_form_submit($form, &$form_state) {
   if (!strlen($article_content)) {
     $article_content = "<p></p>"; // prevent empty article content to avoid filesize integrity check error
   }
+  $article_content = gofast_xss_clean($article_content);
+  
   $article_title = isset($form_state['values']['title']) ? $form_state['values']['title'] : null;
   $article_title = gofast_xss_clean($article_title);
   if (substr($article_title, -strlen(".html")) != ".html") {
@@ -3262,9 +3321,6 @@ function gofast_cmis_form_article_node_form_submit($form, &$form_state) {
     if (isset($form_state['node']->nid)) {
       gofast_cmis_article_node_update($form, $form_state);
     } else {
-      //Case creation
-      $article_content = gofast_cmis_ckeditor_classes_to_style($article_content);
-      $article_content = gofast_cmis_ckeditor_smiley_path_update($article_content);
       $properties = ["gofast:bundle" => "article"];
       $inserted_article_id = gofast_cmis_alfresco_api_insert_item($main_folder_article->id, $article_title, $article_content, $properties, FALSE);
       if (!$inserted_article_id) {
@@ -3280,125 +3336,6 @@ function gofast_cmis_form_article_node_form_submit($form, &$form_state) {
     }
   }
 }
-
-/**
- * CKEDITOR uses classes and a .css file for some styles, but they don't apply on <iframe> and won't work when the Article is downloaded.
- * This function will modifiy the text to transform custom classes into matching css styles.
- * If there is other classes that don't apply CKEditor styles, they will be kept.
- * @param type $body
- * @return type
- * @author AGA
- */
-
-function gofast_cmis_ckeditor_classes_to_style($body) {
-
-    $body = json_encode($body);
-
-
-    $array_to_replace_alignemnt = array('rteright' => 'text-align: right;', 'rteleft' => 'text-align: left;', 'rtecenter' => 'text-align: center;', 'rtejustify' => 'text-align: justify;');
-    $array_to_replace_indent = array('rteindent1' => 'margin-left: 40px;', 'rteindent2' => 'margin-left: 80px;', 'rteindent3' => 'margin-left: 120px;', 'rteindent4' => 'margin-left: 160px;');
-    $array_to_replace_ibimage = array('ibimage_left' => 'float: left;', 'ibimage_right' => 'float: right;');
-    $array_to_replace = array_merge($array_to_replace_alignemnt, $array_to_replace_indent, $array_to_replace_ibimage);
-
-    //We declare the new formatted body with styles
-    $new_body;
-
-    //we get an array of lines
-    $lines = explode("<p ", $body);
-
-    // there is no "open" p tag, return
-    if (count($lines) < 2) {
-      return json_decode($body);
-    }
-
-    foreach($lines as $line) {
-        if(strpos($line, 'class=\"') !== false) {
-            //Here we have a class applied on text
-
-            //We explode between class=\" and \" to get the content of the attribute
-            $class_explode = explode('class=\"', $line);
-            $after_class_explode = explode('\"', $class_explode[1]);
-
-            //We put classes in a tab
-            $classes = explode(" ", $after_class_explode[0]);
-
-            //For each class of the tab, we check if we want to replace it.
-            //If so, we replace it by the data in $array_to_replace, and we replace class by style to keep the css
-            //We use $keep_class to avoid some cases where not all classes need to be removed
-            $rmv_class = true;
-            $new_styles = array();
-            foreach($classes as $class) {
-                if(in_array($class, array_keys($array_to_replace))) {
-                    $new_styles[$class] = $array_to_replace[$class];
-                }else $rmv_class = false;
-            }
-            //If we don't keep class, then replace all
-            if($rmv_class) {
-                foreach($classes as $class) {
-                    $line = str_replace($class, $array_to_replace[$class], $line);
-                    $line= str_replace('class', 'style', $line);
-                }
-            }else{
-               //Otherwise we remove class attributes that we don't want, and put them into styles
-                $styles_to_add;
-
-                foreach($new_styles as $old_style => $new_style) {
-                    $line = str_replace($old_style, "", $line);
-                    $styles_to_add .= $new_style." ";
-                }
-                $line = 'style=\"' . $styles_to_add . '\"' . $line;
-            }
-
-            //Since we removed the "<p " by exploding, we add it to the line and concat it to the new_body
-            $new_body .="<p ". $line;
-        }else{
-            //No class, nothing to check on this line
-            $new_body .= $line;
-            continue;
-        }
-    }
-
-    //watchdog("axel", ($body));
-    //watchdog("axel", json_decode($new_body));
-    return json_decode($new_body);
-}
-
-
-/**
- * Smileys provided by CKEditor won't display if we download the article and on Alfresco because of the relative url used in the src attribute
- * This function will add the DOMAIN at the beginning of the URL so the path is always correct and the smileys will be retrieved even out of the application
- * This also supports the possibility of special smileys in some other productions.
- * @param type $body
- * @return array
- * @author AGA
- */
-function gofast_cmis_ckeditor_smiley_path_update($body) {
-
-    $smiley_path = '\/sites\/all\/libraries\/ckeditor\/plugins\/smiley\/images\/';
-    $domain = str_replace('"', '', json_encode('https://' . $_SERVER['SERVER_NAME']));
-
-    $body = json_encode($body);
-    //we get an array of lines
-    $lines = explode("<p", $body);
-    $new_body = "";
-    foreach($lines as $key => $line) {
-        if(strpos($line, '<img ') !== false) {
-
-            $img_src_p1 = explode('src=\"', $line);
-            $img_src_p2 = explode('\"', $img_src_p1[1]);
-
-            $img_src = $img_src_p2[0];
-
-            $new_img_path = (strpos($img_src, $smiley_path) !== false) ? $domain . $img_src : $img_src;
-
-            $line = str_replace($img_src, $new_img_path, $line);
-        }
-        $new_body .= ($key !== 0) ? '<p'.$line : $line;
-    }
-      // print_r(json_decode($new_body)) ;
-    return json_decode($new_body);
-}
-
 
 /**
  * This is the submit hook on alfresco_item form submit.
@@ -4264,121 +4201,72 @@ function gofast_cmis_restor_document_alfresco($node) {
 }
 
 /**
- * @deprecated
+ * @package gofast_cmis
+ * Call alfresco api to remove item from the trashcan
+ *
+ * @param string $nodeRef
+ */
+function gofast_cmis_remove_from_trashcan($nodeRef) {
+  $item_id = gofast_cmis_get_raw_item_id($nodeRef);
+  $url = 'http://localhost:8080/alfresco/service/api/archive/archive/SpacesStore/' . $item_id;
+  $ch = curl_init();
+  curl_setopt($ch, CURLOPT_HEADER, 0);
+  curl_setopt($ch, CURLOPT_RETURNTRANSFER, 1);
+  curl_setopt($ch, CURLOPT_USERPWD, "admin:" . gofast_get_admin_pwd());
+  curl_setopt($ch, CURLOPT_URL, $url);
+  curl_setopt($ch, CURLOPT_CUSTOMREQUEST, "DELETE");
+  curl_exec($ch);
+}
+
+/**
  * @package gofast_cmis
  * @todo Description
- * @param type $node
- * @return type
+ * @param object $node
+ * @param string $filename path where the content should be written
+ * @return string $content extract content as a string
  */
-function gofast_cmis_extract_email_content($node) {
-  watchdog("debug extract email content", "extract");
-  require_once('/var/www/d7/mimeDecode.php');
-
-  $filename = '/var/www/d7/sites/default/files/test';
+function gofast_cmis_extract_email_content($node, $filename) {
+  ini_set('memory_limit', '512MB');
 
   $file_content = gofast_cmis_item_get_content($node->{GOFAST_CMIS_REFERENCE_FIELD}[LANGUAGE_NONE][0]['value']);
-
   $file = fopen($filename, "w");
   fwrite($file, $file_content);
   fclose($file);
 
-  $params = array(
-    'input' => $file_content,
-    'crlf' => "\r\n",
-    'include_bodies' => TRUE,
-    'decode_headers' => TRUE,
-    'decode_bodies' => FALSE
-  );
-
-  $mail = Mail_mimeDecode::decode($params);
-
-
-  /* parse the message and return a mime message resource */
-  $mime = mailparse_msg_parse_file($filename);
-  /* return an array of message parts - this contsists of the names of the parts
-   * only */
-  $struct = mailparse_msg_get_structure($mime);
-
-  /* on recupere la liste des sections du mail */
-  $list_sections = array();
-  $list_sections_charset = array();
-  foreach ($struct as $st) {
-
-    $section = mailparse_msg_get_part($mime, $st);
-    $info = mailparse_msg_get_part_data($section);
-    $list_sections[$st] = $info["content-type"];
-    $list_sections_charset[$st] = $info["charset"];
-  }
-
-
-  //on choisit la meilleur section a afficher
-  $showpart_html = array_search("text/html", $list_sections);
-  $showpart_text = array_search("text/plain", $list_sections);
-  if ($showpart_html !== false) {
-    //partie html
-    $sec = mailparse_msg_get_part($mime, $showpart_html);
-    $info = mailparse_msg_get_part_data($sec);
-
-    $contents = mailparse_msg_extract_part_file($sec, $filename, NULL);
-    $content = $contents;
-    $content = str_replace("charset=UTF-8", "", $content);
-    $content = str_replace("charset=utf-8", "", $content);
-    $result = '<div id="email_content">' . mb_convert_encoding($content, "UTF-8", $info["charset"]) . '</div>';
-  }
-  elseif ($showpart_text !== false) {
-    //partie texte
-    $sec = mailparse_msg_get_part($mime, $showpart_text);
-    $contents = mailparse_msg_extract_part_file($sec, $filename, NULL);
-    $content = nl2br($contents);
-    $result = '<div id="email_content">' . mb_convert_encoding($content, "UTF-8", mb_detect_encoding($content, "UTF-8, ISO-8859-1, ISO-8859-15", true)) . "</div>";
-  }
-  else {
-    //pas de partie exploitable
-  }
-
-  //si c'est un .msg
   $cmisobject = gofast_cmis_item_get($node->{GOFAST_CMIS_REFERENCE_FIELD}[LANGUAGE_NONE][0]['value']);
-  $mime = $cmisobject->properties['cmis:contentStreamMimeType'];
-  if ($mime == "application/vnd.ms-outlook") {
-    //je le transforme en .eml
-    $command = "java -jar " . GOFAST_TIKA_PATH . " -x /var/www/d7/sites/default/files/test";
+  $mimetype = $cmisobject->properties['cmis:contentStreamMimeType'];
+
+  // parse content
+  require_once libraries_get_path('php-mime-mail-parser').'/vendor/autoload.php';
+  $parser = new \eXorus\PhpMimeMailParser\Parser();
+  $parser->setPath($filename);
+  $text = $parser->getMessageBody('text');
+  $html = $parser->getMessageBody('html');
+
+  if ($mimetype == "application/vnd.ms-outlook") {
+    // if it's a .msg: convert it into .eml
+    $command = "java -jar " . GOFAST_TIKA_PATH . " -x ".$filename;
     try {
       ini_set('memory_limit', '-1');
       exec($command, $result);
     }
-    catch (Exception $e) {
-
-    }
+    catch (Exception $e) {}
     $result = implode('', $result);
+  } elseif ($html !== false) {
+    // text part
+    $result = $html;
+  } elseif ($text !== false) {
+    // text part
+    $result = nl2br($text);
+  } else {
+    // nothing exploitable
+    $result = "";
   }
+  // Remove some Illegal attributes
+  $result = preg_replace('/\s+xmlns="[^"]*"/', '', $result);
 
-  if ($mail->headers["subject"] != "" && $mail->headers["subject"] != null) {
-    if (mb_detect_encoding($mail->headers["subject"], 'UTF-8', true) != false) {
-      //on change le titre du noeud par le sujet du mail
-      $node->title = $mail->headers["subject"];
-    }
-    else {
-      //on change le titre du noeud par le sujet du mail
-      $node->title = utf8_encode($mail->headers["subject"]);
-    }
-  }
-
-  //si le mail possède des pièces jointes extraites par alfresco, on remplit le champs cck qui fait un lien entre les noeuds
-  if (count(gofast_cmis_get_attachments_eml($node)) != 0 && count($node->field_lien) == 0) {
-    //on stock dans une variable le nid du noeud qui possède des pièces jointes pour que dans le prochain cron on resauvegarde ce noeud en
-    // en remplissant le champs cck des pièces jointes
-    $ceo_vision_attach_node = variable_get("ceo_vision_attach_node", array());
-    $ceo_vision_attach_node[$node->{GOFAST_CMIS_REFERENCE_FIELD}[LANGUAGE_NONE][0]['value']] = time();
-    variable_set("ceo_vision_attach_node", $ceo_vision_attach_node);
-  }
-
-  //on met dans le champs body le contenu html du mail
-  //$node->body = $result;
-  $node->body[LANGUAGE_NONE][0]['value'] = $result;
-  $node->body[LANGUAGE_NONE][0]['summary'] = text_summary($result);
-  $node->body[LANGUAGE_NONE][0]['format'] = filter_default_format();
-
-  return $node;
+  $cleaned_result = gofast_xss_clean($result);
+  return $cleaned_result;
 }
 
 /**
@@ -4456,6 +4344,13 @@ function gofast_cmis_check_and_sync_node_status($node) {
 }
 
 /**
+ * Return an array of all extensions directly previwable by the browser.
+ */
+function gofast_cmis_browser_previewable_extensions() {
+  return ["jpg", "jpeg", "png", "gif", "bmp", "webp", "svg", "mp3", "mp4", "webm", "pdf"];
+}
+
+/**
  * @package gofast_cmis
  * This function return the content preview
  */
@@ -4476,7 +4371,7 @@ function gofast_cmis_get_content_preview($node) {
   //Add summary
   if(node_access("update", $node)){
     //Drag and drop element
-    $output = '<progress id="progress" style="display:none;margin-top:5px; width: 100%;"></progress><span id="block-gofast-cmis-gofast-cmis-fast-upload-file" ><p class="drop-area" id="fast_drag_drop" style="height:35px;vertical-align: middle;">'.t("Drag&Drop new version here", array(), array('context' => 'gofast:gofast_cmis')).'</p></span>';
+    $output = '<progress id="progress" style="display:none;margin-top:5px; width: 100%;"></progress><span id="block-gofast-cmis-gofast-cmis-fast-upload-file" ><p class="drop-area" id="fast_drag_drop" style="height:35px;vertical-align: middle;"><span class="drop_area_label">'.t("Drag&Drop new version here", array(), array('context' => 'gofast:gofast_cmis')).'</span></p></span>';
     //Summary
     if (strlen($node->body[LANGUAGE_NONE][0]['value']) > 0) {
       $output .= theme("gofast_summary_content", array("body" => $node->body[LANGUAGE_NONE][0]['value']));
@@ -4489,7 +4384,7 @@ function gofast_cmis_get_content_preview($node) {
   }
   
   //Add preview element
-  $output .= "<div class='flex-grow-1 ".(gofast_essential_is_essential() ? "overflow-auto" : "")."' style='height:100%;' id='container_preview_element'>" . gofast_cmis_get_content_preview_element($node) . "</div>";
+  $output .= "<div class='flex-grow-1 ".(gofast_essential_is_essential() ? "overflow-hidden" : "")."' style='height:100%;' id='container_preview_element'>" . gofast_cmis_get_content_preview_element($node) . "</div>";
   
   return $output;
 }
@@ -4547,7 +4442,7 @@ function gofast_cmis_get_content_preview_element($node) {
 
     if($_GET["search"] || $is_confidential_or_internal || $has_annotations || $pdfjs_forced){
       //Use PDF.js
-      $link = '/sites/all/libraries/pdf/web/viewer_gofast.html?v=252'. $no_print .'&file=' . rawurlencode($link) . $has_search;
+      $link = '/sites/all/libraries/pdf/web/viewer_gofast.html?v=253'. $no_print .'&file=' . rawurlencode($link) . $has_search;
       $output .= '<iframe id="pdf_frame" name="pdf-frame" style="border:none;z-index:0;" src="' . $link . '" type="application/pdf" width="100%" height="100%"></iframe>';
       $output .= '<script>jQuery(document).ready(function(){Drupal.gofast_cmis.triggerAnnotator();})</script>';
         }else{
@@ -4560,8 +4455,13 @@ function gofast_cmis_get_content_preview_element($node) {
           $link = '/gofast/ajax/generate_eml_preview/' . $node->nid . '/true';
           $output .= '<embed src="' . $link . '" type="text/html" width="100%" height="100%" style="background-color: white;"></embed>';
       }else if($extension == "dwg"){
-        $link = '/gofast/ajax/generate_dwg_preview/' . $node->nid . '/true';
-        $output .= '<iframe id="previewEmbedElement" src="' . $link . '" type="image/svg+xml" frameBorder="0" width="100%" height="100%" style="display:none;background-color: white;"></iframe>';
+        if(!gofast_cmis_node_can_preview_dwg($node->nid)){
+          $formatted_value = formatBytes(GOFAST_CMIS_DWG_PREVIEW_MAX_SIZE, 0);
+          $output .= theme("gofast_cmis_preview_too_large", array("extension" => $extension, "max_size" => $formatted_value["result"].$formatted_value["unit"]));
+        } else {
+          $link = '/gofast/ajax/generate_dwg_preview/' . $node->nid . '/true';
+          $output .= '<iframe id="previewEmbedElement" src="' . $link . '" type="image/svg+xml" frameBorder="0" width="100%" height="100%" style="display:none;background-color: white;"></iframe>';
+        }
       }else{
         watchdog("debug preview soffice", "soffice");
         $link = '/gofast/ajax/generate_soffice_preview/' . $node->nid . '/true';
@@ -4619,12 +4519,12 @@ function gofast_cmis_get_content_preview_element($node) {
       //CASE : PDF, just display
       if($_GET["search"] || $is_confidential_or_internal || $has_annotations || $pdfjs_forced){
         //Use PDF.js
-        $link = '/sites/all/libraries/pdf/web/viewer_gofast.html?v=252'. $no_print .'&file=' . rawurlencode($link) . $has_search;
+        $link = '/sites/all/libraries/pdf/web/viewer_gofast.html?v=253'. $no_print .'&file=' . rawurlencode($link) . $has_search;
         $output .= '<iframe id="pdf_frame" name="pdf-frame" style="border:none;z-index:0;" src="' . $link . '" type="application/pdf" width="100%" height="100%"></iframe>';
         $output .= '<script>jQuery(document).ready(function(){Drupal.gofast_cmis.triggerAnnotator();})</script>';
       }else{
         //Don't use PDF.js
-        $output .= '<embed src="' . $link . '" type="application/pdf" width="100%" height="100%"></embed>';
+        $output .= '<embed src="' . $thumbnail_link . '" type="application/pdf" width="100%" height="100%"></embed>';
       }
     }else if(in_array($extension, ['html'])){
       $doc_link = "/gofast/ajax/generate_preview/" . $node->nid . "/true?only_print=true";
@@ -4633,7 +4533,7 @@ function gofast_cmis_get_content_preview_element($node) {
       //CASE : Other, ask Alfresco to generate a PDF preview
       if($_GET["search"] || $is_confidential_or_internal || $has_annotations || $pdfjs_forced){
         //Use PDF.js
-        $thumbnail_link = '/sites/all/libraries/pdf/web/viewer_gofast.html?v=252'. $no_print .'&file=' . rawurlencode($thumbnail_link) . $has_search;
+        $thumbnail_link = '/sites/all/libraries/pdf/web/viewer_gofast.html?v=253'. $no_print .'&file=' . rawurlencode($thumbnail_link) . $has_search;
         $output .= '<iframe id="pdf_frame" name="pdf-frame" style="border:none;z-index:0;" src="' . $thumbnail_link . '" type="application/pdf" width="100%" height="100%"></iframe>';
         $output .= '<script>jQuery(document).ready(function(){Drupal.gofast_cmis.triggerAnnotator();})</script>';
       }else{
@@ -4682,7 +4582,7 @@ function gofast_cmis_alfresco_get_infos($node) {
                              'cmis:contentStreamMimeType' => $list[0]->mimetype,
                              'cmis:checkinComment' => $list[0]->description,
                              'cmis:createdBy' => $list[count($list)-1]->creator,
-                             'cmis:lastModificationDate' => $list[0]->createdDate,
+                             'cmis:lastModificationDate' => $list[0]->modifiedDate,
                              'cmis:lastModifiedBy' => $list[0]->creator,
                              'cmis:creationDate' => $list[count($list)-1]->createdDate,
                              'cmis:name' => $list[0]->name,
@@ -4712,7 +4612,7 @@ function gofast_cmis_alfresco_get_infos($node) {
     }
 
     $titre = $document_properties->properties['cmis:versionLabel'];
-    //si la version vaut 0.0, il y a eu un probleme lors de l'activation de l'auto-version (peu etre document lockéu moment de l'ppel du webscript), donc je rappel ce webscript
+    //if the version is 0.0, there was a problem when activating the auto-version (maybe the document was locked when the webscript was called), so I recall this webscript
     if ($titre == "0.0") {
       //on appel le script qui va activer l'auto-version
       if ($document_properties->properties['cmis:contentStreamMimeType'] != "message/rfc822") {
@@ -4728,9 +4628,9 @@ function gofast_cmis_alfresco_get_infos($node) {
 
     $infos["last_version"] = $titre;
     $titre .= "(" . t("Current") . ")";
-    $infos["timestamp_modification"] = strtotime($list[0]->createdDate);
-    //on construit l'attribut title pour la popup html quand survole lien de la version
-    $attribute_title = date("d/m/Y H:i:s", strtotime($list[0]->createdDate)) . t(" by ");
+    $infos["timestamp_modification"] = strtotime($list[0]->modifiedDate);
+    // we build the title attribute for the html popup when hovering over the version link
+    $attribute_title = date("d/m/Y H:i:s", strtotime($list[0]->modifiedDate)) . t(" by ");
 
     if ($titre == "1.0" || $titre == "1.0(" . t("Current") . ")") {
       $attribute_title .= $document_properties->properties['cmis:createdBy'];
@@ -4742,21 +4642,17 @@ function gofast_cmis_alfresco_get_infos($node) {
     $list_finale = "<span title='" . $attribute_title . "'>" . $titre . "</span>";
     $infos["list_finale_version"] = $list_finale;
 
-    //on récupère la date de modif du noeud drupal associé au doc
-    //si elle est moins récente, on remplace la date de modif du doc par celle ci
+    //recover the modification date of the drupal node associated with the doc
+    //if it's less recent, we replace the doc's modification date with this one
     $date_modif_noeud = $node->changed;
     $timestamp_modif_doc = isset($list) ? strtotime($list[0]->modifiedDate) : 0;
 
     if ($date_modif_noeud < $timestamp_modif_doc) {
-      $document_properties->properties['cmis:lastModificationDate'] = $date_modif_noeud;
-      $last_modified_string = strtotime($document_properties->properties['cmis:lastModificationDate']);
-      if ($last_modified_string) {
-        $infos["last_modified"] = str_replace("- ", "", format_date($last_modified_string, 'extra_short'));
-      }
+      $infos["last_modified"] = str_replace("- ", "", format_date($date_modif_noeud, 'extra_short'));
       $infos["last_modified_node"] = TRUE;
     }
     else {
-      //on change la date de modif du doc par la date de modif de la derniere version récuperée grâce à la fonction alfresco_links_versions($node, true);
+      //change the doc's modification date by the modification date of the latest version retrieved using alfresco_links_versions function
       $document_properties->properties['cmis:lastModificationDate'] = isset($list) ? $list[0]->modifiedDate : '';
       $infos["last_modified"] = isset($document_properties->properties['cmis:lastModificationDate']) ? str_replace("- ", "", format_date(strtotime($document_properties->properties['cmis:lastModificationDate']), 'extra_short')) : "";
       $infos["last_modified_node"] = FALSE;
@@ -5112,11 +5008,18 @@ function gofast_cmis_alfresco_file_form($form, &$form_state, $node) {
     '#weight' => 5,
   );
 
-  $form["tag_comment"] = array(
-    '#type' => "textarea",
-    '#cols' => 50,
-    "#title" => t("Comment"),
-    '#attributes' => array('placeholder' => t('Add a comment', array(), array('context' => 'gofast')))
+  $form["tag_comment_body"] = array(
+    '#after_build' => ["gofast_cmis_remove_ckeditor", "gofast_forum_hide_text_format"],
+    '#attributes' => ["data-ckeditor" => "ckeditor-full", 'placeholder' => t('Add a comment', array(), array('context' => 'gofast'))],
+    "#title" => t("Comment", array(), array('context' => 'gofast')),
+    "#required" => FALSE,
+    '#resizable' => FALSE,
+    '#type' => 'text_format',
+    '#format' => 'filtered_html',
+    '#default_value' => '',
+    '#cols' => 60,
+    '#rows' => 5,
+    '#pre_render' => ['ckeditor_pre_render_text_format'],
   );
 
   $form['uid'] = array(
@@ -5222,7 +5125,7 @@ function gofast_cmis_alfresco_file_form_submit(&$form, &$form_state) {
 
     if (isset($file) && node_access('update', $node)) {
       try {
-        $comment_message = $form_state['values']['tag_comment'];
+        $comment_message = $form_state['values']['tag_comment_body']["value"];
 
         $node_reference = gofast_cmis_node_get_item_id($node);
         $old_fileinfo = pathinfo($node->title);
@@ -5245,7 +5148,7 @@ function gofast_cmis_alfresco_file_form_submit(&$form, &$form_state) {
 
         // On crée un commentaire sur le noeud avec le commentaire entré par l'utilisateur (ou celui par défaut)
         if (!empty($comment_message)) {
-          $comment_body = $form_state['values']['tag_comment'];
+          $comment_body = $form_state['values']['tag_comment_body']["value"];
           $comment = (object) array(
                   'nid' => $node->nid,
                   'cid' => 0,
@@ -5730,7 +5633,10 @@ function gofast_cmis_theme() {
     ],
     'gofast_cmis_preview_dwg' => [
       'template' => 'tpl/gofast-cmis-preview-dwg'
-    ]
+    ],
+    'gofast_cmis_preview_too_large' => [
+      'template' => 'tpl/gofast-cmis-preview-too-large'
+    ],
   );
 }
 
@@ -6130,54 +6036,53 @@ function gofast_cmis_get_folders_mirror(){
 /**
  * Extracts Zip file.
  *
- * @param \stdClass $item The item to extract.
+ * @param array $item The item to extract.
  * @param \stdClass $parent_node The parent item of the item to extract.
  *
  * @return mixed The response from the extraction API.
  *
  * @throws \CMISException If there's an error with the CMIS API.
  */
-function gofast_cmis_extract_selected_node_using_alfresco_service(stdClass $item, stdClass $parent_node) {
-  global $base_url;
-  global $user;
-  $ticket = gofast_cmis_webservice_generate_alfresco_ticket($user->name);
+function gofast_cmis_extract_selected_node_using_alfresco_service($items, $parent_node) {
   
-  /** Create the data object for the endpoint @var  $data */
-  $data = new stdClass();
-  $data->nodeRefs =  [$item->properties['alfcmis:nodeRef']];
+  if(isset($_POST["targetFolderName"])){
+    $folder_title = gofast_xss_clean($_POST["targetFolderName"]);
+  } else if(count($items) == 1) {
+    $file_name_without_extension = pathinfo($items[0]->properties['cmis:name'], PATHINFO_FILENAME);
+    $folder_title = gofast_cmis_generate_unique_title($parent_node, $file_name_without_extension, TRUE);
+  } else {
+    $folder_title = gofast_cmis_generate_unique_title($parent_node, null, TRUE);
+  }
   
   $repository = cmis_get_repository();
-  $folder_title = gofast_cmis_generate_unique_title($item, $parent_node->title);
-
-  $parent_id = $parent_node->properties['alfcmis:nodeRef'];
-  $unzip_url = $base_url."/alfresco/s/slingshot/doclib/action/unzip-to/node/workspace/SpacesStore/" . gofast_cmis_get_raw_item_id($parent_id)."?alf_ticket=".$ticket;
-
-  $response = gofast_cmis_initiate_curl_extraction($data, $unzip_url);
-
-  if(!$response->overallSuccess && $response->successCount == 0){
-
-    /**
-     * First attempt failed, try again with a temp folder in case the
-     * contents of the zip file already exist in the parent folder.
-     * Try creating a temp folder in current space to store these files.
-     * @keyFuntion cmsapi_createFolder
-     * @keyFuntion gofast_cmis_generate_unique_title
-     */
- 
-    $repository = cmis_get_repository();
-    $file_name_without_extension = pathinfo($item->properties['cmis:name'], PATHINFO_FILENAME);
-    $folder_title = gofast_cmis_generate_unique_title(parent_item: $parent_node, title: $file_name_without_extension, isFolder: TRUE);
-    $new_folder_item = cmisapi_createFolder($repository->repositoryId, 
-      $parent_node->id, $folder_title);
-
-  $data->parentId = "workspace://SpacesStore/".$new_folder_item->id;
-    
-  /** Unzip-to API endpoint. */
-  $unzip_url = $base_url."/alfresco/s/slingshot/doclib/action/unzip-to/node/workspace/SpacesStore/"
-    .gofast_cmis_get_raw_item_id($new_folder_item->id)."?alf_ticket=".$ticket;
-
-    return gofast_cmis_initiate_curl_extraction($data, $unzip_url);
+  if($folder_title == ""){
+    $extract_container_item = $parent_node;
+  } else {
+    $extract_container_item = cmisapi_createFolder($repository->repositoryId, $parent_node->id, $folder_title);
   }
+
+  $responses = [];
+  foreach ($items as $item) {
+    /** Create the data object for the endpoint @var  $data */
+    $data = new stdClass();
+    $data->nodeRefs[] =  $item->properties['alfcmis:nodeRef'];
+    $zip_folder_title = gofast_cmis_generate_unique_title($extract_container_item, $item->properties["cmis:name"], TRUE);
+    $zip_folder = cmisapi_createFolder($repository->repositoryId, $extract_container_item->id, $zip_folder_title);
+    $data->parentId = "workspace://SpacesStore/".$zip_folder->id;
+    $responses[] = gofast_cmis_alfresco_api_post_action($zip_folder->id, "unzip-to", $data, false);
+  }
+  
+  $finalResponse = array("status" => "DONE");
+
+  foreach($responses as $response) {
+    if($response->overallSuccess == false){
+      $finalResponse["failItemRefs"][] = $response->results[0]->nodeRef;
+    } else {
+      $finalResponse["successItemRefs"][] = $response->results[0]->nodeRef;
+    }
+  }
+
+  return $finalResponse;
 }
 
 /**
@@ -6189,13 +6094,13 @@ function gofast_cmis_extract_selected_node_using_alfresco_service(stdClass $item
  *
  * @return string
  */
-function gofast_cmis_generate_unique_title(stdClass $parent_item, $title = null, $isFolder = FALSE) {
+function gofast_cmis_generate_unique_title($parent_item, $title = null, $isFolder = FALSE) {
   if($title === null){
     $title = t('Archive', array(), array('context' => 'gofast')).'.zip';
   }
   $title_without_extension = pathinfo($title, PATHINFO_FILENAME);
 
-  $new_title = "$title_without_extension.zip";
+  $new_title = $isFolder ? $title_without_extension : "$title_without_extension.zip";
   $full_path = $parent_item->properties['cmis:path'] . '/' . $new_title;
   $i = 1;
   while (isset(gofast_cmis_item_get_by_path($full_path)->id)) {
@@ -6204,30 +6109,6 @@ function gofast_cmis_generate_unique_title(stdClass $parent_item, $title = null,
       $i++;
   }
   return $new_title;
-}
-
-
-/**
- * Initiates the extraction of a Zip file using cURL.
- *
- * @param \stdClass $data The data to pass to the API.
- * @param string $unzip_url The URL of the API endpoint.
- *
- * @return mixed The response from the extraction API.
- */
-function gofast_cmis_initiate_curl_extraction(stdClass $data, string $unzip_url) {
-  $ch = curl_init();
-  curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, FALSE);
-  curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, FALSE);
-  curl_setopt($ch, CURLOPT_HEADER, 0);
-  curl_setopt($ch, CURLOPT_RETURNTRANSFER, 1);
-  curl_setopt($ch, CURLOPT_POST, 1);
-  curl_setopt($ch, CURLOPT_HTTPHEADER, ['Content-Type: application/json']);
-  curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($data));
-  curl_setopt($ch, CURLOPT_URL, $unzip_url);
-  $response = json_decode(curl_exec($ch));
-  curl_close($ch);
-  return $response;
 }
 
 /**
@@ -6245,32 +6126,19 @@ function gofast_cmis_compress_selected_nodes_using_alfresco_service($nodeRefs,$m
     }
     throw new InvalidArgumentException('No nodes selected for compression');
   }
+  $parent_item = gofast_cmis_item_get_by_path($main_location);
+  $process_uuid = $_POST["process_uuid"];
+
+  $output_title = gofast_cmis_generate_unique_title($parent_item);
+  if(isset($_POST["targetFolderName"]) && $_POST["targetFolderName"]){
+    $output_title = gofast_xss_clean($_POST["targetFolderName"]);
+  }
   
   try{
-    $compressed_nodes = gofast_cmis_initialize_node_compression($nodeRefs);
-    $file_size = filesize($compressed_nodes);
-    if(!empty($compressed_nodes) && $file_size > 0){
-      $base_title = null;
-      //if only one node was compressed
-      if(count($nodeRefs) == 1){
-        $cmis_item = gofast_cmis_item_get($nodeRefs[0]["nodeRef"]);
-        $base_title = $cmis_item->properties['cmis:name'];
-      }
-      $parent_item = gofast_cmis_item_get_by_path($main_location);
-      $title = gofast_cmis_generate_unique_title(parent_item: $parent_item, title: $base_title);
-      gofast_cmis_process_zip_upload($compressed_nodes, $main_location, $title);
-    }
-    else {
-      variable_set('gofast_cmis_compression_status', array(
-        'status' => 'ERROR',
-        'message' => t('Something went wrong'),
-        'code' => 500,
-      ));
-    }
-
-    unlink($compressed_nodes);
+    $options = array("parent_item" => $parent_item, "output_title" => $output_title);
+    gofast_cmis_initialize_node_compression($nodeRefs, $options);
   }catch(\Exception $e){
-    variable_set('gofast_cmis_compression_status', array(
+    variable_set("gofast_cmis_compression_status_$process_uuid", array(
       'status' => 'ERROR',
       'message' => t('Something went wrong'),
       'code' => 500,
@@ -6283,21 +6151,14 @@ function gofast_cmis_compress_selected_nodes_using_alfresco_service($nodeRefs,$m
  *
  * @param $nodeRefs
  *
- * @return bool|string|void
+ * @return mixed
  * @throws \Exception
  */
-function gofast_cmis_initialize_node_compression($nodeRefs, $AS_ADMIN = null) {
-  global $user;
-  global $base_url;
-  
-  if($AS_ADMIN)
-    $ticket = gofast_cmis_webservice_generate_alfresco_ticket('admin');
-  else
-    $ticket = gofast_cmis_webservice_generate_alfresco_ticket($user->name);
+function gofast_cmis_initialize_node_compression($nodeRefs, $options = array()) {
 
-  $response = gofast_cmis_create_alfresco_download_object($nodeRefs, $base_url, $ticket);
+  $response = gofast_cmis_create_alfresco_download_object($nodeRefs, $options["AS_ADMIN"]);
   if ($response->status == 'success' && !empty($response->nodeRef)) {
-    return (count($nodeRefs) == 1) ? gofast_cmis_fetch_download(response: $response, output_title: $nodeRefs[0]->title, AS_ADMIN: $AS_ADMIN) : gofast_cmis_fetch_download(response: $response, AS_ADMIN: $AS_ADMIN);
+    return gofast_cmis_get_downloaded_item($response->nodeRef, $options);
   } else {
     return null;
   }
@@ -6307,39 +6168,62 @@ function gofast_cmis_initialize_node_compression($nodeRefs, $AS_ADMIN = null) {
   *This function attempts to fetch the compressed file specified by the given
  * node reference and waits for its compression status to become 'DONE'. It uses
  * exponential backoff with increasing wait times for each attempt, ensuring a
- * smooth and efficient waiting process. If the compression status becomes 'DONE',
- * the compressed file is downloaded using the Alfresco service and returned.
+ * smooth and efficient waiting process.
+ * 
+ * If the option "parent_item" is given, the zip file will be moved to this location
+ * If the option "download" is set to true, the file will stay temporary in the alfresco download folder
  * 
  * The $response argument must contain the nodeRef of the download object.
  * The $response argument should look similar to the example below: 
- * 
- * @example {"status":"success","nodeRef":"workspace:\/\/SpacesStore\/0a00e1bc-0000-43de-f000-0000"}
- * 
+ *  
  * NB: Only call this function after obtaining a download object.
- * @param object $response The response object containing the node reference.
- * @param string|null $output_title (Optional) The title for the downloaded file.
- * @return mixed The compressed file contents if successful, or throws an exception
+ * @param string $nodeRef The zip file node reference.
+ * @param array Options that allow to alter the final behavior of the zip file,
+ * $options can contains "output_title", "download", "AS_ADMIN", "parent_item"
+ * @return string The compressed file nodeRef if successful, or throws an exception
  *               if the maximum number of attempts is reached without success.
  * @throws Exception When the maximum number of attempts is reached and the status
  *                   is still not 'DONE'.
- * @param $response
- *
- * @return bool|string
  */
-function gofast_cmis_fetch_download($response, $output_title = null, $AS_ADMIN = FALSE) {
-  $nodeRef = $response->nodeRef;
+function gofast_cmis_get_downloaded_item($nodeRef, $options = array()) {
+
   $maxAttempts = 100;
   $attempt = 0;
   $initialWaitTime = 1;
-  $maxWaitTime = 300000;
+  $maxWaitTime = 60;
+
+  $AS_ADMIN = $options["AS_ADMIN"] ?? false;
+  $output_title = $options["output_title"] ?? null;
+  $parent_item = $options["parent_item"] ?? null;
+  if($parent_item){
+    $output_title = gofast_cmis_generate_unique_title($parent_item, $output_title);
+  } else {
+    // We don't need to make unique title if we don't have parent item (e.g. bulk download)
+    $output_title = t('Archive', array(), array('context' => 'gofast')).'.zip';
+  }
 
   while ($attempt < $maxAttempts) {
      $status = gofast_cmis_check_alfresco_compression_status($nodeRef, $AS_ADMIN);
     if ($status == 'DONE') {
-        return gofast_cmis_download_compressed_file_using_alfresco_service($nodeRef, $output_title, $AS_ADMIN);
+      
+        // Remove versionable aspect to prevent create new version with the rename
+        gofast_cmis_alfresco_api_update_aspects($nodeRef, array(), "cm:versionable");
+        gofast_cmis_item_rename($nodeRef, $output_title, $AS_ADMIN);
+        gofast_cmis_item_update_properties($nodeRef, array("mimetype" => "application/zip"), $AS_ADMIN);
+        $qname = "{http://www.alfresco.org/model/content/1.0}content";
+        // Change zip file type from download:download to cm:content
+        gofast_cmis_webservice_update_node_type($nodeRef, $qname);
+        gofast_cmis_alfresco_api_update_aspects($nodeRef, "cm:versionable");
+        if(!$options["download"]){
+          // Move zip file from temporary Downloads folder to the target location
+          gofast_cmis_alfresco_api_move_item($nodeRef, $parent_item->id, true);
+        }
+        
+        return $nodeRef;
       }
       // Calculate the current wait time using exponential backoff
-      $waitTime = min(pow(2, $attempt) * $initialWaitTime, $maxWaitTime);
+      
+      $waitTime = min(pow(1.2, $attempt) * $initialWaitTime, $maxWaitTime);
       sleep($waitTime);
       $attempt++;
   }
@@ -6361,7 +6245,16 @@ function gofast_cmis_fetch_download($response, $output_title = null, $AS_ADMIN =
  *
  * @return mixed
  */
-function gofast_cmis_create_alfresco_download_object($data, string $base_url, string $ticket){
+function gofast_cmis_create_alfresco_download_object($data, $AS_ADMIN = false){
+  global $base_url;
+
+  if($AS_ADMIN){
+    $ticket = gofast_cmis_webservice_generate_alfresco_ticket("admin");
+  }else{
+    global $user;
+    $ticket = gofast_cmis_webservice_generate_alfresco_ticket($user->name);
+  }
+
   $ch = curl_init();
   curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, FALSE);
   curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, FALSE);
@@ -6386,6 +6279,8 @@ function gofast_cmis_check_alfresco_compression_status($nodeRef, $AS_ADMIN = FAL
   global $user;
   global $base_url;
   
+  $process_uuid = $_POST["process_uuid"];
+
   if($AS_ADMIN)
     $ticket = gofast_cmis_webservice_generate_alfresco_ticket('admin');
   else
@@ -6405,136 +6300,12 @@ function gofast_cmis_check_alfresco_compression_status($nodeRef, $AS_ADMIN = FAL
   curl_close($ch);
   $response = json_decode($response, true);
   if (curl_getinfo($ch, CURLINFO_HTTP_CODE) == 200) {
-    variable_set('gofast_cmis_compression_status', $response);
+    variable_set("gofast_cmis_compression_status_$process_uuid", $response);
     return $response["status"];
   }
   else {
     return $response;
   }
-}
-
-/**
- * Downloads the compressed file from Alfresco to a local file path
- * 
- * @file /var/www/d7/sites/default/files/file.zip
- *
- * @param $nodeRef
- *
- * @return string|bool
- */
-function gofast_cmis_download_compressed_file_using_alfresco_service($node_ref, $output_title = NULL, $AS_ADMIN = FALSE) {
-  global $user;
-  global $base_url;
-
-  if($AS_ADMIN)
-    $ticket = gofast_cmis_webservice_generate_alfresco_ticket("admin");
-  else
-    $ticket = gofast_cmis_webservice_generate_alfresco_ticket($user->name);
-  $endpoint  = str_replace(':/', '', $node_ref);
-  
-  $ch = curl_init();
-  curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, FALSE);
-  curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, FALSE);
-  curl_setopt($ch, CURLOPT_HEADER, 0);
-  curl_setopt($ch, CURLOPT_RETURNTRANSFER, 1);
-  curl_setopt($ch, CURLOPT_POST, 0);
-  curl_setopt($ch, CURLOPT_TIMEOUT, 3);
-  curl_setopt($ch, CURLOPT_HTTPHEADER, ['Content-Type: application/json']);
-  curl_setopt($ch, CURLOPT_URL, $base_url."/alfresco/s/api/node/content/" .
-    $endpoint . "/unique.zip?alf_ticket=" . $ticket);
-  
-  $file_contents = curl_exec($ch);
-  $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-  curl_close($ch);
-  
-  if ($http_code == 200) {
-      $file_path = '/var/www/d7/sites/default/files/' . ($output_title ?? t('Archive', ['context' => 'gofast']).'.zip');
-      file_put_contents($file_path, $file_contents);
-      // trashcan binary will be removed by the remove-compress cron job
-      $trashcan_queue = variable_get("alfresco_trashcan_queue", []);
-      $cmis_item = gofast_cmis_item_get($node_ref);
-      $content_stream = $cmis_item->properties['cmis:contentStreamId'];
-      $content_stream = str_replace("store://", "", $content_stream);
-      $trashcan_file_path = "/var/alfresco/alf_data/contentstore/" . $content_stream;
-      $trashcan_queue[] = $trashcan_file_path;
-      variable_set("alfresco_trashcan_queue", $trashcan_queue);
-      // also remove the actual item
-      gofast_cmis_item_remove_item($node_ref);
-      return $file_path;
-  }
-  return FALSE;
-}
-
-/**
- * Helper function to initialize a zip file download on an Alfresco node 
- * reference. 
- * Returns the file's local temporary path if successful but FALSE if 
- * anything went wrong.
- * 
- * This function uses the function below @see \gofast_cmis_fetch_download()
- * 
- * @param $nodeRef
- * @param $AS_ADMIN
- *
- * @return bool|string
- */
-function gofast_cmis_download_item_as_zip_by_node_ref($nodeRef, $AS_ADMIN = FALSE, $output_title = null){
-  if($AS_ADMIN){
-    $ticket = gofast_cmis_webservice_generate_alfresco_ticket("admin");
-  }else{
-    global $user;
-    $ticket = gofast_cmis_webservice_generate_alfresco_ticket($user->name);
-  }
-  global $base_url;
-  $nodeIds[] = ['nodeRef' => $nodeRef];
-  
-  $response = gofast_cmis_create_alfresco_download_object($nodeIds, $base_url, $ticket);
-  if ($response->status == 'success' && !empty($response->nodeRef))
-    return gofast_cmis_fetch_download($response, $output_title);
-  else
-    return false;
-}
-/**
- * Deletes an alfresco download object on Alfresco using its node reference.
- * It deletes a download node reference created using below function.
- * @see \gofast_cmis_create_alfresco_download_object()
- * @param $nodeRef
- *
- * @return void
- */
-function gofast_cmis_delete_alfresco_download_nodeRef($nodeRef): void {
-  global $user;
-  global $base_url;
-    $ticket = gofast_cmis_webservice_generate_alfresco_ticket($user->name);
-  $endpoint  = str_replace(':/', '', $nodeRef);
-  $ch = curl_init();
-  curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, FALSE);
-  curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, FALSE);
-  curl_setopt($ch, CURLOPT_HEADER, 0);
-  curl_setopt($ch, CURLOPT_RETURNTRANSFER, 1);
-  curl_setopt($ch, CURLOPT_CUSTOMREQUEST, "DELETE");
-  curl_setopt($ch, CURLOPT_TIMEOUT, 3);
-  curl_setopt($ch, CURLOPT_HTTPHEADER, ['Content-Type: application/json']);
-  curl_setopt($ch, CURLOPT_URL, $base_url."/alfresco/s/api/internal/downloads/" . $endpoint . "?alf_ticket=" . $ticket);
-  curl_exec($ch);
-  curl_close($ch);
-}
-
-/**
- * @param string $zip_file
- * @param $main_location
- * @param null $title
- *
- * @return void
- */
-function gofast_cmis_process_zip_upload(string $zip_file, $main_location, $title = null): void {
-    if($title === null){
-        $title = t('Archive', array(), array('context' => 'gofast')); 
-    }
-    
-    $main_location = urldecode($main_location);
-    $locations = "[\"$main_location\"]";
-    gofast_cmis_upload_alfresco_item($title, $zip_file, $locations);
 }
 
 /**
@@ -6627,25 +6398,4 @@ function gofast_cmis_compress_directory($directory, $output){
   gofast_cmis_delete_directory($directory);
   //return the path of the zip file
   return $output;
-}
-
-/**
- * Uploads an Alfresco item using CURL.
- * 
- * This function only works with multipart form data.
- *
- * @param $title
- * @param $file
- * @param $locations
- *
- * @return mixed
- */
-function gofast_cmis_upload_alfresco_item($title, $file, $locations) {
-  global $user;
-  $token = shell_exec("curl http://localhost/api/login/token?name=".$user->name);
-  $token = json_decode($token, true)['token'];
-  $url = "http://localhost/api/node/node?token=$token";
-  $content_type = "multipart/form-data";
-  $command = "curl --location --request POST '$url' --form 'file=@\"$file\"' --header 'Content-Type: $content_type' --form 'type=alfresco_item' --form 'title=$title' --form 'locations=$locations'";
-  return shell_exec($command);
 }

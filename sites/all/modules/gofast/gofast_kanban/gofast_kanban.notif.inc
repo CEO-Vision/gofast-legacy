@@ -348,9 +348,8 @@ function gofast_kanban_task_deadline_notify(){
  */
 function gofast_kanban_is_user_concerned_node($node, $uid) {
   $is_concerned = false;
-
   //To know if a user is concerned by a node, we check if he is into on of the following field => responsible, members, checklist)
-  if (count($node->field_members[LANGUAGE_NONE]) > 0) {
+  if (isset($node->field_members[LANGUAGE_NONE]) && count($node->field_members[LANGUAGE_NONE]) > 0) {
     foreach ($node->field_members[LANGUAGE_NONE] as $member) {
       if ($member["target_id"] == $uid) {
         $is_concerned = true;
@@ -358,7 +357,7 @@ function gofast_kanban_is_user_concerned_node($node, $uid) {
     }
   }
 
-  if (count($node->field_person_in_charge[LANGUAGE_NONE]) > 0) {
+  if (isset($node->field_person_in_charge[LANGUAGE_NONE]) && count($node->field_person_in_charge[LANGUAGE_NONE]) > 0) {
     foreach ($node->field_person_in_charge[LANGUAGE_NONE] as $member) {
       if ($member["target_id"] == $uid) {
         $is_concerned = true;
@@ -386,7 +385,7 @@ function gofast_kanban_is_user_concerned_node($node, $uid) {
  * @global type $user
  * @param type $node
  */
-function gofast_kanban_send_delayed_notification($node) {
+function gofast_kanban_send_delayed_notification($node, $is_new = false) {
   global $user;
   
   //If the task modification is about the assignee, the responsible or a members, keep change to be proccessed in Cron Job later
@@ -403,20 +402,22 @@ function gofast_kanban_send_delayed_notification($node) {
   }
 
   $original_node_data = gofast_message_ext_split_node($original_node);
-  $node_compare = gofast_kanban_notif_compare_tasks($original_node_data, $node_data);
+  if(!$is_new){
+    $node_compare = gofast_kanban_notif_compare_tasks($original_node_data, $node_data);
 
-  if(isset($node_compare['person_in_charge']) || isset($node_compare['members']) || isset($node_compare['state'])){
-      $n = variable_get('kanban_notifications', array());
-      if(!isset($n[$node->nid])) $n[$node->nid] = array(); 
-      if(!isset($n[$node->nid]['task'])){
-          $n[$node->nid]['task'] = $original_node_data;
-          if(!isset($n[$node->nid]['participants']))$n[$node->nid]['participants'] = array(); 
+      if(isset($node_compare['person_in_charge']) || isset($node_compare['members']) || isset($node_compare['state'])){
+          $n = variable_get('kanban_notifications', array());
+          if(!isset($n[$node->nid])) $n[$node->nid] = array(); 
+          if(!isset($n[$node->nid]['task'])){
+              $n[$node->nid]['task'] = $original_node_data;
+              if(!isset($n[$node->nid]['participants']))$n[$node->nid]['participants'] = array(); 
+          }
+          if(!in_array($user->uid,$n[$node->nid]['participants'])){
+              $n[$node->nid]['participants'][] = $user->uid;
+          }
+          $n[$node->nid]['last_update'] = time();
+          variable_set('kanban_notifications', $n);
       }
-      if(!in_array($user->uid,$n[$node->nid]['participants'])){
-          $n[$node->nid]['participants'][] = $user->uid;
-      }
-      $n[$node->nid]['last_update'] = time();
-      variable_set('kanban_notifications', $n);
   }
 }
 

@@ -406,11 +406,20 @@
     return query.replace(pattern, replace);
   };
 
+   
+  Gofast.search.checkedEntities = Gofast.search.checkedEntities ?? {data: []} 
+   
+  Gofast.search.checkedEntities.getItemsCount = () => { 
+    var checkedEntitiesCount = 0; 
+    Object.values(Gofast.search.checkedEntities.data).forEach((entity_ids) => { 
+      checkedEntitiesCount += entity_ids.length 
+    }) 
+    return checkedEntitiesCount; 
+  } 
   /*
    * Store results for add to cart
    */
   Gofast.search.storeResultsForAddToCart = function (elmnt) {
-    Gofast.search.checkedEntities = Gofast.search.checkedEntities ?? {}
     // the addToCart link is not displayed or hidden for the sake of it being displayed
     // but some events are triggered according to the value of the display property
     if ($("#addToCart").css("display") === "none") {
@@ -428,14 +437,6 @@
       } else {
         $("#addToCart").css("display", "none");
       }
-    }
-
-    Gofast.search.checkedEntities.getItemsCount = () => {
-      var checkedEntitiesCount = 0;
-      Object.values(Gofast.search.checkedEntities.data).forEach((entity_ids) => {
-        checkedEntitiesCount += entity_ids.length
-      })
-      return checkedEntitiesCount;
     }
 
     // Reset stored data so that object contains only checked items

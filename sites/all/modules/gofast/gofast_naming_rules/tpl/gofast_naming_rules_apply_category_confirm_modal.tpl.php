@@ -21,6 +21,8 @@
 <?php if (!$no_buttons) : ?>
 <?php if ($remove || !$invalid) : ?>
 <btn id="apply_category_confirm" class="btn btn-success"><?= t("Apply") ?></btn>
-<?php endif; ?>
 <btn id="apply_category_cancel" class="btn btn-secondary"><?= t("Cancel") ?> </btn>
+<?php else: ?>
+<btn id="apply_category_cancel" class="btn btn-secondary"><?= t("Understood") ?> </btn>
+<?php endif; ?>
 <?php endif; ?>

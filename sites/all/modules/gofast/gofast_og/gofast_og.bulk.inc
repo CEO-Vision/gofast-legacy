@@ -47,7 +47,7 @@ function gofast_og_space_admin_add_members_form($form, &$form_state, $ajax){
   $og_default_roles = og_get_default_roles(FALSE);
   $og_default_role_trad = array();
   foreach($og_default_roles as $key=>$role_string){
-      $og_default_role_trad[$role_string] = t($role_string);
+    $og_default_role_trad[$role_string] = $user->language == "en" ? ucfirst($role_string) : t($role_string, array(), array("context" => "gofast"));
   }  
   $form['role'] = array(
     '#type' => 'radios',
@@ -124,7 +124,7 @@ function gofast_og_space_admin_edit_members_form($form, &$form_state, $ajax){
   $og_default_roles = og_get_default_roles(FALSE);
   $og_default_role_trad = array();
   foreach($og_default_roles as $key=>$role_string){
-      $og_default_role_trad [$role_string] = t($role_string);
+    $og_default_role_trad[$role_string] = $user->language == "en" ? ucfirst($role_string) : t($role_string, array(), array("context" => "gofast"));
   } 
   $form['role'] = array(
     '#type' => 'radios',

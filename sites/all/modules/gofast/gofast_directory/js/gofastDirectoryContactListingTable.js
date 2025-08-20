@@ -247,23 +247,10 @@
                 if (!$('#DirectoryContactListingFilterForm').length) {
                     return;
                 }
-                $('#DirectoryContactListingFilterForm').on('submit', function(e){
-                    e.preventDefault()
-                    _table.spinnerCallback(true)
-                    let filterArr = $(this).serializeArray()
-                    let filter = Object.create({})
-                    filterArr.forEach(fil => {
-                        if(!!fil.value){
-                            let att = fil.name
-                            filter[att] = fil.value
-                        }
-                    })          
-                    _table.setDataSourceParam("query", filter)
-                    _table.load()
-                  
-                  GofastKDataTableReload("gofastDirectoryContactListingTable");
-                  $('#gofastDirectoryContactListingTable .datatable-subheader > th:nth-child(1) > span:nth-child(1)').css('margin', 0)
-                })
+                $('#DirectoryContactListingFilterForm')
+                    .off('submit')
+                    .on('submit', e => window.GofastKDataTableFormSubmit(e, _table))
+                    .on('submit', () => $('#gofastDirectoryContactListingTable .datatable-subheader > th:nth-child(1) > span:nth-child(1)').css('margin', 0));
                 
                 $('#DirectoryContactListingFilterForm').on('reset', function(e){
                     $(e.currentTarget['status']).val('').selectpicker("refresh")

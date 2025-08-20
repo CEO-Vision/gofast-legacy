@@ -8,14 +8,12 @@
                 $('#gofastSettingsTabs').addClass('processed'); 
 
                 //Bind click events to all the tabs to load their content asynchronously;
-                const settingsTabIds = ["edit-general", "edit-smtp", "edit-rssfeed", "edit-ldap", "edit-users", "edit-documents", "edit-spaces", "edit-sso", "edit-visibility", "edit-indexing", "edit-integrity", "edit-categories", "edit-custom-link", "edit-signature", "edit-signature-digitalsign", "edit-pastell","edit-esup", "edit-tags", "edit-webhook", "edit-bluemind"];
-                for (const settingsTabId of settingsTabIds) {
+                $("#gofastSettingsTabs [data-tab-id]").each((i, el) => {
+                    const settingsTabId = $(el).attr("data-tab-id");
                     $('html').on('click', '#gofastSettingsTabs .' + settingsTabId + ':not(".active")', function(){
-                      let dataFormId = $(this).data("form-id");
-                      loadSettingsTab(settingsTabId, dataFormId);
+                      loadSettingsTab(settingsTabId);
                     });
-                    
-                }
+                })
                 $('html').on('click', '#gofastSettingsTabs .edit-update:not(".active")', function(){Gofast.processAjax("/admin/config/gofast/update");});
 
                 //load first displayed tab
@@ -58,8 +56,8 @@
     };
 
     // Here the content of the tab is fetched and attached to the matching div
-    Gofast.loadSettingsTab = function(tab){
-        loadSettingsTab(tab);
+    Gofast.loadSettingsTab = function(tab, forceReload = false){
+        loadSettingsTab(tab, forceReload);
     };
 
     Gofast.displayTargetsBySourceCheckbox = function(sourceCheckboxSelector, targetsSelectors) {
@@ -81,54 +79,42 @@
         });
     }
 
-  function loadSettingsTab(tab, formID = null) {
+  function loadSettingsTab(tab, forceReload = false) {
     // Container
     var container = $("#gofastAdminTabContent");
     var spinner   = $('.loader-settings');
     
     // Function to hide all children except the one with a specific id
-    var hideAllExcept = function(id) {
-      container.children().each(function () {
-        if ($(this).attr('id') !== id+'-container') {
-          $(this).css('display', 'none');
-        } else {
-          $(this).css('display', 'block');
-        }
-      });
-    }
-
-    if (formID !== null) {
-      var potentialForm = $('#' + formID);
-      // If form is already present in the DOM
-      if (potentialForm.length) {
-        hideAllExcept(formID);
-        return;
-      }
-    }
-
-    hideAllExcept(formID);
+    container.find(`> [data-tab]`).addClass("d-none");
     // add spinner
     spinner.show();
-    // Only fetch new form via AJAX if there is no formID or if it's not found in DOM
+    // Check if the form container already exists in the DOM
+    var containerAlreadyExist = $(`#gofastAdminTabContent > [data-tab="${tab}"]`).length;
+
+    // If the form container already exist, don't reload it
+    if (containerAlreadyExist && !forceReload) {
+        spinner.hide();
+        container.find(`> [data-tab="${tab}"]`).removeClass("d-none");
+        return;
+    }
     $.post(location.origin + "/admin/config/gofast/global/getform/" + tab, function (output) {
 
-      if (formID !== null) {
-        // Check if the form container already exists in the DOM
-        var existingContainerEl = $(`#${formID}-container`);
+        var containerEl = $(`<div data-tab="${tab}"></div>`)
+        var form = JSON.parse(output)['html'];
+        var newForm = $(form);
 
-        // If the form container does not exist, then append it
-        if (existingContainerEl.length === 0) {
-          var containerEl = $(`<div id="${formID}-container"></div>`)
-          var form = JSON.parse(output)['html'];
-          var newForm = $(form);
-
-          spinner.hide();
-          containerEl.append(newForm);
-          container.append(containerEl);
-          Drupal.attachBehaviors();
-          attachSettingsFormAjax(container, "#gofastAdminTabContent");
+        // If the container already exist, uptade it otherwise create a new one
+        if(!containerAlreadyExist){
+            containerEl.html(newForm);
+            container.append(containerEl);
+        } else {
+            containerEl = $(`#gofastAdminTabContent > [data-tab="${tab}"]`);
+            containerEl.html(newForm);
         }
-      }
+        spinner.hide();
+        container.find(`> [data-tab="${tab}"]`).removeClass("d-none");
+        Drupal.attachBehaviors();
+        attachSettingsFormAjax(container, `> [data-tab="${tab}"]`);
     });
   }
     // event listener to ajaxify the form submission

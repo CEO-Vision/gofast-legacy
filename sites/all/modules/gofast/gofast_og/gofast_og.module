@@ -53,6 +53,7 @@ define('GOFAST_OG_GROUP_ACCESS_DEFAULT', GOFAST_OG_GROUP_ACCESS_PRIVATE);
  * users are registered (i.e. og_membership is created/updated and active).
  */
 define('GOFAST_OG_ROLE_ADMIN', OG_ADMINISTRATOR_ROLE);
+define('GOFAST_OG_ROLE_MANAGER', 'group manager');
 define('GOFAST_OG_ROLE_STANDARD', 'group contributor');
 define('GOFAST_OG_ROLE_READ_ONLY', 'read only member');
 
@@ -898,8 +899,10 @@ function gofast_og_get_spaces_by_user($account = NULL, $include_public = TRUE, $
 
   //Exclude userlist node (as og_get_group only filter by bundle)
   $spaces_type = gofast_og_node_types();
+  $node_types = gofast_get_node_type_multiple($user_gids);
+
   foreach($user_gids as $key => $gid){
-    if(! in_array(gofast_get_node_type($gid), $spaces_type)){
+    if(!in_array($node_types[$gid], $spaces_type)){
       unset($user_gids[$key]);
     }
   }
@@ -1362,7 +1365,7 @@ function gofast_og_og_membership_insert(OgMembership $og_membership) {
                 og_role_grant($og_membership->group_type, $og_membership->gid, $og_membership->etid, $default_role_rid);
             }
 
-            //Check if the user just created is admin at least of one space. if yes give him the MANAGER role
+            //Check if the user just created is admin at least of one space. if yes give him the site manager role
             //Insert ignore needed to prevent errors at account creation
             if($default_role_name == OG_ADMINISTRATOR_ROLE){
                $role = user_role_load_by_name(GOFAST_ROLE_MANAGER);
@@ -1763,14 +1766,72 @@ function gofast_og_form_node_form_alter(&$form, &$form_state, $form_id) {
         'data-exclude-current-user' => '' // remove current user from ac
       ];
     
-    // ac- field other admin uid for select secondary admin
-    $form['field_other_admin_uid'] = array(
+      // ac- field other admin uid for select secondary admin
+      $form['field_other_admin_uid'] = array(
         '#title' => t("Secondary Administrator" . " *", array(), array('context' => 'gofast:gofast_og')),
         '#type' => 'textfield',
         '#name' => 'ac-list-tags-administrator',
-        '#description' => "<p class='text-muted'>" . t("Start typing the username or list") . "<p class='text-muted'>" . t("It is necessary to define a second backup administrator."),
-        '#attributes' => $attributes,
-    );
+            '#description' => "<p class='text-muted'>" . t("Start typing the username or list") . "<p class='text-muted'>" . t("It is necessary to define a second backup administrator."),
+            '#attributes' => $attributes,
+      );
+
+      // Metadata form container
+      $form["space_metadata"] = array(
+        "#type" => "container",
+        "#attributes" => array(
+          "class" => array("row", "mb-0"),
+        ),
+        "#prefix" => "<div class='overflow-hidden'><hr/>",
+        "#suffix" => "</div>",
+      );
+
+      // Field criticity
+      
+      $classification_field_array = ["_none" => t("- None -")];
+      foreach (taxonomy_term_load_multiple(FALSE, array('vid' => taxonomy_vocabulary_get_names()['classification']->vid)) as $term) {
+        $type_tid = $term->field_classification_type[LANGUAGE_NONE][0]['tid'];
+        $type_term = taxonomy_term_load($type_tid);
+        $localized_term = i18n_taxonomy_localize_terms($term);
+        $localized_type_term = i18n_taxonomy_localize_terms($type_term);
+        if(!isset($classification_field_array[$localized_type_term->name])){
+          $classification_field_array[$localized_type_term->name] = [];
+        }
+        $classification_field_array[$localized_type_term->name][$term->tid] = $localized_term->name;
+      }
+
+      $form["field_classification"]["#prefix"] = '<div class="col-4">';
+      $form["field_classification"]["#suffix"] = '</div>';
+      $form["field_classification"][LANGUAGE_NONE]["#title"] = t($form["field_classification"][LANGUAGE_NONE]["#title"], array(), array("context" => "gofast"));
+      $form["field_classification"][LANGUAGE_NONE]["#options"] = $classification_field_array;
+      $form["field_classification"][LANGUAGE_NONE]["#default_value"] = gofast_admin_get_space_defaults()["field_classification"];
+
+      // Field document reference
+      $form["field_document_reference"]["#prefix"] = '<div class="col-4">';
+      $form["field_document_reference"]["#suffix"] = '</div>';
+      $form["field_document_reference"][LANGUAGE_NONE][0]["value"]["#title"] = t($form["field_document_reference"][LANGUAGE_NONE][0]["value"]["#title"], array(), array("context" => "gofast"));
+
+      // Field custom date
+      $form["field_custom_date"]["#prefix"] = '<div class="col-4">';
+      $form["field_custom_date"]["#suffix"] = '</div>';
+      $form["field_custom_date"]["#suffix"] = '</div>';
+      $form["field_custom_date"][LANGUAGE_NONE][0]["#title"] = GOFAST_METADATA_CUSTOM_DATE_LABEL;
+      $form["field_custom_date"][LANGUAGE_NONE][0]["#attributes"] = array(
+        'class' => array('gofastDatepicker'),
+        'data-toggle' => array('datepicker')
+      );
+      unset($form["field_custom_date"][LANGUAGE_NONE][0]["#theme_wrappers"]);
+      $form["field_custom_date"][LANGUAGE_NONE][0]["#type"] = "textfield";
+      $form["field_custom_date"][LANGUAGE_NONE][0]["#default_value"] = "";
+
+      // Put metadata forms inside a container
+      $form["space_metadata"]["field_classification"] = $form["field_classification"];
+      $form["space_metadata"]["field_document_reference"] = $form["field_document_reference"];
+      $form["space_metadata"]["field_custom_date"] = $form["field_custom_date"];
+
+      // Remove default drupal metadata form items
+      unset($form["field_classification"]);
+      unset($form["field_document_reference"]);
+      unset($form["field_custom_date"]);
 
       //add translation function
       $form['body'][LANGUAGE_NONE][0]['#title'] = t('Home page', array(), array('context' => 'gofast:gofast_og'));
@@ -1995,10 +2056,23 @@ function gofast_og_form_node_form_validate(&$form, &$form_state)
         $message = t("The Secondary Administrator field is required", array(), array('context' => 'gofast'));
     }
   }
+  // Validate field_custom_date only on space forms
+  if(gofast_og_is_space($form_state["node"], false)){
+    // Format custom date field before creating node
+    if(isset($form_state["input"]["field_custom_date"]) && $form_state["input"]["field_custom_date"][LANGUAGE_NONE][0]){
+      global $user;
+      $value = $form_state["input"]["field_custom_date"][LANGUAGE_NONE][0];
+      $_fdate = new DateTime();
+      $format = system_date_format_locale($user->language, "short_without_hours");
+      $_fdate = $value ? DateTime::createFromFormat($format, $value) : NULL;
+      $form_state["values"]["field_custom_date"][LANGUAGE_NONE][0]["value"] = $_fdate->format("Y-m-d");
+    }
+  }
+
     // Check for errors in the form.
     $errors = form_get_errors();
 
-    if ($errors) {
+    if ($errors && !isset($_GET["cron_key"])) {
         // Clear errors.
         form_clear_error();
 
@@ -2054,9 +2128,7 @@ function gofast_og_get_ancestors_path($node) {
  */
 function gofast_og_add_article_homepage($node){
 
-    $content = isset($node->body[LANGUAGE_NONE][0]['value']) ? $node->body[LANGUAGE_NONE][0]['value'] : "<html></html>";
-    $content = gofast_cmis_ckeditor_classes_to_style($content);
-    $article_content = gofast_cmis_ckeditor_smiley_path_update($content);
+    $article_content = isset($node->body[LANGUAGE_NONE][0]['value']) ? $node->body[LANGUAGE_NONE][0]['value'] : "<html></html>";
     $article_title =  $node->title.".html" ;
     $mimetype = "text/html";
     $path = gofast_og_get_ancestors_path($node) . '/Wikis';
@@ -2560,6 +2632,29 @@ function gofast_og_menu() {
     'file' => 'gofast_og.admin.inc',
   );
 
+  // Delete a multiple membership.
+  $items['spaces/%ctools_js/%/%/admin/people/delete-multiple-membership/%'] = array(
+    'title callback' => 'og_ui_menu_title_callback',
+    'title arguments' => array('Remove members from space @group', 2, 3),
+    'type' => MENU_CALLBACK,
+    'page callback' => 'gofast_og_delete_bulk_membership',
+    'page arguments' => array(1, 2, 3, 7),
+    'access callback' => 'og_ui_user_access_group',
+    'access arguments' => array('manage members', 2, 3),
+    'file' => 'gofast_og.admin.inc',
+  );
+  
+    // Bulk change role 
+    $items['spaces/%ctools_js/%/%/admin/bulk-instant-edit-membership/%/%'] = array(
+      'title callback' => 'og_ui_menu_title_callback',
+      'title arguments' => array('Remove members from space @group', 2, 3),
+      'type' => MENU_CALLBACK,
+      'page callback' => 'gofast_og_change_role_bulk_membership',
+      'page arguments' => array(1, 2, 3, 6, 7),
+      'access callback' => 'og_ui_user_access_group',
+      'access arguments' => array('manage members', 2, 3),
+      'file' => 'gofast_og.admin.inc',
+    );
 
   // Accept a membership request.
   $items['spaces/%ctools_js/%/%/admin/people/grant-membership/%og_membership'] = array(
@@ -2933,7 +3028,7 @@ function gofast_og_node_add_extranet() { //GOFAST-7013
 function can_manage_spaces_members(){
   //if($user->name == 'adm' || $user->uid == 1){
   global $user;
-  if(gofast_user_is_adm() || gofast_user_is_manager() || $user->uid == 1){
+  if(gofast_user_is_adm() || gofast_user_is_site_manager() || $user->uid == 1){
     return TRUE;
   }else{
     return FALSE;
@@ -3069,14 +3164,15 @@ function template_preprocess_gofast_node_og_members(&$variables) {
   $node = $variables["node"];
   $roles_query = og_roles('node', $node->type, 0, FALSE, FALSE);
   foreach($roles_query as $rkey => $roles){
-    if($roles == GOFAST_OG_ROLE_ADMIN){
-      $variables["admin_rid"] = $rkey;
-    }
-    if($roles == GOFAST_OG_ROLE_READ_ONLY){
-      $variables["readonly_rid"] = $rkey;
-    }
-    if($roles == GOFAST_OG_ROLE_STANDARD){
-      $variables["contributor_rid"] = $rkey;
+    $var_name = match ($roles) {
+      GOFAST_OG_ROLE_ADMIN => "admin_rid",
+      GOFAST_OG_ROLE_READ_ONLY => "readonly_rid",
+      GOFAST_OG_ROLE_STANDARD => "contributor_rid",
+      GOFAST_OG_ROLE_MANAGER => "group_manager_rid",
+      default => NULL,
+    };
+    if ($var_name !== NULL) {
+      $variables[$var_name] = $rkey;
     }
   }
 }
@@ -3467,6 +3563,7 @@ function gofast_og_autocomplete_members($str) {
  * Implements hook_form_FORM_ID_alter()
  */
 function gofast_og_form_og_ui_edit_membership_alter(&$form, &$form_state) {
+  global $user;
   if (!isset($form['membership_fields']['#entity'])) {
     return;
   }
@@ -3498,7 +3595,7 @@ function gofast_og_form_og_ui_edit_membership_alter(&$form, &$form_state) {
 
       if(count($form['og_user']['roles']["#options"]) > 0){
           foreach($form['og_user']['roles']["#options"] as $rid=>$role_string){
-              $form['og_user']['roles']["#options"][$rid] = t($role_string, array(), array("context" => "gofast"));
+            $form['og_user']['roles']["#options"][$rid] = $user->language == "en" ? ucfirst($role_string) : t($role_string, array(), array("context" => "gofast"));
           }
       }
 
@@ -3560,6 +3657,8 @@ function gofast_og_set_default_organisation($gid = NULL) {
  * @param Array $options (optional)
  *  An associative array of options :
  *  - 'author' => Author of the OG node (user id or object), default to admin
+ *  - 'add_author_as_admin' => Flag of whether the author will be an administrator
+ *    of the space. Defaults to TRUE.
  *  - 'access' => OG access policy, default is GOFAST_OG_GROUP_ACCESS_DEFAULT
  *  - 'parent' => Parent OG node ID, default is NULL (no parent)
  *  - 'description' => String describing the OG (this is a required field, an
@@ -3586,6 +3685,7 @@ function gofast_og_create($title, $bundle, $options = array()) {
   // Merge in default options :
   $options += array(
     'author' => $author,
+    'add_author_as_admin' => TRUE,
     'access' => $access_default,
     'description' => t('~ created automatically ~', array(), array('context' => 'gofast')), // this field is required
     'body' => '',
@@ -3745,8 +3845,24 @@ function gofast_og_create($title, $bundle, $options = array()) {
 
   // Until GOFAST-2452 is fixed, workaround with the following code
   $node->title = $title;
-  node_save($node);
-  $_POST['new_space_nid'] = $node->nid;
+
+  // Add description directly on about to be created node.
+  if (isset($options['description'])) {
+    $node->field_description[LANGUAGE_NONE][0]['value'] = $options['description'];
+  }
+
+  // Set flag to prevent author being admin according to options (value before
+  // calling is preserved after)
+  global $gofast_og_add_creator_as_admin;
+  $gofast_og_add_creator_as_admin_old_value = $gofast_og_add_creator_as_admin;
+  $gofast_og_add_creator_as_admin = $options['add_author_as_admin'];
+
+  try {
+    node_save($node);
+    $_POST['new_space_nid'] = $node->nid;
+  } finally {
+    $gofast_og_add_creator_as_admin = $gofast_og_add_creator_as_admin_old_value;
+  }
   return TRUE;
 
   // Call the node_create form corresponding to $bundle (or content-type).
@@ -4009,7 +4125,7 @@ function gofast_og_post_install() {
  *  - GOFAST_OG_ROLE_ADMIN is equal to OG_ADMINISTRATOR_ROLE.
  */
 function gofast_og_og_default_roles() {
-    return array('gofast_og' => GOFAST_OG_ROLE_STANDARD, GOFAST_OG_ROLE_READ_ONLY);
+    return array(GOFAST_OG_ROLE_MANAGER, GOFAST_OG_ROLE_STANDARD, GOFAST_OG_ROLE_READ_ONLY);
 }
 
 /*
@@ -4019,6 +4135,7 @@ function gofast_og_og_default_roles() {
  * 0 => administrator
  * 1 => contributor
  * 2 => read only
+ * 3 => manager
  */
 function gofast_og_get_user_default_role($my_user = null){
 
@@ -4040,9 +4157,11 @@ function gofast_og_get_user_default_role($my_user = null){
     if($role_id == 0){
         $role = GOFAST_OG_ROLE_ADMIN;
     }elseif($role_id == 2){
-         $role = GOFAST_OG_ROLE_READ_ONLY;
+        $role = GOFAST_OG_ROLE_READ_ONLY;
+    }elseif($role_id == 3){
+        $role = GOFAST_OG_ROLE_MANAGER;
     }else{
-         $role = GOFAST_OG_ROLE_STANDARD;
+        $role = GOFAST_OG_ROLE_STANDARD;
     }
 
     return $role;
@@ -5904,14 +6023,24 @@ function gofast_og_preadd_ajax_validation(){
   $entity_type = $_POST['entity_type'];
   $message = $_POST["message"];
   $entity_preadd = entity_load_single($entity_type, $entity_id);
-  $rid = $_POST['role_id'];
+  $role_name = $_POST['role_id'];
   $type = $_POST['type'];
 
   if($type === "userlist"){
-    echo gofast_og_userlist_preadd_ajax_validation($nid, $action,
-      $entity_preadd, $message, $rid);
+    echo gofast_og_userlist_preadd_ajax_validation($nid, $action, $entity_preadd, $message, $role_name);
     exit;
   }
+  // At this stage, we just have the role name value: we also need the actual role id
+  $node = node_load($nid);
+  $roles_query = og_roles('node', $node->type, $nid, FALSE, FALSE);
+  $rid = 0;
+  foreach($roles_query as $rkey => $role){
+    if($role_name == $role){
+      $rid = $rkey;
+      break;
+    }
+  }
+
   $isMember = (og_get_membership('node', $nid, $entity_type, $entity_id) != FALSE);
   $isMemberFromUserlist = false;
   if($entity_type == "user"){
@@ -5927,7 +6056,7 @@ function gofast_og_preadd_ajax_validation(){
     }
   }
   
-
+  
   $isPending = (!isset($roles) || empty($roles)) && ($isMember || $isMemberFromUserlist);
 
   if ($isPending == true) {
@@ -5935,7 +6064,7 @@ function gofast_og_preadd_ajax_validation(){
       "success" => false,
       "entity_id" => $entity_id,
       "entity_type" => $entity_type,
-      "message" => t('This member have already a pending request in this space', array(), array('context' => 'gofast'))
+      "message" => t('This member already has a pending request in this space', array(), array('context' => 'gofast'))
     ];
   }else if ($isMember == true) {
     $return = [
@@ -5969,8 +6098,6 @@ function gofast_og_preadd_ajax_validation(){
       ->execute();
 
     if($membership != false){
-      watchdog("debug role grant", $membership->group_type." | ".$membership->gid." | ".$membership->etid." | ".trim($rid));
-  
       if($entity_type == "user"){
         og_role_grant($membership->group_type, $membership->gid, $membership->etid, trim($rid));
       } else if($entity_type == "userlist"){
@@ -8138,12 +8265,13 @@ function gofast_og_get_user_final_roles_for_space($group_type, $gid, $uid = NULL
 
     $rids = (array) $rids;
     //Get the higher roles
-    if(($key = array_search('administrator member', $rids) )  !== FALSE){
-      $final_rids = array($key => $rids[$key]);
-    }else if(($key = array_search('group contributor', $rids) )  !== FALSE){
-      $final_rids = array($key => $rids[$key]);
-    }else if (($key = array_search('read only member', $rids) )  !== FALSE){
-      $final_rids = array($key => $rids[$key]);
+    $roles = [GOFAST_OG_ROLE_ADMIN, GOFAST_OG_ROLE_MANAGER, GOFAST_OG_ROLE_STANDARD, GOFAST_OG_ROLE_READ_ONLY];
+    $final_rids = [];
+    foreach ($roles as $role) {
+      if (($key = array_search($role, $rids)) !== FALSE) {
+        $final_rids = array($key => $rids[$key]);
+        break;
+      }
     }
   }
 
@@ -8151,12 +8279,12 @@ function gofast_og_get_user_final_roles_for_space($group_type, $gid, $uid = NULL
 }
 
 /**
- * Promote user to the role Manager if not already done
+ * Promote user to the site manager role if not already done
  * @param type $user
  */
-function gofast_og_user_promote_to_manager($account) {
+function gofast_og_user_promote_to_site_manager($account) {
   $role_manager = user_role_load_by_name(GOFAST_ROLE_MANAGER);
-  if (!gofast_user_is_manager($account)) {
+  if (!gofast_user_is_site_manager($account)) {
     db_query("INSERT IGNORE INTO {users_roles} (rid, uid) VALUES ('" . $role_manager->rid . "','" . $account->uid . "')");
   }
 }
@@ -8290,16 +8418,19 @@ function gofast_og_get_users_roles($group_type, $gid, $uids = array()){
  * @return importance is 0 for admin, 1 for contributor, 2 for readonly
  */
 function gofast_mapOGRidToImportance($rid) {
-  if (in_array($rid, ['administrator member', 'group administrator'])) {
+  if (in_array($rid, [GOFAST_OG_ROLE_ADMIN, 'group administrator'])) {
     return 0;
   }
-  if (in_array($rid, ['group contributor', 'member'])) {
+  if (in_array($rid, [GOFAST_OG_ROLE_MANAGER])) {
     return 1;
   }
-  if (in_array($rid, ['read only member', 'non-member'])) {
+  if (in_array($rid, [GOFAST_OG_ROLE_STANDARD, 'member'])) {
     return 2;
   }
-  return 2;
+  if (in_array($rid, [GOFAST_OG_ROLE_READ_ONLY, 'non-member'])) {
+    return 3;
+  }
+  return 3;
 }
 
 function get_gofast_og_space_pending_members_actions($nid, $uid) {
@@ -8321,20 +8452,30 @@ function get_gofast_og_space_pending_members_actions($nid, $uid) {
 function get_gofast_og_space_members_actions($nid, $uid, $roles, $user_role, $type = "user") {
   $string_type = $type == "user" ? "people" : $type;
   $user_role = (array) $user_role;
+  // try not to load multiple times the space members each time the function is called (might be redundant)
+  static $only_one_admin = [];
+  if (!isset($only_one_admin[$nid])) {
+    $only_one_admin[$nid] = count(
+      gofast_userlist_og_get_node_members_by_role($nid, [OG_STATE_ACTIVE], 'administrator member')
+    ) <= 1;
+  }
+  $is_last_admin = $only_one_admin[$nid] && in_array('administrator member', $user_role, TRUE);
+
   foreach ($roles as $rid => $role) {
     $array_actions[]['themed'] = theme('gofast_link_generic', array(
       'icon_class' => "fas fa-cog",
       'href' => "/spaces/nojs/node/" . $nid . "/admin/$string_type/instant-edit-membership/" . $uid . "/" . $rid,
       'link_class' => 'ctools-use-modal',
       'text' => t('Change to @role', array("@role" => t($role)), array('context' => 'gofast:gofast_og')),
-      'disabled' => (in_array($role, (array) array_values($user_role)) && !empty($user_role)) ? true : "",
+      'disabled' => $is_last_admin || (in_array($role, (array) array_values($user_role)) && !empty($user_role)) ? true : "",
     ));
   }
   $array_actions[]['themed'] = theme('gofast_link_generic', array(
     'icon_class' => "fas fa-times",
     'href' => "/spaces/nojs/node/" . $nid . "/admin/$string_type/delete-membership/" . $uid,
     'link_class' => 'ctools-use-modal',
-    'text' => t('Remove from the space', array("@role" => t($role)), array('context' => 'gofast:gofast_og'))
+    'text' => t('Remove from the space', array("@role" => t($role)), array('context' => 'gofast:gofast_og')),
+    'disabled' => $is_last_admin ? true : '',
   ));
   return $array_actions;
 }
@@ -8391,14 +8532,10 @@ function gofast_og_space_members_async($nid){
       if($data->entity_type == 'user'){
         $additional_data_query = db_query("SELECT
           `u`.`uid` AS `uid`,
-          GROUP_CONCAT(`ur`.`rid` SEPARATOR ',') AS `role_id`,
-          `frluo`.`ldap_user_o_value` AS `entity`,
           `usn`.`ldap_user_sn_value` AS `surname`
           FROM `users` `u`
           LEFT JOIN `users_roles` `ur` ON
               `u`.`uid` = `ur`.`uid`
-          LEFT JOIN `field_revision_ldap_user_o` `frluo` ON
-              `frluo`.`entity_id` = `u`.`uid`
           LEFT JOIN `field_data_ldap_user_sn` `usn` ON
               `usn`.`entity_id` = `u`.`uid`
           WHERE
@@ -8420,8 +8557,8 @@ function gofast_og_space_members_async($nid){
           $member['status'] = "1";
 
         }
-        if ($additional_data['entity']) {
-          $member['entity'] = $additional_data['entity'];
+        if ($data->entity) {
+          $member['entity'] = $data->entity;
         }
         $member['profile'] = gofast_getUserRoleNameByImplodedRoleIds(explode(",", $additional_data['role_id']));
       } elseif($data->entity_type == "userlist") {
@@ -8643,8 +8780,10 @@ function gofast_getUserMembersByNodeId($nid, $filtres = []){
   $query->leftJoin('og_role','rl','rl.rid = ur.rid');
   $query->addField('rl', 'name', 'rname');
   // Filters
-  $query->leftJoin('field_data_ldap_user_o', 'frluo', 'frluo.entity_id = og.etid');
-  $query->addField('frluo', 'ldap_user_o_value', 'entity');
+  $query->leftJoin('field_data_field_entity', 'fdfe', 'fdfe.entity_id = us.uid');
+  $query->addField('fdfe', 'field_entity_tid');
+  $query->leftJoin('taxonomy_term_data', 'ttd', 'ttd.tid = fdfe.field_entity_tid');
+  $query->addField('ttd', 'name', 'entity');
 
   // Userlist members
   $userlist = db_select('og_membership', 'og');
@@ -8662,7 +8801,8 @@ function gofast_getUserMembersByNodeId($nid, $filtres = []){
   $userlist->leftJoin('gofast_og_userlists_roles', 'ulr', 'ulr.ulid = og.etid AND ulr.gid = og.gid');
   $userlist->addField('ulr', 'rid');
 
-  // Get userlist state / add placeholder columlns to match amount of columns in user query
+  // Get userlist state / add placeholder columns to match amount of columns in user query
+  $userlist->addExpression('1', 'extra');
   $userlist->addExpression('1', 'extra');
   $userlist->addExpression('1', 'extra');
   $userlist->addExpression('1', 'extra');
@@ -8724,7 +8864,7 @@ function gofast_getUserMembersByNodeId($nid, $filtres = []){
     $userlist->condition('gul.name', '%'.$filtres['sname'].'%', 'LIKE');
   }
   if(isset($filtres['entity'])){
-    $query->condition('frluo.ldap_user_o_value','%'. $filtres['entity']. '%', 'LIKE');
+    $query->condition('ttd.name', '%'. $filtres['entity']. '%', 'LIKE');
     $userlist->condition('1', '0');
   }
   if(isset($filtres['generalSearch'])){
@@ -9092,18 +9232,15 @@ function gofast_og_has_extranet_location($node_location_paths) {
   return $has_extranet_location;
 }
 
-function gofast_og_edit_space_logo($space_node) {
-  global $user;
-  if (!og_user_access('node', $space_node->nid, 'administer group', $user)) {
-    drupal_json_output(array('success' => FALSE, 'error' => t('You are not allowed to edit this space.', array(), array("context" => "gofast:gofast_og"))));
-    exit();
-  }
-
+/**
+ * Common handler to create or update the target node logo, using field_logo_uri.
+ */
+function gofast_og_edit_logo($target_node, $destination_folder = "space_logos") {
   // prepare file data
   $data = base64_decode($_POST['data']);
   $ext = !empty($_POST['ext']) ? strtolower($_POST['ext']) : '';
-  $previous_logo_uri = $space_node->field_logo_uri[LANGUAGE_NONE][0]['value'];
-  $file_name = $space_node->title . '.' . $ext;
+  $previous_logo_uri = $target_node->field_logo_uri[LANGUAGE_NONE][0]['value'];
+  $file_name = $target_node->nid . '.' . $ext;
 
   if (!in_array($ext, array("jpg", "jpeg", "bmp", "png"))) {
     drupal_json_output(array('success' => FALSE, 'error' => t('The file extension @ext is not supported.', array("@ext" => $ext), array("context" => "gofast:gofast_og"))));
@@ -9111,22 +9248,22 @@ function gofast_og_edit_space_logo($space_node) {
   }
 
   // prepare folder
-  $destination = 'public://space_logos/';
+  $destination = "public://$destination_folder/";
   file_prepare_directory($destination, FILE_CREATE_DIRECTORY);
 
   // actual upload
   if ($file = file_save_data($data, $destination . "/" . $file_name, FILE_EXISTS_REPLACE)) {
-    $space_node->field_logo_uri[LANGUAGE_NONE][0]['value'] = $file->uri;
-    node_save($space_node);
+    $target_node->field_logo_uri[LANGUAGE_NONE][0]['value'] = $file->uri;
+    node_save($target_node);
     // delete previous logo if needed
     if ($file->uri != $previous_logo_uri) {
       file_unmanaged_delete($previous_logo_uri);
     }
     // riot sync
-    if (isset($space_node->field_riot_identifier)) {
-      $room_avatar_url = file_create_url($space_node->field_logo_uri[LANGUAGE_NONE][0]['value']);
+    if (isset($target_node->field_riot_identifier)) {
+      $room_avatar_url = file_create_url($target_node->field_logo_uri[LANGUAGE_NONE][0]['value']);
       $room_avatar_upload_response = gofast_riot_api_upload_file($room_avatar_url);
-      gofast_riot_api_change_room_avatar($space_node->field_riot_identifier[LANGUAGE_NONE][0]['value'], $room_avatar_upload_response['content_uri']);
+      gofast_riot_api_change_room_avatar($target_node->field_riot_identifier[LANGUAGE_NONE][0]['value'], $room_avatar_upload_response['content_uri']);
     }
     drupal_json_output(array('success' => TRUE, 'src' => file_create_url($file->uri)));
     exit();
@@ -9135,6 +9272,15 @@ function gofast_og_edit_space_logo($space_node) {
     drupal_json_output(array('success' => FALSE, 'error' => str_replace("\n", "", strip_tags($messages['error'][0]))));
     exit();
   }
+}
+
+function gofast_og_edit_space_logo($space_node) {
+  global $user;
+  if (!og_user_access('node', $space_node->nid, 'administer group', $user)) {
+    drupal_json_output(array('success' => FALSE, 'error' => t('You are not allowed to edit this space.', array(), array("context" => "gofast:gofast_og"))));
+    exit();
+  }
+  gofast_og_edit_logo($space_node);
 }
 
 function gofast_og_check_replication_delete_space($gid){
@@ -9234,21 +9380,25 @@ function gofast_og_fix_unset_roles($print = TRUE){
 }
 
 
-function gofast_og_edit_space_logo_modal($ajax, $node) {
+function gofast_og_edit_space_logo_modal($ajax, $space) {
   global $user;
   if ($ajax) {
     ctools_include('modal');
     ctools_include('ajax');
 
-    if (!in_array('administrator member', gofast_og_get_user_final_roles_for_space('node', $node->nid, $user->uid), true)) {
+    if (!in_array('administrator member', gofast_og_get_user_final_roles_for_space('node', $space->nid, $user->uid), true)) {
       $commands[] = gofast_command_toast_message(t("You don't have permission to do this action", array(), array("context" => "gofast")), 'error');
     } else {
-    $output = theme('gofast_og_logo_crop', array(
-      'logo' => $node->field_logo_uri[LANGUAGE_NONE][0]['value'] ?? NULL,
-      'gid'    => $node->nid
-    ));
+      $node = isset($_GET["nid"]) ? node_load($_GET["nid"]) : $space;
+      $theme = isset($_GET["theme"]) ? $_GET["theme"] : "gofast_og_logo_crop";
+      $message = isset($_GET["message"]) ? base64_decode($_GET["message"]) : t('Cropping space logo', array(), array('context' => 'gofast'));
+      $output = theme($theme, array(
+        'logo' => $node->field_logo_uri[LANGUAGE_NONE][0]['value'] ?? NULL,
+        'gid'  => $space->nid,
+        'nid'  => $node->nid,
+      ));
 
-    $commands[] = ctools_modal_command_display(t('Cropping space logo', array(), array('context' => 'gofast')), $output);
+      $commands[] = ctools_modal_command_display($message, $output);
     }
 
     print ajax_render($commands);
@@ -9259,13 +9409,13 @@ function gofast_og_edit_space_logo_modal($ajax, $node) {
 }
 
 function gofast_get_root_space_gid($root_space_name = GOFAST_CMIS_LOCATIONS_FIELD_GROUPS_VALUE) {
+  if ($root_space_name[0] === "_") {
+    $root_space_name = substr($root_space_name, 1);
+  }
   // use cache to prevent useless db calls or adding 
   $cached_gid = cache_get($root_space_name . "_gid", 'cache');
   if ($cached_gid) {
     return $cached_gid->data;
-  }
-  if ($root_space_name[0] === "_") {
-    $root_space_name = substr($root_space_name, 1);
   }
   $query = db_select('node', 'n');
   $query->addExpression('MIN(nid)');
@@ -9629,4 +9779,22 @@ function gofast_og_space_unsubscribe_confirm_form_submit($form, &$form_state): v
 function gofast_og_get_bulk_nids_in_string(mixed $nids, string $delimiter = "-"): array {
   $nids = explode($delimiter, $nids);
   return array_filter($nids);
+}
+/**
+ * Get the private space associated with the user by their username.
+ * @param string $username The username of the user.
+ * @return array An array of nodes (spaces) or an empty array.
+ */
+function gofast_og_get_private_space_by_username($username) {
+  $query = db_select('node', 'n')
+    ->fields('n')
+    ->condition('n.type', 'private_space');
+
+  $query->innerJoin('users', 'u', 'n.uid = u.uid');
+
+  $query->condition('u.name', $username);
+
+  $result = $query->execute()->fetchAll();
+
+  return $result ;
 }

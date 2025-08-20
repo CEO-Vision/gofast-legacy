@@ -40,7 +40,7 @@
             if(response.trim() === "true") {
                 Gofast.toast(Drupal.t("The rss feed has been added", {}, {context: 'gofast:gofast_rssfeed'}), "success");
                 jQuery('a[href="#edit-rssfeeds"]').remove('processed')
-                Gofast.loadSettingsTab('edit-rssfeed');
+                Gofast.loadSettingsTab('edit-rssfeed', true);
                 jQuery('a[href="#edit-rssfeeds"]').addClass('processed');
             } else {
                 Gofast.toast(Drupal.t("The feed URL is invalid. Please enter a fully-qualified URL, such as<br /><br /><blockquote>https://fr.news.yahoo.com/?format=rss</blockquote>", {}, {context: 'gofast:gofast_rssfeed'}), "warning");
@@ -60,7 +60,7 @@
             if(response.trim() === "true") {
                 Gofast.toast(Drupal.t("The rss feed has been edited", {}, {context: 'gofast:gofast_rssfeed'}), "success");
                 jQuery('a[href="#edit-rssfeeds"]').remove('processed')
-                Gofast.loadSettingsTab('edit-rssfeed');
+                Gofast.loadSettingsTab('edit-rssfeed', true);
                 jQuery('a[href="#edit-rssfeeds"]').addClass('processed');
             } else {
                 Gofast.toast(Drupal.t("The feed URL is invalid. Please enter a fully-qualified URL, such as<br /><br /><blockquote>https://fr.news.yahoo.com/?format=rss</blockquote>", {}, {context: 'gofast:gofast_rssfeed'}), "warning");
@@ -77,7 +77,7 @@
             if(response.trim() === "true") {
                 Gofast.toast(Drupal.t("The rss feed has been deleted", {}, {context: 'gofast:gofast_rssfeed'}), "success");
                 jQuery('a[href="#edit-rssfeeds"]').remove('processed')
-                Gofast.loadSettingsTab('edit-rssfeed');
+                Gofast.loadSettingsTab('edit-rssfeed', true);
                 jQuery('a[href="#edit-rssfeeds"]').addClass('processed');
             } else {
                 Gofast.toast(Drupal.t("The rss feed has not been deleted", {}, {context: 'gofast:gofast_rssfeed'}), "warning");

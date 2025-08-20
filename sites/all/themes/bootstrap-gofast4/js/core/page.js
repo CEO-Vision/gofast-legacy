@@ -63,7 +63,7 @@ function init_disable_and_show_tabs() {
         jQuery('.explorer-main-container').find('.tab-pane.active').removeClass('active');
         jQuery('.explorer-main-container').find('.nav-item.active').removeClass('active');
         jQuery('#explorer-wiki').parent().addClass('active');
-        jQuery('#wiki').addClass('active');
+        jQuery('#book-browser').addClass('active');
     }
     
     //No comments to display, lock the tab

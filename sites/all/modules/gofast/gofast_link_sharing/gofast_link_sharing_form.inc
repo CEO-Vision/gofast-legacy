@@ -262,16 +262,8 @@ function gofast_link_sharing_form_submit($form, &$form_state){
     $recipient= NULL;
     $recipients_ids_list = explode(',',$form_state['values']['to']);
     $copy_recipients_ids_list = $recipients_ids_list;
-
-    //GOFAST-6804 Adding CKEditor for linksharing, we need to do some formatting to ensure that everything will be displayed correctly in the email
-    //We don't need to format plain text
-    if($form_state['values']['message']['format'] !== 'plain_text') {
-        $styles_message = gofast_cmis_ckeditor_classes_to_style($form_state['values']['message']['value']);
-        $smiley_message = gofast_cmis_ckeditor_smiley_path_update($styles_message);
-        $formatted_message = str_replace(array("\r\n","\t"), "", $smiley_message);
-    }else{
-        $formatted_message = $form_state['values']['message']['value'];
-    }
+    $message = $form_state['values']['message']['value'];
+    
     ## reach all recipient informations to send mail to each users
     $already_add_toast = false;
     foreach($recpts as $recpt){
@@ -309,7 +301,7 @@ function gofast_link_sharing_form_submit($form, &$form_state){
             'author_pic' => theme('user_picture', array('account' => $user, 'dimensions' => 40, 'attributes' => ['width' => 40, 'style' => "border-radius: 5px; width:40px;"])),
             'recip_name' => $recipient,
             'subheader_message' => $subheader_message,
-            'message' => nl2br($formatted_message),
+            'message' => nl2br($message),
             'expiry_msg' => t('This link will be functional for the next ' . '%exp_period. After this, it will be disabled.',
             array('%exp_period' => t(DEFAULT_EXPIRY_PERIOD_STRING, array(), $l)),
             $l),
@@ -353,7 +345,7 @@ function gofast_link_sharing_form_submit($form, &$form_state){
           'author_pic' => theme('user_picture', array('account' => $user, 'dimensions' => 40, 'attributes' => ['width' => 40, 'style' => "border-radius: 5px; width:40px;"])),
           'recip_name' => $user_name,
           'subheader_message' => $subheader_message,
-          'message' => nl2br($formatted_message),
+          'message' => nl2br($message),
           'expiry_msg' => t('This link will be functional for the next ' . '%exp_period. After this, it will be disabled.',
           array('%exp_period' => t(DEFAULT_EXPIRY_PERIOD_STRING, array(), $l)),
           $l),
@@ -438,7 +430,7 @@ function gofast_link_sharing_manage_mail_sharing_form($form, &$form_state) {
       foreach($selected_items_json as $select){
           $node = node_load($select->url);
           // We need only one location in order to have a 1:1 nid:path mapping
-          $path = gofast_og_get_first_available_space_location($node);
+          $path = gofast_cmis_get_first_available_location($node);
           array_push($nid_cart, $path.'/'.$node->title);
           array_push($title_cart, $node->title);
 
@@ -450,7 +442,6 @@ function gofast_link_sharing_manage_mail_sharing_form($form, &$form_state) {
       }
       variable_del("ithit_bulk_cart_".$user->uid);
   }
-
   // Sorting the items received in parameter (Folders first, then Resource)
   usort($selected_items_json, function($a, $b) {
     return $a->type > $b->type;
@@ -462,6 +453,7 @@ function gofast_link_sharing_manage_mail_sharing_form($form, &$form_state) {
   }
 
   $selected_nids = array();
+  $blocked_nids = array();
   foreach ($items_by_type as $type => $items) {
     if ($type === 'Folder') {
         foreach($items as $item_path){
@@ -490,15 +482,13 @@ function gofast_link_sharing_manage_mail_sharing_form($form, &$form_state) {
                   $node = node_load($item->properties['gofast:nid']);
               //Exclude unsharable confidential documents
               $is_confidential = isset($node->field_criticity['und'][0]['tid']) && taxonomy_term_load($node->field_criticity['und'][0]['tid'])->name == "Confidential Data";
-
                   if($is_confidential){
-                      drupal_set_message($node->title . " " . t("can't be shared because it's a confidential document", array(), array('context' => "gofast:gofast_link_sharing")), "warning");
-                      continue;
+                    $blocked_nids[] = $item->properties["gofast:nid"];
+                    continue;
                   }
-
                   $is_internal = isset($node->field_criticity['und'][0]['tid']) && taxonomy_term_load($node->field_criticity['und'][0]['tid'])->name == "Internal Distribution";
                   if ($is_internal) {
-                    drupal_set_message($node->title . " " . t("Document for Internal Distribution: sharing in Extranet spaces prohibited", array(), array('context' => "gofast:gofast_link_sharing")), "warning");
+                    $blocked_nids[] = $item->properties["gofast:nid"];
                     continue;
                   }
 
@@ -514,6 +504,11 @@ function gofast_link_sharing_manage_mail_sharing_form($form, &$form_state) {
         }
       }
     }
+  }
+  if($form_state['executed'] && empty($selected_nids)){
+    $commands[] = gofast_command_toast_message(t("There is no valid items to share.", array(), array("context" => "gofast:gofast_link_sharing")), "warning");
+    print ajax_render($commands);
+    exit;
   }
 
   $form_state['selected_nodes_ids'] = array_keys($selected_nids);
@@ -541,6 +536,18 @@ function gofast_link_sharing_manage_mail_sharing_form($form, &$form_state) {
   $nodes_nids = array();
   $nodes_links = array();
   $links = "" ;
+  $warning_message = "" ;
+  if(!empty($blocked_nids)){
+    $warning_message .= '
+                  <span>'. format_plural(count($blocked_nids),"This file will not be shared as it is confidential.", "These files will not be shared as they are confidential.", array(), array("context" => "gofast:gofast_link_sharing")).'</span>
+                  <ul class="my-0">';
+    foreach($blocked_nids as $nid) {
+      $node = node_load($nid);
+      $warning_message .= "<li><a href=\"/node/$node->nid\" title=\"$node->title\">$node->title</a></li>";
+    }
+    $warning_message .= '</ul>';
+  }
+  drupal_set_message($warning_message, "warning");
   foreach($nodes as $key=>$nid){
       $file_sharing_link = gofast_link_sharing_build_link($nid);
       $links .= '<div class="form-item form-item-link form-group">'
@@ -1118,9 +1125,10 @@ function gofast_manage_linksharing_process(){
 
     if ($ret == TRUE) {
       flood_register_event('print_mail');
-        drupal_set_message(t('An email has been sent to the user(s) with the document\'s sharing link.'));
-      }
-  print('');
+      $commands = [];
+      $commands[] = gofast_command_toast_message(t('An email has been sent to the user(s) with the document\'s sharing link.'), "success");
+    }
+  print ajax_render($commands);
   exit;
 }
 
@@ -1400,18 +1408,6 @@ function gofast_multi_link_sharing_form_validate($form, &$form_state){
 }
 
 /**
- * @deprecated
- */
-function gofast_multi_link_sharing_generate_zip_file($nodes_nid) {
-  $nodes_ref = [];
-  foreach ($nodes_nid as $nid) {
-    $nodes_ref[] = ["nodeRef" => gofast_cmis_node_get_reference_by_nid_without_cmis($nid)];
-  }
-  $tmp_file = gofast_cmis_initialize_node_compression($nodes_ref, TRUE);
-  return $tmp_file;
-}
-
-/**
  * Form submit handler for gofast_multi_link_sharing_form()
  *
  * @global $user
@@ -1423,20 +1419,30 @@ function gofast_multi_link_sharing_form_submit($form,&$form_state){
      
     ## get documents checked
     $nodes_nid = $form['shares']['#value'];
-
     try{
       if (count($nodes_nid) > 1) {
         $nodes_ref = [];
         foreach ($nodes_nid as $nid) {
           $nodes_ref[] = ["nodeRef" => gofast_cmis_node_get_reference_by_nid_without_cmis($nid)];
         }
-        gofast_download_selected_files($nodes_ref, TRUE);
         gofast_multi_link_sharing_send_mail($form, $form_state);
+        $process_uuid = uuid_generate();
+        $_POST["process_uuid"] = $process_uuid;
+        drupal_json_output(array(
+          'process_uuid' => $process_uuid,
+          'status' => 'success',
+          'code' => 200,
+        ));
+        // Init cmis repository to allow doing operation as admin while user is anonymous
+        usurp(1);
+        gofast_cmis_get_repository();
+        usurp(false);
+        
+        fastcgi_finish_request();
+        gofast_ajax_file_browser_initialize_file_download_process($nodes_ref);
       }else{
         $node_id = array_pop($nodes_nid);
-        $alfresco_url = gofast_cmis_node_get_pdf_link($node_id, TRUE);
-        // use the "notconverted" preview mechanism to send the client a link which doesn't hold an alfresco ticket
-        $url = gofast_cmis_webservice_item_generate_notconverted_preview($node_id, $alfresco_url);
+        $url = "/ajax_file_browser/download_file?nodeRef=".gofast_cmis_node_get_reference_by_nid_without_cmis($node_id);
         echo $url;
       }
       exit;
@@ -1552,17 +1558,36 @@ function gofast_multi_link_sharing_send_mail($form,$form_state){
 /**
  * Downloads a shared folder and sends an email to the user who shared the folder
  */
-function gofast_link_sharing_folder_dl($js): void {
+function gofast_link_sharing_folder_dl() {
   $hash = $_GET['hash'];
   $workspace = $_GET['workspace'];
+  $process_uuid = $_GET['process_uuid'];
+
+  // Add process_uuid to $_POST to make a drupal variable with this id
+  $_POST["process_uuid"] = $process_uuid;
 
   // Check is the session link is not expiry
   gofast_multi_sharing_check_session($hash);
   if(isset($workspace)){
-    $files = [['nodeRef' =>  'workspace://SpacesStore/'.$workspace]];
-    gofast_download_selected_files(files:$files, AS_ADMIN:TRUE);
-    usurp(FALSE);
+    $nodeRefs = [['nodeRef' =>  'workspace://SpacesStore/'.$workspace]];
+    drupal_json_output(array(
+      'status' => 'success',
+      'code' => 200,
+    ));
+    fastcgi_finish_request();
+    
     gofast_multi_link_sharing_folder_send_mail($hash, $workspace);
+
+    try{
+      gofast_ajax_file_browser_initialize_file_download_process($nodeRefs);
+    }
+    catch(\Exception $e){   
+      variable_set("gofast_cmis_compression_status_$process_uuid", array(
+        'status' => 'ERROR',
+        'message' => t('Something went wrong'),
+        'code' => 500,
+      ));
+    }
   }
 }
 
@@ -1700,7 +1725,6 @@ function gofast_link_sharing_folder_form_submit($form, &$form_state){
   $data = json_decode($data)->cmis_item;
 
   $form_state['values']['selected_nodes_ids'] = json_encode($data);
-  $form_state['values']['message'] = $form_state['values']['message']['value'];
   $form_state['values']['folder_sharing_title'] = t('Folder Shared Contents');
 
   gofast_link_sharing_manage_mail_sharing_form_submit($form, $form_state);

@@ -44,15 +44,6 @@
     }
   };
 
-  Drupal.behaviors.gofastStatus = {
-      attach: function(context, settings){
-        if(!Gofast.statusPolling){
-          Gofast.statusPolling = true;
-          statusPoll(true);
-        }
-    }
-  };
-
 
   Drupal.behaviors.initRenanmeOgOnMobile = {
     attach: function () {
@@ -120,24 +111,6 @@
            $("#breadcrumb-alt-actions").replaceWith(data);
            Drupal.attachBehaviors();
       });
-  }
-
-  function statusPoll(){
-    return;
-    $.ajax({
-        url : Drupal.settings.gofast.baseUrl+'/gofast/status',
-        type : 'GET',
-        dataType: 'html',
-        success : function(content, status){
-          $(".gofast-status-btn").remove();
-          $("#platform-status").remove();
-          if(content !== ""){ //Status to display
-            $('#navbar').append('<div class="visible-lg gofast-status-btn"><i style="color: #8b7132;font-size: 1.7em;margin-top: 4px;" class="fa fa-exclamation-triangle fa-2x" aria-hidden="true"></i></div>');
-            $('#navbar').append('<div id="platform-status">' + content + '</div>');
-          }
-        },
-      });
-    setTimeout(statusPoll, 15000);
   }
 
   Drupal.behaviors.permalinkToClipBoard = {
@@ -463,19 +436,19 @@
   };
 
 
-  Gofast.historyTab = function (nid) {
-    if ($("#historytab-container").hasClass("processed")) {
+  Gofast.historyTab = function (nid, tabId = "#document__historytab") {
+    if ($(tabId).find("#historytab-container").hasClass("processed")) {
       return;
     }
-    $("#historytab-container").addClass("processed");
+    $(tabId).find("#historytab-container").addClass("processed");
     $.ajax({
       url: Drupal.settings.gofast.baseUrl + '/gofast/history/render/' + nid,
       type: 'GET',
       dataType: 'html',
       async: true,
       success: function (content) {
-        $("#historytab-container").html(content);
-        Drupal.attachBehaviors("#historytab-container");
+        $(tabId).find("#historytab-container").html(content);
+        Drupal.attachBehaviors(`${tabId} #historytab-container`);
       }
     });
   };
@@ -495,71 +468,14 @@
       $("[href='#document__audittab']").click();
     }
   }
-
-  // Reload the content of the wiki panel, even if there already is content in it
-  Gofast.refreshWikiPanel = function() {
-    const wikiContainer = Gofast._settings.isEssential ? $("#mobile_file_browser_wiki_container") : $("#wiki");
-    if (!wikiContainer.length) {
-      return;
-    }
-    $.get(window.origin + "/gofast/book/explorer")
-      .done(function(data){
-        wikiContainer.html(data);
-        // Highlight the current wiki article
-        Gofast.selectCurrentWikiArticle();
-      });
-  }
-
-  Gofast.selectCurrentWikiArticle = function(open = true) {
-    if (!Drupal.settings.gofast_selected_book) {
-      Gofast.unselectWikiArticle()
-      return;
-    }
-    const preselectBookInterval = setInterval(() => {
-      let space_nid = $(".essentialFileBrowser").attr("data-nid");
-      // Don't highlight home page on root spaces
-      if(['4', '5', '6', '7'].includes(space_nid)){
-        Gofast.unselectWikiArticle()
-        clearInterval(preselectBookInterval);
-        return
-      }
-      const wikiSelector = Gofast._settings.isEssential ? "#mobile_file_browser_wiki_container" : "#wiki"
-      let $targetPageElement = $(wikiSelector + " .book-explorer-element[data-nid='" +  Drupal.settings.gofast_selected_book + "']");
-      // Show the wiki tree when navigating to a space when user is in the home tab
-      if(Gofast._settings.isEssential){
-        $("#nav_mobile_file_browser_wiki_container").click()
-      }
-      if (!$targetPageElement.length) {
-        // If the actual space don't have an home page wiki, add an highlighted item with the space name to give a feedback of the context to the user
-        Gofast.highlightEmptyHomePageItem()
-        clearInterval(preselectBookInterval);
-        return;
-      }
-      Gofast.unselectWikiArticle()
-      $targetPageElement.find(".book-explorer-element-icon").removeClass("pt-3");
-      $targetPageElement.addClass("gofastHighlightedWikiArticle bg-primary text-white pr-2 rounded");
-
-      // Open parents if item is nested
-      Gofast.book.openItemSiblings($targetPageElement);
-      $targetPageElement[0].scrollIntoView({behavior: "smooth", block: "center"});
-      // Open left panel if closed
-      if (open && !$("#explorer-toggle").hasClass("open")) {
-        $("#explorer-toggle").click();
-      }
-      // Show wiki panel tab content
-      if(!Gofast._settings.isEssential){
-        $("#explorer-wiki").click();
-      }
-      $(".explorer-main-container .nav.nav-tabs a.active:not('#explorer-wiki')").removeClass('active');
-
-      clearInterval(preselectBookInterval);
-    }, 100);
-  }
   
   Gofast.highlightEmptyHomePageItem = function(space_path = null){
     if(space_path == null){
       let searchParams = new URLSearchParams(location.search)
       space_path = searchParams.get("path")
+      if(!space_path){
+        return
+      }
     }
     $("#empty-home-page-wiki").addClass("d-none")
     let spaceId = $(".essentialFileBrowser").attr("data-nid");
@@ -572,7 +488,7 @@
         Gofast.unselectWikiArticle()
         $("#empty-home-page-wiki .book-explorer-element-name > .item-name").html(space_name)
         $("#empty-home-page-wiki").removeClass("d-none")
-        $("#empty-home-page-wiki > .book-explorer-element").addClass("gofastHighlightedWikiArticle bg-primary text-white pr-2 rounded");
+        $("#empty-home-page-wiki > .book-explorer-element").addClass("gofastHighlightedItem bg-primary text-white pr-2 rounded");
       }
     }
   }
@@ -580,8 +496,8 @@
   Gofast.unselectWikiArticle = function() {
     $(".wiki-tree-widget-item.active").removeClass("active")
     $("#empty-home-page-wiki").addClass("d-none")
-    $(".gofastHighlightedWikiArticle").find(".book-explorer-element-icon").removeClass("pt-3");
-    $(".gofastHighlightedWikiArticle").removeClass("gofastHighlightedWikiArticle bg-primary text-white pr-2 rounded");
+    $(".gofastHighlightedItem").find(".book-explorer-element-icon").removeClass("pt-3");
+    $(".gofastHighlightedItem").removeClass("gofastHighlightedItem bg-primary text-white pr-2 rounded");
   }
 
   Gofast.checkReply = function(){
@@ -607,7 +523,7 @@
   }
   
   // if needed to set a new CKEditor profile, use the hook add_ckeditor_profiles() PHP-side
-  Gofast.parseCKEditorProfile = function(profile) {
+  Gofast.parseCKEditorProfile = async function(profile) {
     if(profile.hasOwnProperty('extraPlugins')) {
       if (profile.hasOwnProperty('mention')){
         if(typeof window['ckeditorPluginMentionFeeds'] === 'function'){
@@ -621,20 +537,26 @@
           return window[plugin];
         }
         return plugin; // If not, return the string as is
-    })
-  }
-  // XSS-filtering is done by our backend validation logic
-  profile.htmlSupport = {
-      allow: [
-          {
-              name: /.*/,
-              attributes: true,
-              classes: true,
-              styles: true
-          }
-      ]
-  };
-  return profile;
+      })
+    }
+    // XSS-filtering is done by our backend validation logic
+    profile.htmlSupport = {
+        allow: [
+            {
+                name: /.*/,
+                attributes: true,
+                classes: true,
+                styles: true
+            }
+        ]
+    };
+    // Call JS hook altering CKEditor profiles
+    if(typeof Gofast.hooks.alterCKEditorProfile == "object") {
+      for (const callback of Gofast.hooks.alterCKEditorProfile) {
+        profile = await callback(profile);
+      }
+    }
+    return profile;
 }
 
   // if param onlyIfIs is given, will remove only instances whose id contain the given string
@@ -719,16 +641,16 @@
 
   Drupal.behaviors.initCKEditor = {
     attach: function (context, settings) {
-      if (!$("[data-ckeditor]").length || !ClassicEditor) {
+      if (!$("[data-ckeditor]:not(.processed)").length || typeof ClassicEditor == "undefined") {
         return;
       }
-      $("[data-ckeditor]").each(async function() {
+      $("[data-ckeditor]:not(.processed)").addClass("processed").each(async function() {
         const profileName = $(this).attr("data-ckeditor");// Get the CKEditor profile name 
-        const profile = Gofast.parseCKEditorProfile(Drupal.settings.ckeditor.profiles[profileName]);
+        const profile = await Gofast.parseCKEditorProfile({...Drupal.settings.ckeditor.profiles[profileName]});
         const contentLanguage = $("#document__infotab").attr("data-language");// Get the content language from the data-language attribute.
         const $originalInput = $(this);
-        $originalInput.removeAttr("data-ckeditor");
-        if(contentLanguage){// Check if contentLanguage is defined .
+
+        if(contentLanguage){// Check if contentLanguage is defined.
           profile.language ={
             ui: Gofast.get("user").language,
             content: contentLanguage  // Set the content language.
@@ -740,10 +662,8 @@
         tryMakeEditorResizable($editorElement);
 
         Gofast.setCKEditorTooltips(editor);
-        if (!$originalInput.attr("id").startsWith("edit-body")) {
-          return;          
-        }
-        // Force set original input value after CKEditor value (only needed if textarea id starts with "edit-body")
+
+        // Force set original input value after CKEditor value
         editor.model.document.on("change:data", () => {
           const editorData = editor.getData();
           $originalInput.val(editorData);
@@ -1416,17 +1336,17 @@
     /*
      * Make the audit node block asynchronous
      */
-    Gofast.loadAuditBlock = function () {
-        if ($('#gofast-audit-container').length > 0){
-          if (!$('#gofast-audit-container').hasClass('processed')){
-            $('#gofast-audit-container').addClass('processed');
-            if (Gofast.get('node') !== undefined){
-              var nid = Gofast.get('node').id;
-              $.post(location.origin + "/gofast/node/"+nid+"/get_audit_node").done(function(data){
-                $('#gofast-audit-container').append(data);
-              });
-            }
+    Gofast.loadAuditBlock = function (tabId = "#document__audittab") {
+      if ($(tabId).find('#gofast-audit-container').length > 0){
+        if (!$(tabId).find('#gofast-audit-container').hasClass('processed')){
+          $(tabId).find('#gofast-audit-container').addClass('processed');
+          if (Gofast.get('node') !== undefined){
+            var nid = Gofast.get('node').id;
+            $.post(location.origin + "/gofast/node/"+nid+"/get_audit_node").done(function(data){
+              $(tabId).find('#gofast-audit-container').append(data);
+            });
           }
+        }
         }
     };
 
@@ -1468,7 +1388,14 @@
       });
     };
 
-    Gofast.gofast_right_block_breadcrumb = function(manage_locations = false){
+    /**
+     * Loads breadcrumb from server for right block *and* replaces the elements in the DOM
+     * @param {null|undefined|boolean|"when_not_mirrored"} [manage_locations]
+     *  The value to use for the "manage_locations" option when rendering the
+     *  breadcrumbs. When `null` or `undefined`, use the server default (defined
+     *  in gofast_breadcrumb.module).
+     */
+    Gofast.gofast_right_block_breadcrumb = function(manage_locations = null){
       var node = Gofast.get("node");
 
       if(
@@ -1481,8 +1408,8 @@
       
       var loadBreadcrumb = function(manage_locations, targetNid){
         var options = {'show_title': false, "show_all_items": false, "show_tooltip": true};
-        if (JSON.parse(manage_locations)) {
-          options["manage_locations"] = true;
+        if (manage_locations != null) {
+          options["manage_locations"] = manage_locations;
         }
         $.get(location.origin + "/gofast/node-breadcrumb/" + targetNid + "?options=" + JSON.stringify(options), function(data) {
           $(".loader-breadcrumb").remove();
@@ -1613,13 +1540,18 @@
     }, 200);
     }
 
+    if(Drupal.settings.gofast.user.password_expires){
+      Drupal.CTools.Modal.showCtoolsModal("/gofast/nojs/password_expires?timestamp=" + Drupal.settings.gofast.user.password_expires);
+      return;
+    }
+
     if(Drupal.settings.gofast.user.display_carousel){
-        var waitForClass = setInterval(function(){
+      var waitForClass = setInterval(function(){
             if($('a[href="/gofast/nojs/carousel"]').hasClass("ctools-use-modal-processed")){
               $('a[href="/gofast/nojs/carousel"]').click();
                 clearInterval(waitForClass);
-            }
-        }, 200);
+          }
+      }, 200);
     }
   }, 200);
 
@@ -1793,7 +1725,7 @@
     if (data.flagName === 'subscribe_term') { // it's a term, not another flag name
       jQuery('.flag.flag-link-toggle.flag-processed').parent('p').children().remove()
       var flag = $(".tagify__tag[value='" + data.contentId + "'] .gofast-sub-icon");
-      flag.html(Drupal.getSubButtonHtml(data.contentId).responseText)
+      flag.html(Gofast.metadata.getSubButtonHtml(data.contentId).responseText)
       flag.show();
     }
     if (data.flagName === 'flag_public') { 
@@ -1807,6 +1739,194 @@
       flag.hide();
     }
   });
+
+  Gofast.sideFileBrowser = {
+    initFileBrowser: function(tabId){
+      if($("#" + tabId).hasClass("processed")){
+        Gofast.sideFileBrowser.selectCurrentItem(tabId);
+        return;
+      }
+      $("#" + tabId).addClass("processed")
+      $.get(`/gofast/${tabId}/explorer`).done(function(data){
+        $("#" + tabId).html(data);
+        Gofast.sideFileBrowser.selectCurrentItem(tabId);
+      });
+    },
+    refreshBrowser: function(tabId){
+
+      // find container
+      let container = $(`#${tabId}-side-explorer`);
+
+      // get stuff
+      container.html('<div class="d-flex min-h-200px min-w-40px h-100 w-100"><div class="spinner spinner-primary m-auto"></div></div>');
+      $.get(`/gofast/${tabId}/explorer`).done(function(data){
+        container.replaceWith(data);
+        Gofast.sideFileBrowser.selectCurrentItem(tabId);
+      });
+    },
+    searchBrowser: function() { 
+      clearTimeout(Gofast.ITHitMobile.searchProcess);
+      const value =$(this).val();
+      const elements = $(this).closest(".side-explorer-wrapper").find(".side-explorer-element");
+
+      Gofast.ITHitMobile.searchProcess = setTimeout(function(){
+        Gofast.ITHitMobile.search(
+          value,
+          false,
+          true,
+          elements
+        );
+      });
+    },
+    treeWidgetItemCollapseCallback: function() {
+      const $webformOpenElement = $(this);
+
+      // toggle chevron of clicked element and keep track whether we're collapsing or not to handle children elements
+      let collapse = true;
+      if ($webformOpenElement.hasClass("ki-bold-arrow-next")) {
+          collapse = false;
+          $webformOpenElement.removeClass("ki-bold-arrow-next").addClass("ki-bold-arrow-down");
+      } else {
+          $webformOpenElement.removeClass("ki-bold-arrow-down").addClass("ki-bold-arrow-next");
+      }
+  
+      const $webformItemElement = $webformOpenElement.parent().parent();
+      if (collapse) {
+          Gofast.sideFileBrowser.closeItemSiblings($webformItemElement);
+      } else {
+          Gofast.sideFileBrowser.openItemSiblings($webformItemElement, "DESC", false);
+      }
+    },
+    closeItemSiblings: function(selector, direction = "DESC", recursive = true, initialCall = true) {
+
+      const $widgetSiblings = $(selector);
+
+      // we don't want to hide the first item since it's the parent of the closed items
+      if (!initialCall && direction == "DESC") {
+        $widgetSiblings.removeClass("side-explorer-element-visible").addClass("side-explorer-element-collapsed");
+      }
+      $widgetSiblings.find(".side-explorer-element-open").removeClass("ki-bold-arrow-down").addClass("ki-bold-arrow-next");
+    
+      if (!recursive && !initialCall) {
+        return;
+      }
+  
+      const widgetTableId = $widgetSiblings.closest(".side_element-explorer-element-table").attr("id")
+      let nextWidgetSiblingSelector = [];
+  
+      if (direction == "DESC") {
+        for (const widgetSibling of $widgetSiblings) {
+          const currentWidgetSiblingId = $(widgetSibling).attr("id");
+          if (currentWidgetSiblingId != undefined && currentWidgetSiblingId != 0) {
+            nextWidgetSiblingSelector.push("#" + widgetTableId + " [data-pid='" + currentWidgetSiblingId + "']");
+          }
+        }
+      } else {
+        for (const widgetSibling of $widgetSiblings) {
+          const nextWidgetSiblingId = $(widgetSibling).find(".side-explorer-element-parent").text().trim();
+          if (nextWidgetSiblingId != undefined && nextWidgetSiblingId != 0) {
+            nextWidgetSiblingSelector.push("#" + widgetTableId + " #"  + nextWidgetSiblingId);
+          }
+        }
+      }
+      nextWidgetSiblingSelector = nextWidgetSiblingSelector.join(", ");
+      const $nextSiblings = $(nextWidgetSiblingSelector);
+      if ($nextSiblings.length) {
+        Gofast.sideFileBrowser.closeItemSiblings($nextSiblings, direction, recursive, false);
+      } else if (direction == "ASC") {
+        // we don't want to hide a root item
+        $widgetSiblings.removeClass("side-explorer-element-collapsed").addClass("side-explorer-element-visible");
+      }
+    },
+    openItemSiblings: function(selector, direction = "ASC", recursive = true, initialCall = true) {
+
+      const $widgetSiblings = $(selector);
+      const widgetTableId = $widgetSiblings.closest(".side_element-explorer-element-table").attr("id");
+  
+      // if in ascending order, still open the first level descendants of the start items
+      if (initialCall && direction == "ASC") {
+        for (const widgetSibling of $widgetSiblings) {
+          const currentWidgetSiblingId = $(widgetSibling).attr("id");
+          $("#" + widgetTableId + " [data-pid='" + currentWidgetSiblingId + "']").removeClass("side-explorer-element-collapsed").addClass("side-explorer-element-visible");
+          $(widgetSibling).find(".side-explorer-element-open").removeClass("ki-bold-arrow-next").addClass("ki-bold-arrow-down");
+        }
+      }
+      // make sure we actually display all the siblings of the passed siblings
+      for (const widgetSibling of $widgetSiblings) {
+        const currentWidgetSiblingPid = $(widgetSibling).attr("data-pid");
+        $("#" + widgetTableId + " [data-pid='" + currentWidgetSiblingPid + "']").removeClass("side-explorer-element-collapsed").addClass("side-explorer-element-visible");
+        $("#" + widgetTableId + " #"+ currentWidgetSiblingPid).find(".side-explorer-element-open").removeClass("ki-bold-arrow-next").addClass("ki-bold-arrow-down");
+      }
+  
+      if (!recursive && !initialCall) {
+        return;
+      }
+  
+      let nextWidgetSiblingSelector = [];
+  
+      if (direction == "ASC") {
+        for (const widgetSibling of $widgetSiblings) {
+          const nextWidgetSiblingId = $(widgetSibling).find(".side-explorer-element-parent").text().trim();
+          if (nextWidgetSiblingId != undefined && nextWidgetSiblingId != 0) {
+            nextWidgetSiblingSelector.push("#" + widgetTableId + " #" + nextWidgetSiblingId);
+          }
+        }
+      } else {
+        for (const widgetSibling of $widgetSiblings) {
+          const currentWidgetSiblingId = $(widgetSibling).attr("id");
+          if (currentWidgetSiblingId != undefined && currentWidgetSiblingId != 0) {
+            nextWidgetSiblingSelector.push("#" + widgetTableId + " [data-pid='" + currentWidgetSiblingId + "']");
+          }
+        }
+      }
+      nextWidgetSiblingSelector = nextWidgetSiblingSelector.join(", ");
+      const $nextSiblings = $(nextWidgetSiblingSelector);
+      if ($nextSiblings.length) {
+        Gofast.sideFileBrowser.openItemSiblings($nextSiblings, direction, recursive, false);
+      }
+    }, 
+    selectCurrentItem: function(tabId = "file-browser", open = true) {
+      let space_nid = $(".essentialFileBrowser").attr("data-nid");
+      // Don't highlight home page on root spaces
+      if(['4', '5', '6', '7'].includes(space_nid)){
+        Gofast.sideFileBrowser.unselectAllItems()
+        return
+      }
+      const currentNode = Gofast.get("node");
+      let tabSelector = "";
+      if(tabId != ""){
+        tabSelector = Gofast._settings.isEssential ? "#mobile_file_browser_wiki_container" : "#"+tabId
+      }
+      let $targetPageElement = $(tabSelector + " .side-explorer-element[data-nid='" +  currentNode.id + "']");
+      // Show the wiki tree when navigating to a space when user is in the home tab
+      if(Gofast._settings.isEssential && currentNode.type == "article"){
+        $("#nav_mobile_file_browser_wiki_container").click()
+      }
+      if (!$targetPageElement.length && currentNode.type == "article") {
+        Gofast.highlightEmptyHomePageItem()
+        return;
+      }
+      Gofast.sideFileBrowser.unselectAllItems()
+      $targetPageElement.find(".side-explorer-element-icon").removeClass("pt-3");
+      $targetPageElement.addClass("gofastHighlightedItem bg-primary text-white pr-2 rounded");
+
+      // Open parents if item is nested
+      Gofast.sideFileBrowser.openItemSiblings($targetPageElement);
+      if($targetPageElement.length){
+        $targetPageElement[0].scrollIntoView({behavior: "smooth", block: "center"});
+      }
+      // Open left panel if closed
+      if (open && !$("#explorer-toggle").hasClass("open")) {
+        $("#explorer-toggle").click();
+      }
+      $(`[data-target=#${tabId}]`).tab("show");
+    },
+    unselectAllItems: function() {
+      $("#empty-home-page-wiki").addClass("d-none")
+      $(".gofastHighlightedItem").find(".book-explorer-element-icon").removeClass("pt-3");
+      $(".gofastHighlightedItem").removeClass("gofastHighlightedItem bg-primary text-white pr-2 rounded");
+    }
+  }
 
   Drupal.t("Meetings", {}, {context: 'gofast_cdel'});
   Drupal.t("Documents deadlines", {}, {context: 'gofast_cdel'});

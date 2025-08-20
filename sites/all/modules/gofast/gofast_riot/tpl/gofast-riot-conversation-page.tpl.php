@@ -41,7 +41,6 @@
             clearInterval(waitForConversationPageLoadInterval);
             jQuery("#gofast_over_content").removeClass("col-lg-8");
             jQuery("#gofast_over_content").addClass("col-lg-12");
-            Gofast.Riot.initFetchEvent('#IframeRiot');
             Gofast.Riot.showUserMenu("#IframeRiot");
         }, 100);
     });

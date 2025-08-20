@@ -22,4 +22,18 @@ window.addEventListener("message", ({data}) => {
             confirmButton.click();
         }, 100);
     }
+    // Close a tooltip
+    if (data.op == "close") {
+        const waitForCloseButtonInterval = setInterval(() => {
+            const closeButton = document.querySelector(".close");
+            if (!closeButton) {
+                return;
+            }
+            clearInterval(waitForCloseButtonInterval);
+            closeButton.click();
+        }, 100);
+    }
+    if (data.op == "setLocalStorage") {
+        window.localStorage.setItem(data.key, data.value);
+    }
 })

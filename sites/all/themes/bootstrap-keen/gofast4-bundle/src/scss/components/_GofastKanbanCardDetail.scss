@@ -127,6 +127,15 @@
     .KanbanCard__InputEditable .EditableInput__value{
         padding-left: 0;
     }
+    .KanbanCard__color {
+      .KanbanCard__InputEditable{
+        width: 30px;
+        .input-control {
+          height: 25px;
+          border: none;
+        }
+      }
+    }
        
 }
 

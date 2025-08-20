@@ -4,6 +4,8 @@ module_load_include('inc', 'gofast_naming_rules', 'gofast_naming_rules.metadata'
 module_load_include('inc', 'gofast_naming_rules', 'gofast_naming_rules.form');
 module_load_include('inc', 'gofast_naming_rules', 'gofast_naming_rules.theme');
 
+define('GOFAST_NAMING_RULES_DOCUMENTS_BATCH_SIZE', 100);
+
 /**
  * Implements hook_library().
  */
@@ -78,7 +80,7 @@ function gofast_naming_rules_menu()
 /**
  * Implements hook_contextual_menu_alter().
  */
-function gofast_naming_rules_gofast_contextual_menu_alter(&$items) {
+function gofast_naming_rules_gofast_contextual_menu_alter(&$items, $node) {
     if (isset($items["rename"])) {
         $items["rename"]["access_function"][] = "gofast_naming_rules_node_has_no_naming_rule";
     }
@@ -98,7 +100,7 @@ function gofast_naming_rules_gofast_contextual_menu_alter(&$items) {
  * On node presave, insert or update, if the node has a category bound to a naming rule, prevent renaming Alfresco-side
  */
 function gofast_naming_rules_alter_cmis_update_aspect_properties($wrapper, $properties, $node){
-  if (is_string(gofast_naming_rules_node_has_no_naming_rule($node))) {
+    if (is_string(gofast_naming_rules_node_has_no_naming_rule($node))) {
       $properties['gofast:preventRename'] = "true";
     } else if (!isset($properties['gofast:preventRename']) || $properties['gofast:preventRename'] != "true") {
       // if another hook implementation has not prevented rename, we can greenlight it again
@@ -106,27 +108,167 @@ function gofast_naming_rules_alter_cmis_update_aspect_properties($wrapper, $prop
     }
     return $properties;
 }
+/**
+ * Hook cronapi (defined the cron items).
+ */
+function gofast_naming_rules_cronapi($op, $job = NULL) {
+  $items['gofast_naming_rules_update_nodes_cron'] = array(
+    'description' => 'Update all nodes with categories that have received changes to their naming rules',
+    'rule' => '* * * * *', // Every minute
+  );
+
+  return $items;
+}
 
 function gofast_naming_rules_node_presave($node) {
+  $node_title = gofast_naming_rules_get_naming_rules_title($node, TRUE);
+  if(!$node_title){
+    return;
+  }
+  // Remove the node from the updating queue
+  $updated_nids = variable_get("gofast_naming_rules_update_nodes");
+  $category_tid = $node->field_category[LANGUAGE_NONE][0]["tid"];
+  if($updated_nids[$category_tid]){
+    $nid_index = array_search($node->nid, $updated_nids[$category_tid]);
+    array_splice($updated_nids[$category_tid], $nid_index, 1);
+    if(empty($updated_nids[$category_tid])){
+      unset($updated_nids[$category_tid]);
+    }
+  }
+  variable_set("gofast_naming_rules_update_nodes", $updated_nids);
+
+  // allow rename for the current transaction (preventRename will be set again after all transactions are done)
+  $item_id = gofast_cmis_node_get_item_id($node);
+  gofast_cmis_webservice_item_update_properties($item_id, ["gofast:preventRename" => "false"]);
+  $node->title = $node_title;
+}
+
+function gofast_naming_rules_update_nodes_cron(){
+  $updated_nids = variable_get("gofast_naming_rules_update_nodes");
+  if($updated_nids == false){
+    return;
+  }
+  $array_updating_nids = [];
+  // Merge all array of nids to have a flat array with all nids
+  foreach($updated_nids as $category_tid => $nids){
+    $array_updating_nids = array_merge($array_updating_nids, $nids);
+  }
+  // Get a maximum items number to process
+  $array_updating_nids = array_slice($array_updating_nids, 0, GOFAST_NAMING_RULES_DOCUMENTS_BATCH_SIZE);
+  watchdog("gofast_naming_rules", "Applying naming rules to ".count($array_updating_nids)." item(s)");
+  $processed_item = 0;
+  $nodes = node_load_multiple($array_updating_nids);
+  foreach($nodes as $node) {
+    // Remove the nid from the queue
+    $category_tid = $node->field_category[LANGUAGE_NONE][0]["tid"];
+    $nid_index = array_search($node->nid, $updated_nids[$category_tid]);
+    array_splice($updated_nids[$category_tid], $nid_index, 1);
+    if(empty($updated_nids[$category_tid])){
+      unset($updated_nids[$category_tid]);
+    }
+
+    // Set orignal property to true to pass "gofast_naming_rules_node_has_no_naming_rule" check like in a node_save
+    $node->original = true;
+    $node_title = gofast_naming_rules_get_naming_rules_title($node);
+    
+    if(!$node_title){
+      continue;
+    }
+    $item_id = gofast_cmis_node_get_item_id($node);
+    $repository_id = gofast_cmis_get_repository();
+    // Try to update the cmis:name propery on alfresco
+    $updated_item = cmisapi_updateProperties($repository_id, $item_id, array_merge(array("cmis:name" => $node_title), gofast_cmis_aspect_get_drupal_origin_property()));
+    // If a document already have the same name, add the nid to the name
+    if(!$updated_item || ($updated_item->properties["cmis:name"] != $node_title)){
+      $node_title = explode(".", $node_title);
+      $extension = array_pop($node_title);
+      $node_title = implode(".", $node_title);
+      $node_title = $node_title."_$node->nid.$extension";
+      if($node_title == $node->title){
+        continue;
+      }
+      $updated_item = cmisapi_updateProperties($repository_id, $item_id, array_merge(array("cmis:name" => $node_title), gofast_cmis_aspect_get_drupal_origin_property()));
+    }
+    $processed_item++;
+    // Update data on drupal side to prevent replication issue
+    db_update("node_revision")
+    ->fields(array("title" => $node_title))
+    ->condition("nid", $node->nid, "=")
+    ->execute();
+    
+    db_update("node")
+    ->fields(array("title" => $node_title))
+    ->condition("nid", $node->nid, "=")
+    ->execute();
+    
+  }
+  // Update the queue without processed nids
+  variable_set("gofast_naming_rules_update_nodes", $updated_nids);
+
+  watchdog("gofast_naming_rules", "$processed_item item(s) have been updated.");
+}
+
+/**
+ * Given a node and a name, check whether the node already has a sibling with the same name.
+ * @return boolean $has_match
+ */
+function gofast_naming_rules_node_has_sibling_with_name($node, $name) {
+  $has_match = FALSE;
+  // Get all locations of node
+  $node_parents = gofast_cmis_alfresco_api_get_node_parents($node->{GOFAST_CMIS_REFERENCE_FIELD}[LANGUAGE_NONE][0]['value'], TRUE);
+  foreach ($node_parents as $node_parent) {
+    // Then get all siblings of the node in all its locations
+    $descendants = gofast_cmis_alfresco_api_get_descendants($node_parent->id, "all", TRUE);
+    foreach ($descendants as $descendant) {
+      if ($descendant->properties->{"gofast:nid"} != $node->nid && $descendant->name == $name) {
+        $has_match = TRUE;
+        break;
+      }
+    }
+    // We don't need to loop over remaining locations if we had a match
+    if ($has_match) {
+      break;
+    }
+  }
+  return $has_match;
+}
+
+/**
+ * @param type $node
+ * @param boolean $check_siblings If true, will also check if a same-named node already exists among its siblings
+ * Return the node title after applying the naming rule.
+ * Return false if the node title should not be updated.
+ */
+function gofast_naming_rules_get_naming_rules_title($node, $check_siblings = FALSE){
   $has_naming_rule = is_string(gofast_naming_rules_node_has_no_naming_rule($node));
   if (!$has_naming_rule) {
-    return;
+    return false;
   }
   $term = taxonomy_term_load($node->field_category[LANGUAGE_NONE][0]["tid"]);
   $ruled_value = gofast_naming_rule_get_node_ruled_value($node, $term, TRUE, FALSE);
   // Don't apply naming rule if all rule-related fields are not filled
   if (!$ruled_value) {
-    return;
+    return false;
   }
   $node_title = explode(".", $node->title);
   $extension = array_pop($node_title);
   $node_title = implode(".", $node_title);
-  // node is already named according to its naming rule
-  if ($ruled_value == $node_title) {
-    return;
+  // node is already named according to its naming rule, also check if there is a nid suffix
+  if ($ruled_value == $node_title || $node_title == $ruled_value."_".$node->nid) {
+    return false;
   }
-  // allow rename for the current transaction (preventRename will be set again after all transactions are done)
-  $item_id = gofast_cmis_node_get_item_id($node);
-  gofast_cmis_webservice_item_update_properties($item_id, ["gofast:preventRename" => "false"]);
-  $node->title = $ruled_value . "." . $extension;
+
+  // We check if there is no node with the same name before returning the value
+  $ruled_value_with_extension =  $ruled_value . "." . $extension;
+
+  // Some node(s) with the same name exist, we must verify if there are any among target node siblings
+  $has_sibling = FALSE;
+  if ($check_siblings) {
+    $has_sibling = gofast_naming_rules_node_has_sibling_with_name($node, $ruled_value_with_extension);
+  }
+  if ($has_sibling) {
+    $ruled_value .= "_" . $node->nid;
+  }
+
+  return $ruled_value . "." . $extension;
 }

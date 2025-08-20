@@ -806,14 +806,16 @@ function gofast_facetapi_link_inactive($variables) {
 
   $field = isset($variables['options']['field alias']) ? $variables['options']['field alias'] : '';
   $value = isset($variables['options']['value']) ? $variables['options']['value'] : '';
+  $hasChildren = !empty($variables['item_children']);
 
   if ($field && $value) {
     // Try to map the facet with an icon.
     $icon = gofast_facetapi_get_facet_icon($field, $value);
+    $bulletClass = $hasChildren ? "" : "bullet-dot";
     // Adds bullet and keen styling to link
     if (empty($icon)) {
       $variables['text'] = '<span class="navi-bullet">
-        <i class="bullet"></i>
+        &#8203<i class="bullet '.$bulletClass.'"></i>
       </span>
       <span class="navi-text">' .  $variables['text'] . '</span>';
     } else {

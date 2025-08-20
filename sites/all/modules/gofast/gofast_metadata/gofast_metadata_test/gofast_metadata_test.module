@@ -1,0 +1,65 @@
+<?php
+
+/**
+ * @file
+ * This module is for testing purpose only (development, merge requests, and so on).
+ * It should _not_ be enabled in production.
+ */
+
+function gofast_metadata_test_declare_metadatas($node = NULL) {
+    $metadatas = [
+        'test_text' => [
+          'title' => 'Test champ texte',
+          'name' => 'field_test_text',
+          'type' => 'text',
+          'bundles' => ["alfresco_item"],
+          'alfresco_field' => true,
+          'solr_field' => 'sm_unr_field_test_text',
+          'node_pk' => $node ? $node->nid : NULL,
+          'value' => $node ? $node->field_test_text[LANGUAGE_NONE][0]["value"] : NULL,
+          'info' => $node ? $node->field_test_text[LANGUAGE_NONE][0]["value"] : NULL,
+          'col_size' => 12,
+          'filter_hidden' => true,
+          'search_column_hidden' => true,
+          'is_manageable' => true,
+        ],
+        'test_date' => [
+            'title' => 'Test champ date',
+            'name' => 'field_test_date',
+            'type' => 'date',
+            'bundles' => ["alfresco_item"],
+            "alfresco_field" => true,
+            'solr_field' => 'ds_field_test_date',
+            'node_pk' => $node ? $node->nid : NULL,
+            'value' => $node ? $node->field_test_date[LANGUAGE_NONE][0]["value"] : NULL,
+            'info' => $node ? format_date($node->field_test_date[LANGUAGE_NONE][0]["value"], "short") : NULL,
+            'col_size' => 12,
+            'filter_hidden' => true,
+            'search_column_hidden' => true,
+            'is_timestamp' => true,
+            'is_manageable' => true,
+        ],
+        'test_multi' => [
+            'title' => 'Test champ multi',
+            'name' => 'field_test_multi',
+            'type' => 'tagify',
+            'bundles' => ["alfresco_item"],
+            "alfresco_field" => true,
+            'vid' => taxonomy_vocabulary_get_names()["metadata_test_voc"]->vid,
+            'solr_field' => 'sm_unr_field_test_multi',
+            'node_pk' => $node ? $node->nid : NULL,
+            'value' => $node ? array_map(fn($el) => $el["value"], $node->field_test_multi[LANGUAGE_NONE] ?? []) : NULL,
+            'info' => $node ? json_encode($node->field_test_multi[LANGUAGE_NONE]) : NULL,
+            'col_size' => 12,
+            'filter_hidden' => true,
+            'search_column_hidden' => true,
+            'is_multi' => true,
+            'is_manageable' => true,
+        ],
+    ];
+    return [
+        'name' => "Metadata Test",
+        'metadatas' => $metadatas,
+        'filter_callback' => fn($node) => $node->type == "alfresco_item",
+    ];
+}

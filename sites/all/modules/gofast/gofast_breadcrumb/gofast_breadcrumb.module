@@ -108,7 +108,12 @@ function gofast_breadcrumb_display_breadcrumb($nid, $options = []){
   //Merge options
   $options = gofast_breadcrumb_options($options);
   $node = node_load($nid);
-  
+
+  // handle dynamic options
+  if ($options['manage_locations'] === 'when_not_mirrored') {
+    $options['manage_locations'] = !gofast_cmis_is_path_mirrored($node->field_emplacement[LANGUAGE_NONE][0]['value']);
+  }
+
   //Get webdav path for spaces (GOFAST-8093)
   $webdav_path = gofast_og_is_space($node, TRUE) ? gofast_cmis_space_get_webdav_path($nid) : null;
   

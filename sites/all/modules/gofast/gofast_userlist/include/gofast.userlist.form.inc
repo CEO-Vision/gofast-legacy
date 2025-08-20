@@ -36,13 +36,42 @@ function gofast_userlist_form_userlist_node_form_alter(&$form, &$form_state, $fo
   
   $form['fieldset_userlist']['title'] = $form['title'];
 
+  /** @var EntityDrupalWrapper */
+  $entity_wrapper = entity_metadata_wrapper('node', $form_state['node']);
+
+  // is list currently synchronized with external source ?
+  $is_sync_list = $entity_wrapper->field_is_gofast_sync->value()
+  || $entity_wrapper->field_is_ldap_sync->value();
+
+  // Add a message element underneath the member list input area
+  $user_list_member_message_classes = [
+    'text-muted',
+    'd-block',
+    'mt-1',
+    'gofast-field-message',
+    ...($is_sync_list ? [] : ['invisible'])
+  ];
+
+  $user_list_member_message = "<span class='" . implode(" ", $user_list_member_message_classes) . "'>" .
+  t(
+    "User list members cannot be edited while the list is synchronized with an external source",
+    [],
+    ['context' => 'gofast:gofast_userlist']
+  )
+    . "</span>";
+
   $form['fieldset_userlist']['field_userlist_members'] = array(
     '#title' => t('UserList members',array(),array('context'=>'gofast:gofast_userlist')),
     '#type' => 'textfield',
     '#name' => 'ac-list-tags-userlist-members',
     '#required' => FALSE,
     '#maxlength' => '',
-    '#attributes' => $attributes,
+    '#attributes' => [
+      ...$attributes,
+      // if list is synchronized, set the tags input to be read-only
+      ...($is_sync_list ? ['readonly' => ''] : [])
+    ],
+    "#field_suffix" => $user_list_member_message,
   );
  
   $form['fieldset_userlist']['field_userlist_admincomplete'] = array(
@@ -101,6 +130,12 @@ function gofast_userlist_form_userlist_node_form_alter(&$form, &$form_state, $fo
   unset($form['field_description']);
   unset($form['title']);
   
+  // Add js to update user list's member list readonly state on the fly
+  $form['#attached']['js'][] = [
+    'type' => 'file',
+    'data' => drupal_get_path('module', 'gofast_userlist') . '/js/gofast_userlist_node_form.js',
+  ];
+
   $form['#validate'] = array('gofast_userlist_form_userlist_node_form_validate');
   $form['#submit'] = array('gofast_userlist_form_userlist_node_form_submit');
 }

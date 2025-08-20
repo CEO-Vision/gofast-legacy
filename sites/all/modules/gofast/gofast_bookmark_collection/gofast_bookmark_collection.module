@@ -597,7 +597,7 @@ function gofast_bookmark_collection_get_bookmark_contextual_actions(){
       'link_id' => "open_new_tab" ,
       'href' => '',
       'icon_class' => 'fa fa-arrow-right',
-      'onClick' => "window.open('/node/$space_nid?path=$folder_path, '_blank')",
+      'onClick' => "window.open('/node/$space_nid?path=$folder_path', '_blank')",
       'title' => t('Open in a new tab of your browser'),
       'page' => array('gofast_contextual_menu_is_from_browser', 'gofast_contextual_menu_node_is_not_delete'),
       'type' => array('alfresco_item', 'article', 'group', 'organisation', 'extranet', 'public'),

@@ -61,17 +61,17 @@
             var user_id = Gofast.get("user").uid;
               $.post( "/gofast/variable/set", { name: "ithit_bulk_cart_"+user_id, value: data }).done(function( data ) {
                 if($(element[0]).hasClass('manage-taxonomy') || $(element[0]).parentsUntil('ul').hasClass('manage-taxonomy')){
-                  $('.bulk_taxonomy').click();
+                  $('#cart_toolbar_manage .bulk_taxonomy').click();
                 }else if($(element[0]).hasClass('add-locations') || $(element[0]).parentsUntil('ul').hasClass('add-locations')){
-                  $('.bulk_add_locations').click();
+                  $('#cart_toolbar_manage .bulk_add_locations').click();
                 }else if($(element[0]).hasClass('manage-publications') || $(element[0]).parentsUntil('ul').hasClass('manage-publications')){
-                  $('.bulk_publications').click();
+                  $('#cart_toolbar_manage .bulk_publications').click();
                 }else if($(element[0]).hasClass('manage-mail-sharing') || $(element[0]).parentsUntil('ul').hasClass('manage-mail-sharing')) {
-                  $('.bulk_mail_sharing').click();
+                  $('#cart_toolbar_manage .bulk_mail_sharing').click();
                 }else if($(element[0]).hasClass('bulk-archive') || $(element[0]).parentsUntil('ul').hasClass('bulk-archive')){
-                  $('.bulk_archive').click();
+                  $('#cart_toolbar_manage .bulk_archive').click();
                 }else{  
-                  $('.bulk_add_to_cart').click();
+                  $('#cart_toolbar_manage .bulk_add_to_cart').click();
                 }
               });
         },

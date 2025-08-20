@@ -127,7 +127,11 @@ function gofast_ac_config()
   if (isset($_POST['enforce'])) {
     $enforce = $_POST['enforce'];
   }
-  
+
+  if (isset($_POST['filters'])){
+    $filters = $_POST['filters'];
+  }
+
   if (isset($_POST['broadcast'])) {
     $broadcast = $_POST['broadcast'];
   }
@@ -263,16 +267,22 @@ function gofast_ac_config()
             } else {
                 $value = isset($match['value']) ? $match['value'] : null;
             }
-            return !in_array($value, array_column($exclude_members, 'etid')) ||
-                   !in_array($match['type'], array_column($exclude_members, 'entity_type'));
+            $member = array("etid" => $value, "entity_type" => $match["type"]);
+            
+            $is_excluded = array_filter($exclude_members, function($exclude_member) use($member){
+              return $exclude_member->etid == $member["etid"] &&
+                      $exclude_member->entity_type == $member["entity_type"];
+            });
+            return !$is_excluded;
         });
     }
     
-  
-
     if($get_taxonomy_term === "true"){
       if(isset($vid)){
         $_GET['vid'] = $vid;
+      }
+      if(isset($filters)){
+        $_GET['filters'] = $filters;
       }
       $taxonomy_term = gofast_ac_get_query($str, 'taxonomy_term', $options_ac_tag, false,$option_format_json);
       $matches = array_merge($matches, $taxonomy_term);
@@ -305,10 +315,16 @@ function gofast_ac_config()
       $matches = array_merge($matches, $matches_node);
     }
 
-    if($enforce === "true" && !in_array($str, $matches)){
+    // Avoid duplicate values even if values are structured (e.g. taxonomy)
+    $string_matches = $matches;
+    if (!empty($matches) && is_array(reset($matches))) {
+      $string_matches = array_map(fn($el) => $el["name"], $matches);
+    }
+    if($enforce === "true" && !in_array($str, $string_matches)){
       $matches[] = array(
         'name' => gofast_xss_clean($str, false, array("iframe")),
         'value' => gofast_xss_clean($str, false, array("iframe")),
+        'exists' => FALSE,
       );
     }
 
@@ -327,7 +343,6 @@ function gofast_ac_get_query($str, $entity_type, $options = array(), $broadcast 
     'value' => NULL,
     'format_value_callback' => 'gofast_ac_format_value_json',
     'link' => FALSE,
-    'limit' => 20
   );
 
   if ($entity_type == 'taxonomy_term') {
@@ -388,13 +403,9 @@ function gofast_ac_get_query($str, $entity_type, $options = array(), $broadcast 
     } else $EFQuery->addTag('oring');
   } else $EFQuery->addTag('oring');
 
-  if ($options['limit']) {
-    $EFQuery->range(0, $options['limit']);
-  }
-
   $ids = $EFQuery->execute();
   $matches = array();
-  if (!empty($taxonomy_output)) {
+  if ($entity_type == 'taxonomy_term') {
     $entities = array();
     foreach ($taxonomy_output as $val) {
       $entity = taxonomy_term_load($val['id']);
@@ -671,7 +682,7 @@ function gofast_ac_query_users_condition_alter(QueryAlterableInterface $query) {
   $query->leftJoin('field_data_is_extranet', 'e', 'e.entity_id = uid');
   if(isset($_POST['space_type'])){
     $space_type = $_POST['space_type'];
-    $spaces_config = variable_get("spaces_defaults");
+    $spaces_config = gofast_admin_get_space_defaults();
     if($space_type === 'group'){
       if($spaces_config['group_add_external_user'] == '1'){
         $query->condition('e.is_extranet_value', 1, '<>');

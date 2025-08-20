@@ -11,7 +11,13 @@
            $('select.gofastSelect2:not(.processed)').each(function(){
               $(this).addClass('processed');
               if(!$(this).hasClass('gofast_display_none')){
-                 $(this).select2();
+                  if($(this).attr("placeholder")){
+                     $(this).select2({
+                        placeholder: $(this).attr("placeholder")
+                     })
+                  } else {
+                     $(this).select2();
+                  }
               }
            });
         }

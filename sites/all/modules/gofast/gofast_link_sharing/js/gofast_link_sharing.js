@@ -25,7 +25,7 @@
             var subject = $(panel).find('#subject').text();
 
             /* Retrieve message */
-            var message = $(panel).find('#message').text();
+            var message = $(panel).find('#message').html();
 
             /* Retrieve folder sharing title */
             var folder_sharing_title = $(panel).find('#folder_sharing_title').text();
@@ -37,7 +37,8 @@
               process_subject:subject,
               process_message:message, 
               process_folder_sharing_title: folder_sharing_title
-            }).done(function(data) {       
+            }).done(function(commands) {
+              Drupal.ajax.prototype.handleAjaxCommands(JSON.parse(commands))
               // update progress bar
               processedPanels++;
               const progressWidth = Math.round((100 / numberOfPanels) * processedPanels);

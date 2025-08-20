@@ -67,10 +67,13 @@ function gofast_workflows_stats_get_data($params, $for_export = false){
         }
     }
 
+    $output = [];
     //Call a hook to allow alteration of the data
     foreach(module_implements('alter_workflow_stats') as $module){
         $function = $module . '_alter_workflow_stats';
-        $output = call_user_func_array($function, array($datas, $params['type']));
+        if($data = call_user_func_array($function, array($datas, $params['type']))){
+          $output = $data;
+        }
     }
 
     if(empty($output) && $for_export){
@@ -268,17 +271,19 @@ function gofast_workflows_dashboard_stats($type, $return = FALSE, $for_export = 
     
     // Sort $datas to get a count of each value
     $sort_datas = gofast_workflows_stats_count_values_data($output_data);
-    
+    $sorted_datas = [];
     //Call a hook to allow alteration of the data
     foreach(module_implements('alter_workflow_graphs') as $module){
         $function = $module . '_alter_workflow_graphs';
-        $sort_datas = call_user_func_array($function, array($sort_datas, $datas, $type));
+        if($data = call_user_func_array($function, array($sort_datas, $datas, $type))){
+          $sorted_datas = $data;
+        }
     }
     
     if($return){
-        return $sort_datas;
+        return $sorted_datas;
     }
-    variable_set('gofast_workflows_stats_display_' . $fid, json_encode($sort_datas));
+    variable_set('gofast_workflows_stats_display_' . $fid, json_encode($sorted_datas));
 }
 
 function gofast_workflow_dashboard_stats_display_check(){
@@ -445,7 +450,7 @@ function gofast_workflows_alter_workflow_stats($stats, $type){
     global $base_url;
     
     if($type != "Document broadcast"){
-        return [];
+        return;
     }
     
     foreach($stats as $cid => &$case){
@@ -519,7 +524,7 @@ function gofast_workflows_alter_workflow_stats($stats, $type){
 */ 
 function gofast_workflows_alter_workflow_graphs($sort_datas, $datas, $type){
     if($type != "Document broadcast"){
-        return [];
+        return;
     }
     
     $output = [

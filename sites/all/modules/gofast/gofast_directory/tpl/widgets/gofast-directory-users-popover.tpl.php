@@ -1,0 +1,1 @@
+<a tabindex="<?= $tid ?>" data-toggle="popover" data-trigger="focus" data-placement="left" data-html="true" data-content='<?= theme("gofast_directory_users_popover_content", array("users" => $users)) ?>'><?= $users_count ?><i class="cursor-pointer fa fa-caret-down ml-2" style="color: #3699FF"></i></a>

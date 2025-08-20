@@ -543,7 +543,7 @@ function gofast_search_files_excluded() {
     '7zip', 'aif', 'art', 'avi', 'bak', 'bmp', 'bz2', 'deb', /*'dwg',*/ 'exe', 'gif',
     'gzip', 'ico', 'jar', 'jpeg', 'jpg', 'mov', 'mp3', 'mp4', 'mpg', 'oga', 'ogv',
     'png', 'psd', 'ra', 'ram', 'rar', 'rgb', 'skp', 'skb', 'tif', 'wmv', 'sql',
-    'swf', 'tar', 'war', 'zip', 'ipynb'
+    'swf', 'tar', 'war', 'zip', 'ipynb', '7z',
   );
 }
 
@@ -872,18 +872,20 @@ function gofast_search_apachesolr_index_document_build_node(ApacheSolrDocument $
   $document->tos_name = $node->name;
 
   // Author of the last modification.
-  $mod_account = user_load($node->revision_uid);
-  $document->is_mod_uid = $node->revision_uid;
+  $node_infos = gofast_cmis_alfresco_get_infos($node);
+  $last_modifier = $node_infos["last_modified_by"];
+  $mod_account = user_load_by_name($last_modifier);
+  $document->is_mod_uid = $mod_account->uid;
   $document->tos_mod_name = $mod_account->name;
   //$document->tos_mod_displayname = $mod_account->ldap_user_displayname[LANGUAGE_NONE][0]['safe_value'];
 
   // Author(s) of the document (unrestricted field).
-  $document->tom_unr_author = array(); // unstemmed stored searchable field
+  $document->tos_unr_author = array(); // unstemmed stored searchable field
   $document->sm_unr_author = array(); // string field, faceted
   if (isset($node->field_document_author[LANGUAGE_NONE][0]['value'])) {
     $authors = apachesolr_clean_text($node->field_document_author[LANGUAGE_NONE][0]['value']);
     foreach (explode(';', $authors) as $author) {
-      $document->addField('tum_unr_author', $author);
+      $document->addField('tos_unr_author', $author);
       $document->addField('sm_unr_author', $author);
     }
   }
@@ -1212,7 +1214,10 @@ function gofast_search_extract_content($node) {
 
   // Email content is already extracted, get it from the node body.
   if (gofast_node_is_email($node)) {
-    return isset($node->body[LANGUAGE_NONE][0]['value']) ? $node->body[LANGUAGE_NONE][0]['value'] : '';
+    $content = gofast_cmis_webservice_item_generate_eml_preview($node->nid, FALSE, TRUE);
+    if (!$content) {
+      $content = gofast_search_get_stored_content($node) ?: "";
+    }
   }
 
   // Try to get the raw content from Alfresco.
@@ -1528,7 +1533,7 @@ function gofast_search_apachesolr_query_alter(DrupalSolrQueryInterface $query) {
       'tos_name^3.0',   // to properly boost matches against profiles we'll use a bq.
       'tos_mail^100.0', // set higher boost because we know it's a profile field.
       'tos_mod_name^3.0',
-      'tum_unr_author^3.0',
+      'tos_unr_author^3.0',
       'tos_unr_document_reference^3.0',
       'tus_unr_field_title^3.0'
     );
@@ -1549,7 +1554,7 @@ function gofast_search_apachesolr_query_alter(DrupalSolrQueryInterface $query) {
       'tos_name^3.0',
       'tos_mail^100.0',
       'tos_mod_name^3.0',
-      'tum_unr_author^3.0',
+      'tos_unr_author^3.0',
       'tos_unr_document_reference^3.0',
       'tos_unr_field_title^3.0',
       'taxonomy_names^3.0',
@@ -1704,6 +1709,7 @@ function gofast_search_apachesolr_query_alter(DrupalSolrQueryInterface $query) {
     'path',
     'url',
     'is_uid',
+    'tos_unr_author',
     'tus_name',
     'is_mod_uid',
     'tus_mod_name',
@@ -1790,12 +1796,10 @@ function gofast_search_apachesolr_query_alter(DrupalSolrQueryInterface $query) {
   $query->replaceParam('spellcheck.collateExtendedResults', TRUE);
 
   gofast_search_query_alter_by_language($query);
-  
+
   // Boost Query
-  if (!$restrict_qf) {
-    //boost query when all keywords match
-    gofast_search_boost_query_light($query);
-  }
+  gofast_search_boost_query_light($query, !!$restrict_qf);
+
   // In case of autocomplete we only need to retrieve the first rows
   if ($is_autocomplete) {
     $query->replaceParam('rows', 10);
@@ -2167,7 +2171,7 @@ function gofast_search_process_response($response, DrupalSolrQueryInterface $que
       
       $formatedGroupes = [];
       if($bundle != "user"){
-        $groups = db_query("SELECT gid FROM {og_membership} WHERE etid = :nid", array(':nid' => $doc->entity_id))->fetchAll();          
+        $groups = db_query("SELECT DISTINCT gid FROM {og_membership} WHERE etid = :nid", array(':nid' => $doc->entity_id))->fetchAll();          
         if (!empty($groups)) {
           $string_groups = "";
           foreach($groups as $group){
@@ -2178,7 +2182,7 @@ function gofast_search_process_response($response, DrupalSolrQueryInterface $que
             $string_groups .= ' '.gofast_get_node_title($nid, array_keys(gofast_og_node_types()));
             $space = [
               "nid" => $nid,
-              "title" => gofast_get_node_title($nid, array_keys(gofast_og_node_types()))
+              "title" => gofast_get_node_title($nid, array_keys(gofast_og_node_types()), true),
             ];    
             $formatedGroupes[] = $space;
           }
@@ -2294,6 +2298,7 @@ function gofast_search_apachesolr_process_results(&$results, $query) {
         'rows' => $query->getParam('rows')
       ]
     ];
+    drupal_add_js($settings, 'setting');
     if (gofast_essential_is_essential() && !isset($_GET["hl_q"]) && isset($_GET["content_part"])) {
       $path = drupal_get_path('module', 'gofast_search');
       echo "<script>
@@ -2304,8 +2309,6 @@ function gofast_search_apachesolr_process_results(&$results, $query) {
         Drupal.settings.gofast_search['rows'] = \"" . $query->getParam('rows') . "\";
       </script>
       <script src=\"/" . $path. "/js/jquery.paginatetable.js\"></script>";
-    } else {
-      drupal_add_js($settings, 'setting');    
     }
   }
 
@@ -3377,8 +3380,10 @@ function gofast_api_search_search($params) {
 
   // Prevent user from not getting document from spaces they are in with an userlist
   global $userlists_member_of;
-  $userlists_member_of = gofast_userlist_get_userlists_by_user($user);
-  
+  if (!$userlists_member_of) {
+    $userlists_member_of = gofast_userlist_get_userlists_by_user($user);
+  }
+
   $results = gofast_search_query($query, $filters);
 
   gofast_api_success($results);
@@ -3393,6 +3398,8 @@ function gofast_search_query($query, $filters){
     if(isset($filter['operator'])){
       if($filter['operator'] == "not-equal"){
         $operator = '-';
+      } else if($filter['operator'] == "includes"){
+        $operator = 'includes';
       }
     }
     if(isset($filter['value'])){
@@ -3401,11 +3408,19 @@ function gofast_search_query($query, $filters){
     //if $filter is array then reach it and add each value to the filter
     if (is_array($filter)) {
       foreach ($filter as $filter_value) {
-        $conditions['fq'][] =  $operator . $filter_name . ":" . $filter_value;
+        if($operator == "includes"){
+          $conditions['fq'][] =  $filter_name . ":" . "*$filter_value*";
+        } else {
+          $conditions['fq'][] =  $operator . $filter_name . ":" . $filter_value;
+        }
       }
       continue;
-    }    
-    $conditions['fq'][] =  $operator . $filter_name . ":" . $filter;
+    }
+    if($operator == "includes"){
+      $conditions['fq'][] =  $filter_name . ":" . "*$filter*";
+    } else {
+      $conditions['fq'][] =  $operator . $filter_name . ":" . $filter;
+    }
   }
   $results = apachesolr_search_search_execute($query, $conditions);
   
@@ -4184,7 +4199,7 @@ function gofast_modal_add_search_results_to_cart()
   ctools_include('ajax');
 
   $render .= theme("gofast_modal_add_search_results_to_cart", array('entities' => $entities));
-  $commands[] = ctools_modal_command_display(t("Add search results to cart"), $render);
+  $commands[] = ctools_modal_command_display(t("Add to cart"), $render);
 
   print ajax_render($commands);
   exit;
@@ -4206,9 +4221,11 @@ function gofast_add_search_results_to_cart_submit()
   }
 }
 
-
-function gofast_search_boost_query_light(DrupalSolrQueryInterface $query){
-    
+/**
+ * Apply an extra boost if all keywords are matched (mm 100%)
+ * @param bool $only_title whether to check if all keywords are present only in the title or not
+ */
+function gofast_search_boost_query_light(DrupalSolrQueryInterface $query, $only_title = FALSE){
   $bq = [];
   $q = trim($query->getParam('q'));
   $qf = $query->getParam('qf');
@@ -4228,16 +4245,20 @@ function gofast_search_boost_query_light(DrupalSolrQueryInterface $query){
   if ($key_len === 0) {
     return;
   }
-
-  if ($key_len > 1) {
-   $qf_string = "";
-    foreach($qf as $qf_field){
-        $qf_string .= $qf_field." ";
-    }  
-   
-   $bq[] = '_val_:"{!edismax qf=\''.$qf_string.'label^10000\'  mm=\'100%\' v=$q bq=}"^10000000000000.0';
-
+  if ($key_len === 1) {
+    $query->replaceParam('bq', $bq);
+    return;
   }
+
+  $qf_string = "";
+  foreach($qf as $qf_field){
+    if ($only_title && !str_contains($qf_field, "label")) {
+      continue;
+    }
+    $qf_string .= $qf_field." ";
+  }
+
+  $bq[] = '_val_:"{!edismax qf=\''.$qf_string.'label^10000\'  mm=\'100%\' v=$q bq=}"^10000000000000.0';
   $query->replaceParam('bq', $bq);
 }
 

@@ -301,3 +301,11 @@ a.go-search-snippet.gofast-button {
   text-decoration: none !important;
   
 }
+
+#gofastSearchResultsFilter .navi .navi-item .navi-link {
+  padding: 0 !important;
+}
+
+#gofastSearchResultsFilter .navi .navi-link:hover .navi-bullet > i.fa-plus {
+  color: #3699FF;
+}

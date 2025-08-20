@@ -25,7 +25,7 @@
                 <div class="d-flex align-items-center mr-2 <?= ($book_element->edit_link) ? 'mx-1' : 'mx-2' ?>">
                     <a href="/node/add/article?target_location=<?= $book_element->nid ?>"><i class="fas fa-plus text-muted cursor-pointer"></i></a>
                     <?php if($book_element->edit_link): ?>
-                        <a href="<?= $wiki_edit_url ?>"style="width: 35%;" class="ctools-use-modal"><i class="fas fa-pen text-muted cursor-pointer"></i></a>
+                        <a href="<?= $book_element->edit_link ?>"style="width: 35%;" class="ctools-use-modal"><i class="fas fa-pen text-muted cursor-pointer"></i></a>
                     <?php endif ?>
                 </div>
             <?php endif; ?>

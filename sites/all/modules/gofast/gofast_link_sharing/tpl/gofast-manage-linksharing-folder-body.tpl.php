@@ -201,15 +201,11 @@
                                              style="" width="100%">
                                           <tbody>
                                           <tr>
-                                              <td align="left"
-                                                  style="font-size:0px;padding:10px 25px;word-break:break-word;">
-                                                  <div style="font-family:Poppins, Candara, 
-                              Helvetica, Arial, sans-serif;font-size:14px;
-                              font-weight:400;line-height:1;text-align:left;
-                              color:#000000;"><?= $author_name . t(" has Shared a folder with you
-                              ", [], ['context' => 'gofast_link_sharing'])
-                                                    ?></div>
-                                              </td>
+                                            <td align="left"style="font-size:0px;padding:10px 25px;word-break:break-word;">
+                                              <div style="font-family:Poppins, Candara, Helvetica, Arial, sans-serif;font-size:14px;font-weight:400;line-height:1;text-align:left;color:#000000;">
+                                                <?= $author_name . " " . t("has shared a folder with you", [], ['context' => 'gofast_link_sharing'])?>
+                                              </div>
+                                            </td>
                                           </tr>
                                           </tbody>
                                       </table>

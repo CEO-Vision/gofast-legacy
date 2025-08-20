@@ -348,10 +348,13 @@ function gofast_cmis_process_item_update_node($item, $nid, $person, $is_deleted)
       if($document_update){
         gofast_cmis_write_log_info("No update needed, nothing to do (so I won't do anything).", FALSE);
       }
-      
+
+      //make sure the data is our node object is up to date before handling module-specific fields:
+      //we definitely don't want a node_save to revert back changes
+      $node = node_load($nid, NULL, TRUE);
       //implement hook to allow custom module to edit the node after it's been updated by replication
       foreach(module_implements('gofast_replication_after_update') as $module){
-        call_user_func_array($module . '_gofast_replication_after_update', array(&$node));
+        call_user_func_array($module . '_gofast_replication_after_update', array($node, $item));
       }
   }
 }

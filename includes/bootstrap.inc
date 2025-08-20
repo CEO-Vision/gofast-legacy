@@ -8,7 +8,7 @@
 /**
  * The current system version.
  */
-define('VERSION', '7.97');
+define('VERSION', '7.102');
 
 /**
  * Core API compatibility.
@@ -454,6 +454,12 @@ abstract class DrupalCacheArray implements ArrayAccess {
    * Destructs the DrupalCacheArray object.
    */
   public function __destruct() {
+    if ($this->bin == 'cache_form' && !variable_get('drupal_cache_array_persist_cache_form', FALSE)) {
+      return;
+    }
+    if (!is_array($this->keysToPersist)) {
+      throw new UnexpectedValueException();
+    }
     $data = array();
     foreach ($this->keysToPersist as $offset => $persist) {
       if ($persist) {
@@ -2039,6 +2045,8 @@ function watchdog_exception($type, Exception $exception, $message = NULL, $varia
  *   - WATCHDOG_DEBUG: Debug-level messages.
  * @param $link
  *   A link to associate with the message.
+ *   SECURITY NOTE: Make sure your link is properly sanitized.
+ *   Use the l() function to generate secure links.
  *
  * @see watchdog_severity_levels()
  * @see hook_watchdog()
@@ -2258,6 +2266,280 @@ function drupal_is_denied($ip) {
   return $denied;
 }
 
+// @patch CEO-Vision GOFAST-12146 - Change banned IP message
+/**
+ * Parse an "Accept*" header value into an array of arrays sorted by quality
+ * values.
+ *
+ * The quality value is a 'q' parameter for each element of the accept list,
+ * typically between 0 and 1.
+ *
+ * No additional parsing happens on any value besides the 'q' parameter value,
+ * which is parsed to a float as an essential part of sorting. If a 'q' value
+ * was not specified, it is assumed to be 1, and keeps that value in the
+ * returned array elements.
+ *
+ * Note: This does not exactly implement the entirety of all conditions used to
+ * determine which element has the highest priority, returned values are only
+ * sorted by q values.
+ *
+ * @param string $accept_list_string The raw serialized string. Expects the
+ *  string to formatted as a comma-separated list of individual elements, which
+ *  themselves are strings formatted as semicolon-separated values. The first
+ *  value is the element's value and the rest are parameter where a key and a
+ *  parameter value are specified separated by an equal sign.
+ * @return array<array{value:string,parameters:array{q:float,...<string,string|true>}}>
+ *  An array of structured arrays containing each element's value and parameters
+ */
+function __ceovision_patch__parse_accept_list($accept_list_string) {
+  // split on commas (language code separator)
+  $accept_list = explode(",", $accept_list_string);
+  // parse language strings to arrays with language code and parameters
+  $accept_values = array_map(function ($value_string) {
+    // split on semicolons (parameter separator)
+    $split_value = explode(';', $value_string);
+
+    $value = trim(array_shift($split_value));
+
+    // split each parameter's name from its value
+    $parameters = array_map(fn($p) => explode('=', $p), $split_value);
+
+    // create language array. The 'q' quality parameter is given a default
+    // value of 1.0 so that languages not specifying it are usually considered
+    // first later.
+    $structured_value = [
+      'value' => $value,
+      'parameters' => [
+        'q' => 1.,
+      ],
+    ];
+    foreach ($parameters as $parameter) {
+      $k = trim($parameter[0]);
+      $v = isset($parameter[1]) ? trim($parameter[1]) : TRUE;
+      // 'q' parameter is supposed to be a float between 0 and 1.
+      if ($k === 'q') {
+        $v = floatval($v);
+      }
+      $structured_value['parameters'][$k] = $v;
+    }
+    return $structured_value;
+  }, $accept_list);
+
+  // sort by 'q' value in descending order
+  usort($accept_values, fn($a, $b) => $b['parameters']['q'] <=> $a['parameters']['q']);
+  return $accept_values;
+}
+
+/**
+ * Get the most fitting language based on the Accept-Language request header.
+ *
+ * @return 'fr'|'en'
+ */
+function __ceovision_patch__get_best_accepted_language() {
+  static $supported_languages = ['en', 'fr'];
+  $accept_language_arr = __ceovision_patch__parse_accept_list($_SERVER['HTTP_ACCEPT_LANGUAGE']);
+
+  // find first fitting
+  foreach ($accept_language_arr as $lang) {
+    $code = $lang['value'];
+    foreach ($supported_languages as $supported_language) {
+      if (str_starts_with($code, $supported_language)) {
+        return $supported_language;
+      }
+    }
+  }
+  return 'en';
+}
+
+/**
+ * Finds the most fitting content type to serve according to the Accept header.
+ *
+ * Note: does not handle content type specificity priority rules for values of
+ * same quality value.
+ *
+ * @param array $preferred_types Array of supported content types to prefer when
+ *  matching wildcard types. The order of the array represents priority.
+ *
+ * @return "text/html"|"text/plain" The chosen content type string
+ */
+function __ceovision_patch__get_best_accepted_content_type($preferred_types = []) {
+  $supported_content_types = ['text/html', 'text/plain'];
+  // Add preferred types in specified order at the beginning, while only keeping the explicitly
+  // supported types.
+  $supported_content_types = array_merge(
+    array_intersect($preferred_types, $supported_content_types),
+    array_diff($supported_content_types, $preferred_types),
+  );
+
+  $accept_array = __ceovision_patch__parse_accept_list($_SERVER['HTTP_ACCEPT']);
+
+  // find first fitting
+  foreach ($accept_array as $element) {
+    $content_type = $element['value'];
+    // convert content type to regex to match wildcards
+    $content_type_regex = '#^' . strtr($content_type, ['#' => '\\#', '*' => '.*']) . '$#';
+    foreach ($supported_content_types as $supported_content_type) {
+      if (preg_match($content_type_regex, $supported_content_type)) {
+        return $supported_content_type;
+      }
+    }
+  }
+  return 'text/plain';
+}
+
+/**
+ * Renders the custom IP blocked page in the best format according to the
+ * Accept header. Optionally, the 'content_type' option may be passed to force
+ * a specific content type.
+ *
+ * @param array{message:string,code:string,locale?:string,content_type?:string} $options rendering options.
+ * @return array{0:string,1:string} The content type and content of the page.
+ */
+function __ceovision_patch__render_custom_blocked_page($options) {
+  if (isset($options['content_type'])) {
+    $content_type = $options['content_type'];
+  } else {
+    $content_type = __ceovision_patch__get_best_accepted_content_type(['text/plain']);
+  }
+
+  return [
+    $content_type,
+    match ($content_type) {
+      'text/html' => __ceovision_patch__render_custom_blocked_page_html($options),
+      'text/plain' => __ceovision_patch__render_custom_blocked_page_plain_text($options),
+    },
+  ];
+}
+
+/**
+ * Renders custom IP Blocked page as plain text.
+ *
+ * @param array{message:string,code:string,locale?:string} $options rendering options.
+ * @return string The plain text message
+ */
+function __ceovision_patch__render_custom_blocked_page_plain_text($options) {
+  [
+    'message' => $message,
+    'code' => $code,
+  ] = $options;
+  return <<<TEXT
+  $message
+
+  Code: $code
+  TEXT;
+}
+
+/**
+ * Renders the full HTML for the custom IP Blocked page.
+ *
+ * @param array{message:string,code:string,locale?:string} $options rendering options.
+ * @return string
+ */
+function __ceovision_patch__render_custom_blocked_page_html($options) {
+  global $base_url;
+  [
+    'message' => $message,
+    'code' => $code,
+    'locale' => $locale,
+  ] = $options + [
+    'locale' => 'en',
+  ];
+  // Can only use default logo, theme configuration is not loaded yet.
+  $logo_url = '/sites/all/modules/gofast/img/logo_enterprise.png';
+  $title = match($locale) {
+    'fr' => "Erreur GoFAST",
+    default => "GoFAST Error",
+  };
+  return <<<HTML
+    <html>
+      <head>
+        <link
+          rel="shortcut icon"
+          type="image/vnd.microsoft.icon"
+          href="{$base_url}/sites/all/themes/bootstrap-keen/favicon.ico"
+        />
+        <title>$title</title>
+        <style>
+          @import url("{$base_url}/sites/all/themes/bootstrap-keen/fonts/Poppins.css");
+          @import url("{$base_url}/sites/all/modules/gofast/css/font-awesome.css?skmeg2");
+          @import url("{$base_url}/sites/all/libraries/fontawesome/css/all.min.css?skmeg2");
+          :root {
+            /* vars */
+            --color-text-muted: rgb(110, 113, 132);
+            --color-text-default: rgb(63, 64, 84);
+            --color-bg-muted: rgb(229, 229, 229);
+            --color-bg-light: #ffffff;
+            /* set/reset defaults */
+            font-family: Poppins, Helvetica, sans-serif;
+            color: var(--color-text-default);
+          }
+          body {
+            background: var(--color-bg-light);
+          }
+          .main-container {
+            display: flex;
+            position: absolute;
+            top: 0;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 2.3rem;
+          }
+          .header {
+            display: flex;
+            flex-direction: row;
+            align-items: center;
+            gap: 4rem;
+          }
+          .logo {
+            max-width: 25rem;
+          }
+          .icon {
+            font-size: 10.5rem;
+            align-self: center;
+            aspect-ratio: 1;
+          }
+          .message-box {
+            max-width: 80em;
+          }
+          .message {
+            font-size: 1.5em;
+            text-align: justify;
+          }
+          .code, .header {
+            color: var(--color-text-muted);
+          }
+          .code code {
+            background-color: var(--color-bg-muted);
+            padding: 5px;
+            border-radius: 5px;
+            color: var(--color-text-default);
+            font-size: 1.1em;
+          }
+        </style>
+      </head>
+      <body>
+        <div class="main-container">
+          <header class="header">
+            <span class="icon"><i class="fa fa-shield-alt"></i></span>
+            <img class="logo" src="$logo_url" alt="GoFAST Logo"/>
+          </header>
+          <main class="message-box">
+            <p class="message">
+              $message
+            </p>
+            <p class="code">Code: <code>$code</code></p>
+          </main>
+        </div>
+      </body>
+    </html>
+    HTML;
+}
+// @patch-end CEO-Vision GOFAST-12146 - Change banned IP message
+
 /**
  * Handles denied users.
  *
@@ -2268,7 +2550,37 @@ function drupal_block_denied($ip) {
   // Deny access to blocked IP addresses - t() is not yet available.
   if (drupal_is_denied($ip)) {
     header($_SERVER['SERVER_PROTOCOL'] . ' 403 Forbidden');
-    print 'Sorry, ' . check_plain(ip_address()) . ' has been banned.';
+    // @patch CEO-Vision GOFAST-12146 - Change banned IP message
+    // If the problem is clients feeling like they have been hacked, when the
+    // IP is banned, we need at least some basic attempt to translate the message
+    // into their browser's language.
+    $language = __ceovision_patch__get_best_accepted_language();
+    header("Content-Language: $language");
+
+    $message = match ($language) {
+      'fr' => "Un nombre trop important de tentatives de connexion échouées a "
+      . "été détecté. La plateforme a été mise en maintenance par mesure de "
+      . "sécurité. Merci de vous rapprocher de votre support informatique.",
+
+      // english is considered default
+      default => "Too many failed login attempts have been detected. This "
+      . "platform has switched to maintenance mode as a security measure. "
+      . "Please contact your support team."
+    };
+
+    // Render a nice-ish page to not frighten the wild user
+    // render page content with content negotiation
+    [$content_type, $content] = __ceovision_patch__render_custom_blocked_page([
+      'message' => $message,
+      'code' => 'IP_BANNED',
+      'locale' => $language
+    ]);
+    // specify the UTF-8 charset
+    $header_content_type = $content_type . ';charset=UTF-8';
+    header("Content-Type: $header_content_type");
+    // print rendered page as response body.
+    print $content;
+    // @patch-end CEO-Vision GOFAST-12146 - Change banned IP message
     exit();
   }
 }
@@ -2280,7 +2592,8 @@ function drupal_block_denied($ip) {
  *   The number of random bytes to fetch and base64 encode.
  *
  * @return string
- *   The base64 encoded result will have a length of up to 4 * $byte_count.
+ *   A base-64 encoded string, with + replaced with -, / with _ and any =
+ *   padding characters removed.
  */
 function drupal_random_key($byte_count = 32) {
   return drupal_base64_encode(drupal_random_bytes($byte_count));
@@ -2303,15 +2616,30 @@ function drupal_base64_encode($string) {
 /**
  * Returns a string of highly randomized bytes (over the full 8-bit range).
  *
- * This function is better than simply calling mt_rand() or any other built-in
- * PHP function because it can return a long string of bytes (compared to < 4
- * bytes normally from mt_rand()) and uses the best available pseudo-random
- * source.
+ * On PHP 7 and later, this function is a wrapper around the built-in PHP
+ * function random_bytes(). If that function does not exist or cannot find an
+ * appropriate source of randomness, this function is better than simply calling
+ * mt_rand() or any other built-in PHP function because it can return a long
+ * string of bytes (compared to < 4 bytes normally from mt_rand()) and uses the
+ * best available pseudo-random source.
  *
- * @param $count
+ * @param int $count
  *   The number of characters (bytes) to return in the string.
+ *
+ * @return string
+ *   A randomly generated string.
  */
 function drupal_random_bytes($count)  {
+  if (function_exists('random_bytes')) {
+    try {
+      return random_bytes($count);
+    }
+    catch (Exception $e) {
+      // An appropriate source of randomness could not be found. Fall back to a
+      // less secure implementation.
+    }
+  }
+
   // $random_state does not use drupal_static as it stores random bytes.
   static $random_state, $bytes, $has_openssl;
 

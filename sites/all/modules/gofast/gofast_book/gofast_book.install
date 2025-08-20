@@ -123,7 +123,7 @@ function gofast_book_update_7005() {
         }
         $group = node_load($gid);
         $group->{GOFAST_BOOK_HOMEPAGE_FIELD}[LANGUAGE_NONE][0]['value'] = $homepages[0]->nid;
-        field_attach_update("node", $group);
+        gofast_update_field_database($group, GOFAST_BOOK_HOMEPAGE_FIELD);
     }
 }
 

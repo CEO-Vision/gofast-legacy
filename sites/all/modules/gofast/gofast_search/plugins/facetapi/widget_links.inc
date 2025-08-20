@@ -46,15 +46,13 @@ class GofastFacetapiWidgetLinks extends FacetapiWidget {
     $settings = $this->settings->settings;
     $keep_open = isset($settings['keep_open']) ? $settings['keep_open'] : 0;
     
-    // Hardcoded override here as defaults are not relaiable.
-    $expand = 0;// isset($settings['expand']) ? $settings['expand'] : 0;
     $collapsible_children = isset($settings['collapsible_children']) ? $settings['collapsible_children'] : 1;
     
     $js_settings = array(
       'gofast_search' => array(
         $this->facet['field alias'] => array(
           'keep_open' => $keep_open,
-          'expand' => $expand,
+          'expand' => $settings['expand'],
           'collapsible_children' => $collapsible_children
         )
       )
@@ -64,7 +62,7 @@ class GofastFacetapiWidgetLinks extends FacetapiWidget {
     $element = array(
       '#theme' => 'item_list',
       '#items' => $this->buildListItems($element),
-      '#attributes' => array_merge_recursive($this->build['#attributes'], array('class' => array('facetapi-collapsible', 'collapse'))),
+      '#attributes' => array_merge_recursive($this->build['#attributes'], array('class' => array('facetapi-collapsible', 'collapse'), 'data-field-alias' => array($this->facet['field alias']))),
       '#attached' => array(
         'css' => array(drupal_get_path('module', 'gofast_search') .'/css/facetapi_collapsible.css'),
         'library' => array(array('system', 'jquery.cookie')),
@@ -139,6 +137,7 @@ class GofastFacetapiWidgetLinks extends FacetapiWidget {
         'text' => $item['#markup'],
         'path' => $item['#path'],
         'count' => $item['#count'],
+        'item_children' => $item['#item_children'],
         'options' => array(
           'attributes' => $attributes,
           'html' => $item['#html'],
@@ -168,7 +167,13 @@ class GofastFacetapiWidgetLinks extends FacetapiWidget {
       }
 
       // Gets theme hook, adds last minute classes.
-      $class = ($item['#active']) ? 'facetapi-active' : 'facetapi-inactive';
+      if($item['#active']){
+        $class = 'facetapi-active';
+      } else {
+        $class = 'facetapi-inactive';
+        $row['class'][] = 'navi-item';
+      }
+
       $variables['options']['attributes']['class'][] = $class;
 
       // Themes the link, adds row to items.

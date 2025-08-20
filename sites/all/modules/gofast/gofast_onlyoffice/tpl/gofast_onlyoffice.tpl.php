@@ -1,8 +1,9 @@
+<?php global $base_url; global $user; ?>
 <!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
 <html>
   <head>
     <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
-    <link rel="icon" href="https://gofast3.ceo-vision.com/sites/all/modules/gofast/gofast_onlyoffice/favicon.ico" type="image/x-icon" />
+    <link rel="icon" href="<?= $base_url ?>/sites/all/modules/gofast/gofast_onlyoffice/favicon.ico" type="image/x-icon" />
     <title>✎ <?php echo $filename ?></title>
 
     <style>
@@ -117,15 +118,24 @@
       }
     </style>
 
+  <?= theme("gofast_user_atatus_script", ["atatus_tag" => "onlyoffice"]) ?>
     <script type="text/javascript" src="<?php print DOC_SERV_API_URL ?>"></script>
     <script type="text/javascript" src="/sites/all/modules/jquery_update/replace/jquery/3.1/jquery.min.js"></script>
 
     <script type="text/javascript">
       // Anonymous problem. CF : http://dev.onlyoffice.org/viewtopic.php?t=6855&p=9456
+      var docConfig;
       var docEditor;
       var onCollaborativeChanges = function () {
           console.log("The document changed by collaborative user");
       };
+
+      var onDocumentReady = function () {
+        const docEditorIframe = document.querySelector("#form1 iframe");
+        <?php foreach($localStorage as $key => $value): ?>
+          docEditorIframe.contentWindow.postMessage({op: "setLocalStorage", key: "<?= $key ?>", value: "<?= $value ?>"}, "https://<?= $commDomain ?>");
+        <?php endforeach; ?>
+      }
 
       var onDocumentStateChange = function (event) {
           if (event.data) {
@@ -150,32 +160,44 @@
       var onRequestEditRights = function () {
           console.log("ONLYOFFICE™ Document Editor requests editing rights");
           document.location.reload();
-      }    
-     
-      var onOutdatedVersion = function () {
-        document.location.reload(true); // forceGet param set to true to bypass caching
-      };
+      }
 
       var onRequestHistoryClose = function() {
         document.location.reload();
       };
-      
-      var fileName = "<?php echo $filename ?>";
-      var fileType = "<?php echo $extension ?>";
-      var documentType = "<?php echo getDocumentType(array_key_exists('extension', pathinfo($filename)) ? $filename : $filename . '.' . $extension) ?>";
-      var fileUri = "<?php echo $fileuri ?>";
-      var key = "<?php echo $key ?>";
-      var author = "<?php echo $author['ldap_user_givenname']['value'] . ' ' . $author['ldap_user_sn']['value']; ?>";
-      var created = "<?php echo date('d.m.y', $timestamp) ?>";
-      var sharingPermission = "<?php echo $permission; ?>";
-      var sharingUser = "<?php echo $user['ldap_user_givenname']['value'] . ' ' . $user['ldap_user_sn']['value']; ?>";
-      var editPermission = <?php  var_export($edit_permission) ?>;
-      var callbackUrl = "<?php echo $callbackUrl; ?>";
-      var userId = "<?php echo $user['name']; ?>";
-      var userFirstname = "<?php echo $user['ldap_user_givenname']['value'] ?>";
-      var userLastname = "<?php echo $user['ldap_user_sn']['value'] ?>";
-      var editorMode = "<?php echo $editor_mode ?>";
-      var lang = "<?php print $user['user-language'] ?>";
+
+      /** Behavior when trying to open external data source: will open the GoFAST document page */
+      var onRequestOpen = function(event) {
+        const referenceData = event.data.referenceData;
+        const [reference, nid] = referenceData.fileKey.split("%%SEPARATOR%%");
+        const path = "<?= $base_url ?>/node/" + nid;
+        window.open(path, event.data.windowName);
+      }
+
+      /** Set payload to fetch external data source */
+      var onRequestReferenceData = function(event) {
+        const referenceData = event.data.referenceData;
+        const referenceDataLink = referenceData.fileKey.split("%%SEPARATOR%%")[0].replace(":/", "");
+        // URL with Alfresco session ticket
+        const url = "<?= rtrim(GOFAST_URL_WEBSCRIPT_ALFRESCO, '/') . '/api/node/content/' ?>" + referenceDataLink + "<?= '?alf_ticket=' . gofast_cmis_ticket_validate() ?>";
+        const path = event.data.path;
+        const referenceDataPayload = {
+          fileType: docConfig.document.fileType,
+          path,
+          referenceData,
+          url,
+        }
+        // JWT-sign the payload
+        fetch("<?= $base_url ?>/onlyoffice/config/jwt", {
+          method: "post",
+          body: JSON.stringify({config: referenceDataPayload})
+        }).then(response => response.json())
+        .then(data => {
+          referenceDataPayload.token = data.token;
+          // Set the payload
+          docEditor.setReferenceData(referenceDataPayload);
+        })
+      }
       
       //Set a cookie to inform onlyoffice plugins about the current key
       var current_date = new Date();
@@ -184,100 +206,52 @@
       var domain_parse = location.origin.split(".");
       var domain_base = domain_parse[domain_parse.length-2] + "." + domain_parse[domain_parse.length-1];
       
-      var сonnectEditor = function () {
-          
-        docEditor = new DocsAPI.DocEditor("iframeEditor",
-                {
-                  width: "100%",
-                  height: "100%",
-                  type: "desktop",
-                  documentType: documentType,
-                  document: {
-                    title: fileName,
-                    url: fileUri,
-                    fileType: fileType,
-                    key: key,
-                    info: {
-                      author: author,
-                      created: created,
-                      sharingSettings: [
-                        {
-                          permissions: sharingPermission,
-                          user: sharingUser
-                        }
-                      ]
-                    },
-                    permissions: {
-                      edit: editPermission,
-                      print: true,
-                      download: false
-                    }
-                  },
-                  editorConfig: {
-                    mode: editorMode,
-                    lang: lang,
-                    callbackUrl: callbackUrl,
-                    user: {
-                      id: userId,
-                      name: userFirstname + " " + userLastname
-                    },
-                    embedded: {
-                      saveUrl: fileUri,
-                      embedUrl: fileUri,
-                      shareUrl: fileUri,
-                      toolbarDocked: "top"
-                    },
-                    customization: { // not support to customize logo
-                      logUrl : 'https://gofast.ceo-vision.com/sites/default/files/pictures/162/3070-logo-gofast.png.thumbnail-162.png',
-                      logUrlEmbedded : 'https://gofast.ceo-vision.com/sites/default/files/pictures/162/3070-logo-gofast.png.thumbnail-162.png',
-                      about: true,
-                      feedback: false,
-                      chat: true,
-                      comments: true,
-                      forcesave: true,
-                      goback: {
-                        text: "<?php print t('Return to document', array(), array('context' => 'gofast:gofast_onlyoffice')); ?>",
-                        url: "<?php print $gobackUrl ?>",
-                        blank: false
-                      }
-                    }
-                  },
-                  events: {
-                    "onCollaborativeChanges": onCollaborativeChanges,
-                    "onDocumentStateChange": onDocumentStateChange,
-                    "onDownloadAs": onDownloadAs,
-                    "onError": onError,
-                    "onReady": onReady,
-                    "onRequestEditRights": onRequestEditRights,
-                    "onOutdatedVersion": onOutdatedVersion,
-                    "onRequestHistoryClose": onRequestHistoryClose
-                  }
-                });
-                };
+      var connectEditor = function () {
+        docConfig = JSON.parse('<?= $docConfig ?>');
+        docConfig.events = {
+            "onCollaborativeChanges": onCollaborativeChanges,
+            "onDocumentReady": onDocumentReady,
+            "onDocumentStateChange": onDocumentStateChange,
+            "onDownloadAs": onDownloadAs,
+            "onError": onError,
+            "onReady": onReady,
+            "onRequestEditRights": onRequestEditRights,
+            "onRequestHistoryClose": onRequestHistoryClose,
+            "onRequestReferenceData": onRequestReferenceData,
+            "onRequestOpen": onRequestOpen,
+        };
+        docConfig.token = "<?= $token ?>";
+        docEditor = new DocsAPI.DocEditor("iframeEditor", docConfig);
+      };
 
       if (window.addEventListener) {
-        window.addEventListener("load", сonnectEditor);
+        window.addEventListener("load", connectEditor);
       } else if (window.attachEvent) {
-        window.attachEvent("load", сonnectEditor);
+        window.attachEvent("load", connectEditor);
       }
-
     </script>
     <script>
+      let disconnected = false;
         window.addEventListener('online',  function(){
             jQuery("#connection-lost").remove();
+            if (disconnected) {
+              document.location.reload(true); // no cache
+            }
         });
         window.addEventListener('offline', function(){
-            if(window.lang == "fr"){
+            disconnected = true;
+            let userLanguage = "<?= $user->language ?>";
+            if(userLanguage == "fr"){
                 jQuery("#connection-lost").remove();
                 jQuery("body").append('<div id="connection-lost" style="position:fixed;width:100%;height:100%;z-index:99999;background-color:rgba(200,200,200,0.4);top:0px;left:0px;"></div>');
-                jQuery("#connection-lost").append('<div class="oo-popup"><div class="oo-popup-header">Enregistrez votre travail</div><div class="oo-popup-body">Vous avez été déconnecté suite à un problème réseau.<br /><br />Si le réseau est rétabli rapidement, vous retrouverez votre session de travail.<br /><br />Néanmoins, veuillez enregistrer votre travail pour ne rien perdre et contacter votre administrateur.<br /><br /><button id="oo-close-button" class="oo-button">Fermer</button></div></div>');
+                jQuery("#connection-lost").append('<div class="oo-popup"><div class="oo-popup-header">Enregistrez votre travail</div><div class="oo-popup-body">Vous avez été déconnecté suite à un problème réseau.<br /><br />La page sera rechargée automatiquement au retour de la connexion.<br /><br />Néanmoins, veuillez enregistrer votre travail pour ne rien perdre et contacter votre administrateur.<br /><br /><button id="oo-close-button" class="oo-button">Fermer</button></div></div>');
                 jQuery("#oo-close-button").click(function(){
                     jQuery("#connection-lost").remove();
                 });
             }else{
                 jQuery("#connection-lost").remove();
                 jQuery("body").append('<div id="connection-lost" style="position:fixed;width:100%;height:100%;z-index:99999;background-color:rgba(200,200,200,0.4);top:0px;left:0px;"></div>');
-                jQuery("#connection-lost").append('<div class="oo-popup"><div class="oo-popup-header">Save your work</div><div class="oo-popup-body">You have been disconnected because of a network issue.<br /><br />If the interruption is short, you will recover your work session.<br /><br />However, please save your work and contact your system administrator.<br /><br /><button id="oo-close-button" class="oo-button">Close</button></div></div>');
+                jQuery("#connection-lost").append('<div class="oo-popup"><div class="oo-popup-header">Save your work</div><div class="oo-popup-body">You have been disconnected because of a network issue.<br /><br />The page will be automatically reloaded when you return to the connection.<br /><br />However, please save your work and contact your system administrator.<br /><br /><button id="oo-close-button" class="oo-button">Close</button></div></div>');
                 jQuery("#oo-close-button").click(function(){
                     jQuery("#connection-lost").remove();
                 });

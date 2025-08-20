@@ -71,11 +71,13 @@ function gofast_kanban_get_columns($kanban) {
   $kanban_columns = array();
   foreach ($kanban->field_board_columns['und'] as $key => $tid) {
     $tid = $tid['tid'];
-    $kanban_columns[$tid] = array(
-          'title' => t(taxonomy_term_load($tid)->name, [], ["context" => "gofast:gofast:kanban"]),
-          'id' => $tid,
-          'order' => $key
-        );
+    if(taxonomy_term_load($tid)){
+      $kanban_columns[$tid] = array(
+            'title' => t(taxonomy_term_load($tid)->name, [], ["context" => "gofast:gofast:kanban"]),
+            'id' => $tid,
+            'order' => $key
+          );
+    }
   }
 
   return $kanban_columns;
@@ -187,13 +189,16 @@ function gofast_kanban_get_task_details($task) {
   $task_details['comments_count'] = $task->comment_count;
   $task_details['uid'] = $task->uid;
   $task_details['kanban_nid'] = $task->field_board[LANGUAGE_NONE][0]['target_id'];
+  if (isset($task->field_logo_uri[LANGUAGE_NONE][0]['value'])) {
+    $task_details['logo'] = file_create_url($task->field_logo_uri[LANGUAGE_NONE][0]['value']);
+  }
   
   $task_details['created_date'] = format_date($task->created, 'short_without_hours');
   
   $task_details['deadline'] = '';
   $task_details['deadline_color_indicator'] = '';
   $task_details['checklist_deadline'] = (gofast_kanban_get_user_checklist_item_with_nearest_deadline($task->nid, $user->uid))->deadline;
-
+  $task_details['task_color'] = $task->field_task_color[LANGUAGE_NONE][0]['value'];
   $deadline_date_cklist = null;
   if ($task_details['checklist_deadline'] && is_numeric($task_details['checklist_deadline'])) {
     $deadline_date_cklist = new DateTime();
@@ -247,6 +252,12 @@ function gofast_kanban_get_task_details($task) {
   $task_details['members'] = array();
   foreach( $task->field_members['und'] as $key => $member){
     $task_details['members'][] = $member['target_id'];
+  }
+  
+  $task_details['tags'] = array();
+  foreach( $task->field_tags['und'] as $key => $tag){
+    $tag = taxonomy_term_load($tag["tid"]);
+    $task_details['tags'][] = $tag;
   }
 
   return $task_details;
@@ -1102,6 +1113,45 @@ function gofast_kanban_get_checklists_progress_by_board_tasks($board_tasks) {
 }
 
 /**
+ * Checks if any task's of a board checklist items have changed.
+ *
+ * Used for polling.
+ *
+ * Note: this function currently returns FALSE if the board item order changed or
+ * if columns were added.
+ *
+ * @param array $old_board_tasks Old board array.
+ * @param array $new_board_tasks New board array.
+ * @return bool if the board's task progress changed
+ */
+function gofast_kanban_are_board_tasks_progress_changed($old_board_tasks, $new_board_tasks) {
+  foreach ($new_board_tasks as $column_tid => $tasks) {
+    if (!isset($old_board_tasks[$column_tid])) {
+      // columns changed, checklist change will not be taken into account
+      return FALSE;
+    }
+    $old_tasks = $old_board_tasks[$column_tid];
+
+    foreach (array_map(NULL, $old_tasks, $tasks) as [$old_task, $new_task]) {
+      if ($old_task['nid'] !== $new_task['nid']) {
+        // task order within column probably changed, checklist change will be ignored.
+        return FALSE;
+      }
+      // number of tasks changed (added remove checklist item)
+      // NOTE when there is no items, nb_items is NULL
+      if ($old_task['nb_items'] !== $new_task['nb_items']) {
+        return TRUE;
+      }
+      // Number of completed items changed (a task was checked or unchecked)
+      if ($old_task['nb_items_completed'] !== $new_task['nb_items_completed']) {
+        return TRUE;
+      }
+    }
+  }
+  return FALSE;
+}
+
+/**
  * Separate function to get the number of tasks (checklist items) assigned to the given user
  * With a single query and without fetching the actual tasks for better performances
  * @param int $uid
@@ -1301,4 +1351,17 @@ function gofast_kanban_count_tasks_per_column($kanban_nid) {
     $tasks[$column_tid] = count($column_tasks);
   }
   return $tasks;
+}
+
+/**
+ * Use common handler to create or update a task (card) logo
+ */
+function gofast_kanban_post_task_logo($node) {
+  global $user;
+  $can_edit = gofast_kanban_access($node, 'update', $user);
+  if (!$can_edit) {
+    drupal_json_output(array('success' => FALSE, 'error' => t('You are not allowed to edit this task.', array(), array("context" => "gofast:gofast_kanban"))));
+    exit();
+  }
+  gofast_og_edit_logo($node, "task_logos");
 }

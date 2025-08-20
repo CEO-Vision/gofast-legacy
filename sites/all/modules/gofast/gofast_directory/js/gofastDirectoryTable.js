@@ -41,7 +41,7 @@
                 const status = Object.keys(response.message)[0];
                 const message = Object.values(response.message)[0];
                 Gofast.toast(message, status);
-                window.GofastKDataTableReload($multiSelectContainer.attr("data-table"));
+                window.GofastKDataTableReload($multiSelectContainer.parents(".datatable")[0].id);
                 if (response.data.placeholder) {
                     const $multiSelectSpan = $multiSelectContainer.find(".gofast-directory-multiselect-span");
                     $multiSelectSpan.html(response.data.placeholder);
@@ -148,24 +148,66 @@
         $('input#edit-permissions-extranet-bs-switch').prop('checked', true);
     }
 
+    // Generic submit handler for directories forms
+    window.GofastKDataTableFormSubmit = function(e, _table) {
+        e.preventDefault();
+        _table.spinnerCallback(true)
+        let filterArr = $(e.currentTarget).serializeArray();
+        let filter = Object.create({});
+
+        filterArr.forEach((fil) => {
+          if (!!fil.value) {
+            let att = fil.name;
+            filter[att] = fil.value;
+          }
+        });
+
+        // Validation for date ranges
+        const dateRanges = $(".datatable .GofastDateRange");
+        for (const dateRange of dateRanges) {
+            const startName = $(dateRange).find("input:nth-of-type(1)").attr("name");
+            const endName = $(dateRange).find("input:nth-of-type(2)").attr("name");
+            const dateValues = [{start: filter[startName], end: filter[endName]}];
+            for (const dateValue of dateValues) {
+                if ((dateValue.start && !dateValue.end) || (!dateValue.start && dateValue.end)) {
+                    Gofast.toast(Drupal.t("Please fill in both start and end dates", {}, {context: "gofast:gofast_directory"}), "error");
+                    return;
+                }
+            }
+            // We have to convert the date string value into a timestamp before submission, so the server will be able to handle the filtering request
+            if(filter[startName]) filter[startName] = moment(filter[startName], GofastConvertDrupalDatePattern("moment", Drupal.settings.date_format_short, false)).valueOf() / 1000;
+            if(filter[endName]) filter[endName] = moment(filter[endName], GofastConvertDrupalDatePattern("moment", Drupal.settings.date_format_short, false)).valueOf() / 1000;  
+        }
+
+        _table.setDataSourceParam("query", filter);
+        if(filter){_table.setDataSourceParam("currentPage", _table.getCurrentPage());} // set currentPage in the request if filter is applied GOFAST-11592
+        _table.reload();
+    }
+
     window.GofastKDataTableReload = function(tableId) {
         $("#" + tableId + " thead tr:first-of-type th:nth-of-type(2)").html(""); // remove megacheckbox
         $(".datatable-subheader spacer:first-of-type").text(""); // remove megacheckbox counter
-        $(".GofastTable.datatable").KTDatatable().reload();
-        
+        $(".GofastTable.datatable#" + tableId).KTDatatable().reload();
     };
 
     window._GofastKDataTableSelectCounter = function(rowsCount, tableId) {
-        const targetContainer = $("#" + tableId + " thead tr:nth-of-type(2) spacer:first-of-type");
-        if (rowsCount === 0) {
-            targetContainer.text("");
-            return;
-        }
-        targetContainer.css({
-            display: "flex",
-            whiteSpace: "noWrap",
-        });
-        targetContainer.text(Drupal.t("Total:") + " " + rowsCount);
+      let targetContainer = $("#" + tableId + " thead tr:nth-of-type(2) spacer:first-of-type"); 
+      if(tableId == "gofastAdvancedSearchResults"){ 
+        if($("#" + tableId + " thead tr:nth-of-type(1) [data-field^=action] > .selected-items-count > span").length == 0){ 
+          $("#" + tableId + " thead tr:nth-of-type(1) [data-field^=action] > .selected-items-count").prepend('<span class="position-absolute">' + Drupal.t("Total:") + " " + rowsCount + '</span>'); 
+        } 
+        targetContainer = $("#" + tableId + " thead tr:nth-of-type(1) [data-field^=action] > .selected-items-count > span"); 
+      } 
+ 
+      if (rowsCount === 0) { 
+          targetContainer.html("&nbsp;"); 
+          return; 
+      } 
+      targetContainer.css({ 
+          display: "flex", 
+          whiteSpace: "noWrap", 
+      }); 
+      targetContainer.text(Drupal.t("Total:") + " " + rowsCount); 
     };
 
     /**

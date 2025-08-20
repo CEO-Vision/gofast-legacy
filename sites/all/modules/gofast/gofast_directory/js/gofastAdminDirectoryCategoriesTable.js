@@ -298,22 +298,8 @@
         if (!$("#GofastCategoriesFilterForm").length) {
           return;
         }
-        $("#GofastCategoriesFilterForm").on("submit", function (e) {
-          e.preventDefault();
-          _table.spinnerCallback(true)
-          let filterArr = $(this).serializeArray();
-          let filter = Object.create({});
-
-          filterArr.forEach((fil) => {
-            if (!!fil.value) {
-              let att = fil.name;
-              filter[att] = fil.value;
-            }
-          });
-
-          _table.setDataSourceParam("query", filter);
-          _table.reload();
-        });
+        // don't forget removing previous events from form, especially if some of them have outdated references to _table
+        $("#GofastCategoriesFilterForm").off("submit").on("submit", e => window.GofastKDataTableFormSubmit(e, _table));
         clearInterval(formInterval);
       }, 100);
 
@@ -458,9 +444,7 @@
                 "GofastCategoriesFilterForm"
               );
             });
-            directoryResizeObserver.observe(
-              document.querySelector("#gofastCategoriesTable")
-            );
+            directoryResizeObserver.observe(table);
             $("#gofastCategoriesTable").on("datatable-on-destroy", function () {
               directoryResizeObserver.disconnect();
             });

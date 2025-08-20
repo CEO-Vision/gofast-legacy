@@ -152,7 +152,6 @@ function gofast_user_form_user_register_form_alter(&$form, &$form_state)
   $form['ldap_user_ou'][LANGUAGE_NONE]['#options'] = $first_item + $user_admin_gids;
   $form['group_profile_data']['ldap_user_ou'][LANGUAGE_NONE]['#options'] = $first_item + $user_admin_gids;
 
-  $form['group_profile_data']['ldap_user_o'][LANGUAGE_NONE][0]['value']['#title'] = t('Entity', array(), array('context' => 'gofast'));
   if ($user->uid == 1) {
     $spaces = array_merge(gofast_og_get_children(GOFAST_CMIS_LOCATIONS_FIELD_GROUPS_GID, TRUE, FALSE, TRUE), gofast_og_get_children(GOFAST_CMIS_LOCATIONS_FIELD_ORGANISATIONS_GID, TRUE, FALSE, TRUE), gofast_og_get_children(GOFAST_CMIS_LOCATIONS_FIELD_EXTRANET_GID, TRUE, FALSE, TRUE), gofast_og_get_children(GOFAST_CMIS_LOCATIONS_FIELD_PUBLIC_GID, TRUE, FALSE, TRUE));
     foreach ($spaces as $gid) {
@@ -308,6 +307,19 @@ function gofast_user_account_validate($form, &$form_state)
       drupal_set_message($message, 'error');
     }
   }
+
+  // Ensure user name is not being altered if user cannot be renamed on the server side.
+  $editing_user = $form['#user'];
+  if (isset($editing_user->uid)) {
+    $original_editing_user = user_load($editing_user->uid);
+    $will_sasl_auth_be_enabled = $form_state['values']['sasl_auth'][LANGUAGE_NONE][0]['value'];
+
+    $can_edit_user_name = gofast_user_user_can_change_username($editing_user) || !$will_sasl_auth_be_enabled;
+
+    if ($form_state['values']['name'] !== $original_editing_user->name && !$can_edit_user_name) {
+      form_set_error('name', t('User cannot be renamed.', [], ['context' => 'gofast:gofast_user']));
+    }
+  }
 }
 
 function gofast_user_username_field_validate($form, &$form_state)
@@ -349,17 +361,33 @@ function gofast_user_form_user_profile_form_alter(&$form, &$form_state)
     return;
   }
 
-  $user_can_change_usernames = gofast_user_user_can_change_username($user);
-  if($user_can_change_usernames){
-    $form['account']['name']['#description'] .= ' <span class="text-danger">' .
-      t('Modifying this field will result in the creation of a new chat account with the new username. 
-    Your chats and groups will be lost. After saving this form you will be logged out to login with your new username.') . '</span>';
-  }
-
   // Only use for edit profile
   $form_state['is_admin'] = FALSE;
 
   $editing_user = $form['#user'];
+
+  $user_can_change_usernames = gofast_user_user_can_change_username($editing_user);
+  if($user_can_change_usernames){
+    $form['account']['name']['#description'] .= ' <span class="text-danger">' .
+      t("Modifying this field will result in the creation of a new chat account with the new username. Your chats and groups will be lost. If you're changing your own username, you will be logged out to login with your new username.", [], ["context" => "gofast:gofast_user"]) . '</span>';
+  } else {
+    // The username is readonly 
+    $form['account']['name']['#attributes']['readonly'] = TRUE;
+  }
+  $sasl_auth_checkbox_input_name = 'sasl_auth[' . LANGUAGE_NONE . ']';
+  $form['account']['name']['#states']['readonly'][':input[name="' . $sasl_auth_checkbox_input_name . '"]']['checked'] = TRUE;
+  // Updating the readonly attribute through states is not a feature of the base
+  // Drupal states, we need to load this library to make it work.
+  $form['account']['name']['#attached']['library'][] = ['gofast', 'states-extended'];
+  // Ensure input background is greyed-out when set to readonly.
+  $form['account']['name']['#attributes']['class'][] = 'dim-readonly';
+  // Add tooltip to explicit why a user may not be able to change the username field.
+  $form['account']['name']['#attributes']['title'] = t(
+    "You cannot change a username if SASL authentication is enabled.",
+    [],
+    ['context' => 'gofast:gofast_user'],
+  );
+
   gofast_user_account_form_alter($form, $form_state, 'user_profile_form');
   gofast_ldap_profile_forms_alter($form, $form_state);
 
@@ -367,15 +395,8 @@ function gofast_user_form_user_profile_form_alter(&$form, &$form_state)
   gofast_ldap_reorganize_user_register_form_elements($form, $form_state);
   gofast_user_set_group_roles_form_field($form);
 
-  //translate
+  // Translate
   gofast_user_account_form_translate_field($form);
-  
-  $user_can_change_usernames = gofast_user_user_can_change_username($user);
-  if(!$user_can_change_usernames){
-    // The username is readonly 
-    $form['group_account']['wrapper_account']['name']['#attributes']['readonly'] = 'readonly';
-  }
-
   $form['picture']['#access'] = FALSE;
 
   $self = FALSE;
@@ -414,7 +435,7 @@ function gofast_user_form_user_profile_form_alter(&$form, &$form_state)
   $form['user_relationships_ui_settings']['#access'] = $can_be_edited;
 
   $form['group_profile_data']['ldap_user_title']['#access'] = $self;
-  $form['group_profile_data']['ldap_user_o']['#access'] = $can_be_edited;
+  $form['group_profile_data']['field_entity']['#access'] = $can_be_edited;
   $form['group_profile_data']['ldap_user_telephonenumber']['#access'] = $self;
   $form['group_profile_data']['ldap_user_mobile']['#access'] = $self;
   $form['group_profile_data']['ldap_user_title']['#access'] = $self;
@@ -474,8 +495,7 @@ function gofast_user_form_user_profile_form_alter(&$form, &$form_state)
 
   // override ldap features label settings
   $form['group_profile_data']['ldap_user_title'][LANGUAGE_NONE][0]['value']['#title'] = t('Function', array(), array('context' => 'gofast:gofast_ldap'));
-  $form['group_profile_data']['ldap_user_o'][LANGUAGE_NONE][0]['value']['#title'] = t('Entity', array(), array('context' => 'gofast'));
-  
+
   if(isset($_SESSION['pass_reset_' . $user->uid])){
     //We are reseting our password, hide all other fields and format form
     $form['group_profile_data']["#type"] = "hidden";
@@ -755,12 +775,14 @@ function gofast_delete_user_form_submit($form, &$form_state)
     // we create the cookie as admin bonita
     $cookie_name = "cookie_bonita" . BONITA_TECHNICAL_LOGIN . ".txt";
     $workflows_user_id = gofast_workflows_get_user_id($user_to_delete_datas);
+    // 3 Function that delete user on alfresco
+    $node = node_load($user_to_delete_datas->og_private['und'][0]['target_id']);
+    if ($node) {
+      gofast_cmis_item_remove_folder($node->field_folder_reference[LANGUAGE_NONE][0]['value']);
+    } 
 
     if ($workflows_user_id != null && isset($variable_association[$user_to_delete_datas->uid])) {
       gofast_workflows_curl_delete_user($workflows_user_id, $cookie_name);
-      $variable_association = variable_get(VARIABLE_NAME_ID_BONITA, array());
-      unset($variable_association[$user_to_delete_datas->uid]);
-      variable_set(VARIABLE_NAME_ID_BONITA, $variable_association);
     }
 
     //Insert into audit
@@ -901,11 +923,6 @@ function gofast_user_account_form_translate_field(&$form)
     $form['group_profile_data']['ldap_user_title'][LANGUAGE_NONE][0]['value']['#title'] = t($label, array(), array('context' => 'gofast'));
   }
 
-  $label = $form['group_profile_data']['ldap_user_o'][LANGUAGE_NONE][0]['value']['#title'];
-  if ($label !== NULL) {
-    $form['group_profile_data']['ldap_user_o'][LANGUAGE_NONE][0]['value']['#title'] = t($label, array(), array('context' => 'gofast'));
-  }
-
   $label = $form['group_profile_data']['ldap_user_telephonenumber'][LANGUAGE_NONE][0]['value']['#title'];
   if ($label !== NULL) {
     $form['group_profile_data']['ldap_user_telephonenumber'][LANGUAGE_NONE][0]['value']['#title'] = t($label, array(), array('context' => 'gofast'));
@@ -986,11 +1003,6 @@ function gofast_user_account_form_translate_field_register(&$form)
   $label = $form['group_profile_data']['ldap_user_title'][LANGUAGE_NONE][0]['value']['#title'];
   if ($label !== NULL) {
     $form['group_profile_data']['ldap_user_title'][LANGUAGE_NONE][0]['value']['#title'] = t($label, array(), array('context' => 'gofast'));
-  }
-
-  $label = $form['group_profile_data']['ldap_user_o'][LANGUAGE_NONE][0]['value']['#title'];
-  if ($label !== NULL) {
-    $form['group_profile_data']['ldap_user_o'][LANGUAGE_NONE][0]['value']['#title'] = t($label, array(), array('context' => 'gofast'));
   }
 
   $label = $form['group_profile_data']['ldap_user_telephonenumber'][LANGUAGE_NONE][0]['value']['#title'];
@@ -1115,6 +1127,37 @@ function gofast_user_account_form_alter(&$form, &$form_state, $form_id)
     '#name' => 'ac-list-tags-field-user-manager'
   );
 
+  //Autocomplete for user's entity
+  $entity_attributes = [
+    'class' => ['form-control-tags js-tagify'],
+    'data-taxonomy_term' => '', // show ac taxonomy
+    'data-vid' => GOFAST_VID_ENTITY,
+    'data-ac-max-tags' => 1,
+    'data-enforce' => TRUE,
+  ];
+
+  // load user entity if exists to prefill the user's entity field
+  if (isset($account->field_entity[LANGUAGE_NONE][0]["tid"])) {
+    $account_entity = taxonomy_term_load($account->field_entity[LANGUAGE_NONE][0]["tid"]);
+    $account_entity = gofast_ac_format_value_json('taxonomy_term', $account_entity);
+  }
+  
+  // profile form will regroup fields afterwards while register form expects them to be already grouped
+  $form['group_profile_data']['field_entity'] = $form['field_entity'] = array(
+    '#title' => t("Entity", [], ["context" => "gofast:gofast_user"]),
+    '#type' => 'textfield',
+    '#name' => 'ac-list-tags-entity',
+    '#maxlength' => '', // no maxlength
+    '#prefix' => "<div style='clear:both;'>",
+    '#suffix' => "</div>",
+    '#attributes' => $entity_attributes,
+    '#value' => $account_entity ? json_encode([$account_entity]) : json_encode([]),
+  );
+
+  // this is needed when submitting the form programmatically to prevent form_builder from resetting the $form_state to the $form default value
+  if (isset($form_state["values"]['field_entity'][LANGUAGE_NONE])) {
+    $form['group_profile_data']['field_entity']["#value"] = $form['field_entity']["#value"] = $form_state["values"]['field_entity'];
+  }
   if (module_exists('gofast_bluemind') && variable_get('gofast_bluemind_is_active', 0) && $self) {
     gofast_bluemind_profile_config_fields($form);
   }
@@ -1199,8 +1242,8 @@ function gofast_user_form_submit(&$form, &$form_state) {
   }
 
   $account = $form['#user'];
-  if( $form['#form_id'] === 'user_profile_form' && isset($form_state['values']['name'])){
-    gofast_user_change_username($form_state['values']['name'], $account);
+  if($form['#form_id'] === 'user_profile_form' && isset($form_state['values']['name'])){
+    gofast_user_trigger_username_change($form_state['values']['name'], $account);
   }
   if (isset($form_state['values']['pass'])) {
     // Keep track of password updates.
@@ -1223,12 +1266,24 @@ function gofast_user_form_submit(&$form, &$form_state) {
   $form_state['values']['ldap_user_givenname']['und'][0]['value'] = trim(gofast_xss_clean($form_state['values']['ldap_user_givenname']['und'][0]['value'])); // firstname
   $form_state['values']['ldap_user_sn']['und'][0]['value'] = trim(gofast_xss_clean($form_state['values']['ldap_user_sn']['und'][0]['value'])); // lastname
   $form_state['values']['ldap_user_title']['und'][0]['value'] = trim(gofast_xss_clean($form_state['values']['ldap_user_title']['und'][0]['value'])); // title
-  $form_state['values']['ldap_user_o']['und'][0]['value'] = trim(gofast_xss_clean($form_state['values']['ldap_user_o']['und'][0]['value'])); // company
   $form_state['values']['ldap_user_telephonenumber']['und'][0]['value'] = trim(gofast_xss_clean($form_state['values']['ldap_user_telephonenumber']['und'][0]['value'])); // phone
   $form_state['values']['ldap_user_mobile']['und'][0]['value'] = trim(gofast_xss_clean($form_state['values']['ldap_user_mobile']['und'][0]['value'])); // mobile
   $form_state['values']['field_substitute']['und'][0]['value'] = trim(gofast_xss_clean($form_state['values']['field_substitute']['und'][0]['value'])); // substitute
   // END Clear XSS
 
+  // Handle user's entity save
+  $entity = json_decode($form_state["input"]["ac-list-tags-entity"]);
+
+  if (!empty($entity)) {
+    $tid = $entity[0]->value;
+    if (!is_numeric($tid)) {
+      $term = gofast_taxonomy_get_or_add_term(GOFAST_VID_ENTITY, $entity[0]->value);
+      $tid = $term->tid;
+    }
+    $form_state["values"]['field_entity'] = [LANGUAGE_NONE => [["tid" => $tid]]];
+  } elseif (!isset($form_state["values"]['field_entity'][LANGUAGE_NONE])) {
+    $form_state["values"]['field_entity'] = [LANGUAGE_NONE => []];
+  }
 
   //GOFAST-9054
   // if user is created in standby mode, prevent sending notification and block user to prevent being able to login
@@ -1279,10 +1334,8 @@ function gofast_user_form_submit(&$form, &$form_state) {
  * Updates the user's username
  * @throws \Exception
  */
-function gofast_user_change_username($new_username, $account): void {
-  
-  global $user;
-  if(!gofast_user_user_can_change_username($user)){
+function gofast_user_trigger_username_change($new_username, $account): void {
+  if(!gofast_user_user_can_change_username($account)){
     return;
   }
   
@@ -1296,15 +1349,11 @@ function gofast_user_change_username($new_username, $account): void {
   if(!$is_username_unique){
     return;
   }
-  
-  // Change LDAP credentials
-  gofast_ldap_change_username($details);
 
-  // Change Alfresco user credentials.
-  gofast_cmis_change_username($details->old_username, $details->new_username);
-  
-  // Change bonita credentials
-  gofast_workflows_change_bonita_username($details);
+  foreach(module_implements("change_username") as $module) {
+    $function = $module . '_change_username';
+    call_user_func_array($function, [$details]);
+  }
 
   // Change private space details
    $private_space_node = gofast_og_get_user_private_space($account);
@@ -1341,12 +1390,15 @@ function gofast_user_is_username_unique(string $username): bool {
  *
  * @return bool
  */
-function gofast_user_user_can_change_username($user): bool {
+function gofast_user_user_can_change_username($account): bool {
+  if (!$account->uid) {
+    return FALSE;
+  }
   $sso_creation_enabled = variable_get("create_by_sso", FALSE);
-  $account              = user_load($user->uid);
-  $is_business_admin    = gofast_user_is_business_admin($account) !== NULL && gofast_user_is_business_admin($account);
-  $is_ldap_active       = module_exists('gofast_ldap');
-  return (!$sso_creation_enabled && $is_business_admin && !$is_ldap_active);
+  $account              = user_load($account->uid); // Make sure we have the full user object
+  $is_business_admin    = gofast_user_is_business_admin();
+  $has_sasl_auth        = $account->sasl_auth[LANGUAGE_NONE][0]['value'] == 1;
+  return (!$sso_creation_enabled && $is_business_admin && !$has_sasl_auth);
 }
 
 /**
@@ -1448,18 +1500,78 @@ function gofast_user_form_user_login_block_alter(&$form, &$form_state)
   if ($idp_configured) {
     //Change redirect URL of SSO authentication link and format it as a button
     if (isset($form['saml_sp_drupal_login_links'])) {
-      $form['saml_sp_drupal_login_links']['#value'] = "<i class='fa fa-user-circle-o'></i> " . str_replace("error/403", $_SERVER['REQUEST_URI'], $form['saml_sp_drupal_login_links']['#items'][0]['data']);
-      unset($form['saml_sp_drupal_login_links']['#theme']);
-      unset($form['saml_sp_drupal_login_links']['#items'][0]['data']);
-      $form['saml_sp_drupal_login_links']['#type'] = "button";
-      $form['saml_sp_drupal_login_links']['#attributes'] = array('onclick' => 'if(event.target.tagName != "A"){location.href = jQuery("#edit-saml-sp-drupal-login-links > a").attr("href");event.preventDefault()}', 'class' => array("font-weight-bolder", "font-size-h6", "px-8", "py-4", "my-3", "mr-3"));
-      $form['saml_sp_drupal_login_links']['#executes_submit_callback'] = FALSE;
-      $form['saml_sp_drupal_login_links']['#weight'] = -1;
+      $saml_links = &$form['saml_sp_drupal_login_links'];
+
+      // anchor element classes, to style them as a button.
+      $classes = implode(' ', [
+        "font-weight-bolder",
+        "font-size-h6",
+        "px-8",
+        "py-4",
+        "my-3",
+        "btn",
+        "btn-sm",
+        "btn-primary"
+      ]);
+
+      // prevent link acting as AJAX, default behavior is what we want here
+      $on_click_js = 'event.stopPropagation()';
+      foreach($saml_links['#items'] as &$link) {
+        // link is an already rendered <a/> tag, we're modifying it with string operations to add the necessary elements
+        // and classes (this sucks, but PHP's standard DOM lib isn't much better)
+        $processed_link = str_replace('error/403', $_SERVER['REQUEST_URI'], $link['data']);
+        $opening_tag_end_pos = strpos($processed_link, ">");
+        $closing_tag_start_pos = strpos($processed_link, '<', $opening_tag_end_pos);
+        // Note: The order of the next two operations is important, otherwise the opening tag end position will be wrong
+        // for the second string replacement
+
+        // decode entities in link text to allow some to be used as SSO name (e.g. apostrophes/single quotes)
+        $link_text_start_pos = $opening_tag_end_pos + 1;
+
+        // get the link text (text between the ned of the opening tag and the start of the closing tag)
+        $link_text = substr($processed_link,
+          $link_text_start_pos,
+          $closing_tag_start_pos - $link_text_start_pos
+        );
+
+        $link_text = html_entity_decode($link_text);
+
+        // add updated link text back into original string, invalidates the $closing_tag_start_pos variable
+        $processed_link = substr_replace(
+          $processed_link,
+          $link_text,
+          $link_text_start_pos,
+          $closing_tag_start_pos - $link_text_start_pos
+        );
+
+        // Add icon inside link
+        $processed_link = substr_replace(
+          $processed_link,
+          "<i class='fa fa-user-circle-o'></i> ",
+          $opening_tag_end_pos + 1,
+          0
+        );
+
+        // Add link classes and onclick handling
+        $processed_link = substr_replace(
+          $processed_link,
+          'class="' . $classes . '" onclick="' . $on_click_js . '"',
+          $opening_tag_end_pos,
+          0
+        );
+        // Set displayed link to the updated HTML
+        $link['data'] = $processed_link;
+      }
+
+      // remove unordered list bullets
+      $saml_links['#attributes']['class'][] = 'list-unstyled';
+
+      // move SSO buttons to top of form
+      $saml_links['#weight'] = -1;
       if((bool)variable_get("gofast_disable_login_form", false) === false){
-        $form['saml_sp_drupal_login_links']['#prefix'] = "<center><div class='login-spacer'></div>";
-        $form['saml_sp_drupal_login_links']['#suffix'] = "<div class='login-spacer'></div><div><hr /><h3 class='login-or'>" . t("OR", array(), array('context' => 'gofast:gofast_user')) . "</h3></div></center>";
-      }        
-       $form['saml_sp_drupal_login_links']['#suffix'] .= "<script>jQuery('#edit-saml-sp-drupal-login-links').attr('type', 'button');</script>";
+        $saml_links['#prefix'] = "<center><div class='login-spacer'></div>";
+        $saml_links['#suffix'] = "<div class='login-spacer'></div><div class='login-max-width'><hr /><h3 class='login-or'>" . t("OR", array(), array('context' => 'gofast:gofast_user')) . "</h3></div></center>";
+      }
     }
   } else {
     //The IDP is not configured, remove reference to SAML authentication
@@ -1498,21 +1610,38 @@ function gofast_user_form_alter(&$form, &$form_state)
   }
   if ($form['#form_id'] === 'user_pass_reset') {
     $url = explode('/', $_SERVER['REQUEST_URI']);
-    $expiresOn = date('D d F Y - H:i', $url[4]);
     $uid = (int)$url[3];
     $account = user_load($uid);
+    // Timestamp is the reset url generation timestamp, not expiry timestamp
     $timestamp = (int)$url[4];
+    // Compute password reset expiry timestamp
+    // Timeout defaults to a day (24h) in seconds (same as menu callback value in user.pages.inc@user_pass_reset)
+    $timeout = variable_get('user_password_reset_timeout', 86400);
+    $expiry_timestamp = $timestamp + $timeout;
+
+    $expiry_date_string = format_date($expiry_timestamp, 'custom', 'D d F Y - H:i');
     $token = user_pass_rehash($account->pass, $timestamp, $account->login, $account->uid);
     if(!gofast_user_is_left($account)){
       $_SESSION['pass_reset_hash'] = $token;
-      $form['#action'] = "user/reset/$uid/$timestamp/confirm";
+      $form['#action'] = url("user/reset/$uid/$timestamp/confirm");
       $form['#validate'] = array('gofast_user_user_pass_reset_form_validate');
       $form['message'] = array(
         '#type' => 'markup',
-        '#markup' => '<div class="alert alert-info" role="alert">' .
-          t('This is a one time opportunity to reset your password. This page will expire on '.'<span style="font-style: italic">'.$expiresOn.'</span>', array(), array('context' => 'gofast')) . '</div>',
+        '#markup' =>
+          '<div class="alert alert-info" role="alert">'
+          . t(
+            'This is a one time opportunity to reset your password. This page will expire on %expiry_date_time',
+            array("%expiry_date_time" => $expiry_date_string),
+            array('context' => 'gofast')
+          )
+          . '</div>',
       );
       $form['help'] = array("#markup" => t("Please reset your password below."));
+      // Manually rendered status messages for form errors.
+      $form['drupal_messages'] = [
+        '#theme' => 'status_messages',
+      ];
+
       $form['new_password'] = array(
         '#type' => 'password',
         '#title' => t('New password'),
@@ -1560,6 +1689,7 @@ function gofast_user_user_pass_reset_form_submit($form, &$form_state){
     $modify_ldap_account = $server->modifyLdapEntry($dn, array('userPassword' => $newPassword));
     if ($modify_ldap_account) {
       $account = user_save($account, $edit);
+      gofast_ldap_update_password_expiration($account);
       if($account){
         unset($_SESSION['pass_reset_hash']);
         drupal_set_message(t('Your password has been updated.'));
@@ -1591,6 +1721,7 @@ function gofast_user_user_pass_reset_form_validate($form, &$form_state) {
     form_set_error('password_confirm', t('The passwords do not match.'));
     return FALSE;
   }
+  // This direct call is necessary otherwise success redirection does not happen
   gofast_user_user_pass_reset_form_submit($form, $form_state);
 }
 

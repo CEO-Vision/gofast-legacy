@@ -42091,7 +42091,7 @@ a:hover {
   transition: color 0.15s ease, background-color 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
 }
 
-i > .fa, .fas, .far, .fal, .fad, .fab{
+i {
   font-size: 1.25rem;
   color: #B5B5C3;
 }
@@ -72386,5 +72386,3 @@ body {
     left: 70px;
   }
 }
-
-/*# sourceMappingURL=style.bundle.css.map*/

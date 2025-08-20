@@ -196,22 +196,7 @@
         if (!$("#GofastTagsFilterForm").length) {
           return;
         }
-        $("#GofastTagsFilterForm").on("submit", function (e) {
-          e.preventDefault();
-          _table.spinnerCallback(true)
-          let filterArr = $(this).serializeArray();
-          let filter = Object.create({});
-
-          filterArr.forEach((fil) => {
-            if (!!fil.value) {
-              let att = fil.name;
-              filter[att] = fil.value;
-            }
-          });
-
-          _table.setDataSourceParam("query", filter);
-          _table.reload();
-        });
+        $("#GofastTagsFilterForm").off("submit").on("submit", e => window.GofastKDataTableFormSubmit(e, _table));
         clearInterval(formInterval);
       }, 100);
 

@@ -94,7 +94,7 @@ function gofast_workflows_api_liste_users(){
 
 
     //on n'autorise que les requetes internes (entre le serveur et lui même)
-    if($_SERVER['REMOTE_ADDR'] !== "127.0.0.1" && $_SERVER['REMOTE_ADDR'] !== "localhost" && $_SERVER['REMOTE_ADDR'] !== "::1"){
+    if(gofast_workflows_is_external_api()){
         drupal_access_denied();
         exit;
     }
@@ -168,7 +168,7 @@ function gofast_workflows_api_liste_users(){
 function gofast_workflows_api_get_node_from_url(){
 
     //on n'autorise que les requetes internes (entre le serveur et lui même)
-    if($_SERVER['REMOTE_ADDR'] !== "127.0.0.1" && $_SERVER['REMOTE_ADDR'] !== "localhost" && $_SERVER['REMOTE_ADDR'] !== "::1"){
+    if(gofast_workflows_is_external_api()){
         //TODO comment during develop
         drupal_access_denied();
         exit;
@@ -328,7 +328,7 @@ function gofast_workflows_api_validate_access_document(){
 function gofast_workflows_api_sendmail(){
 
     //on n'autorise que les requetes internes (entre le serveur et lui même)
-    if($_SERVER['REMOTE_ADDR'] !== "127.0.0.1" && $_SERVER['REMOTE_ADDR'] !== "localhost" && $_SERVER['REMOTE_ADDR'] !== "::1"){
+    if(gofast_workflows_is_external_api()){
         drupal_access_denied();
         exit;
     }
@@ -552,16 +552,16 @@ function gofast_workflow_api_sendmail_taskdone_send($destinataire, $step, $title
 
     $assignee = user_load_by_name($destinataire_object->name);
     //now this function must be contextual to the step ( see "subject" previous ).
-    $message = gofast_workflow_api_sendmail_taskdone_build_body($caseObject, $assignee, $step, $processHistory);
+    $message = gofast_workflow_api_sendmail_taskdone_build_body($caseObject, $assignee, $step, $processHistory, $destinataire_object);
 
     //on remplace certains "masques" du contenu (par exemple le nom de domaine).
     $subject = gofast_workflows_replace_email_masks($subject, $caseObject);
   
     $mail = array(
         'body' => $message,
-        'title' => t("Workflow", array(), array('langcode' => $assignee->language, 'context' => "gofast:gofast_workflows")),
+        'title' => t("Workflow", array(), array('langcode' => $destinataire_object->language, 'context' => "gofast:gofast_workflows")),
         'subject' => $subject,
-        'footer' =>  t('Workflow powered by GoFAST', array(), array('langcode' => $assignee->language, 'context' => 'gofast:gofast_workflows')),
+        'footer' =>  t('Workflow powered by GoFAST', array(), array('langcode' => $destinataire_object->language, 'context' => 'gofast:gofast_workflows')),
     );
     
     gofast_mail_queue_api_queue_ext($mail,  $recpt, time());
@@ -571,7 +571,7 @@ function gofast_workflow_api_get_intermediate_step() {
     return ["document_already_certified"];
 }
 
-function gofast_workflow_api_sendmail_taskdone_build_body($caseObject, $assignee, $step, $processHistory){
+function gofast_workflow_api_sendmail_taskdone_build_body($caseObject, $assignee, $step, $processHistory, $destinataire_object){
     $bonita_assignee_id =  gofast_workflows_get_user_id($assignee);
     $my_author =  gofast_workflows_get_drupalid_from_bonitaid($caseObject["started_by"], true);
 
@@ -599,7 +599,7 @@ function gofast_workflow_api_sendmail_taskdone_build_body($caseObject, $assignee
             }
             if($task["assigned_id"] == $bonita_assignee_id){
                 $task["assignedDisplayName"] ??= gofast_user_display_name($assignee);
-                $task["assignedDisplayType"] ??= "fas fa-single-user";
+                $task["assignedDisplayType"] ??= "fas fa-user-single";
                 array_push($list_tasks_assigned_user, $task);
                 continue;
             }
@@ -645,7 +645,11 @@ function gofast_workflow_api_sendmail_taskdone_build_body($caseObject, $assignee
     $documents_info = array();
     foreach($process_current as $process_current_item){
         if($process_current_item->TYPE == "node"){
-            $documents_info[] = trim($process_current_item->CONTENT_VALUE);
+            $document = node_load($process_current_item->CONTENT_VALUE);
+            $access = node_access("view", $document, $destinataire_object);
+            $node_icon = theme("gofast_node_icon_format", array("node" => $document));
+            $node_icon = gofast_mail_queue_fa_png($node_icon, "14", $access ? "primary" : "black");
+            $documents_info[] = ["document" => $document, "icon" => $node_icon, "access" => $access];
         }
     }
 
@@ -1646,4 +1650,60 @@ function gofast_api_delete_workflow_profil($params)
     );
 
     gofast_api_success($result);
+}
+/**
+ * Get error messages for users who can't update selected nodes
+ * 
+ * @tgruffat => The most part of this code is taken from 'gofast_workflows_api_validate_access_document'
+ * But the function is getting refactored in GOFAST-11686 so i put the code here to prevent useless merge conflict
+ * @todo Merge the code inside 'gofast_workflows_api_validate_access_document'
+ */
+function gofast_workflows_api_validate_contribute_document(){
+  // Ensure we were passed the needed GET parameters
+  if (!isset($_GET["reference"], $_GET["uid"])) {
+    print 0;
+    exit;
+  }
+  //on recupere le nid de la reference recu
+  //on split la chaine de reference recu car potentiellement on peut recevoir plusieurs documents
+  $array_ref = explode(";", $_GET["reference"]);
+  if ($array_ref[0] == "") {
+    unset($array_ref[0]);
+  }
+  $nids = array();
+  if (!empty($array_ref)) {
+    foreach ($array_ref as $key_ref => $ref) {
+      if($ref != ""){
+        $nids[] = $ref;
+      }
+    }
+  }
+  //on split le parametre uid selon le caractere ; car on est succeptible d'en recevoir plusieurs
+  $array_uids = explode(";", $_GET["uid"]);
+  $array_uids = array_filter($array_uids, fn($uid) => $uid !== '');
+  if (empty($array_uids)) {
+      print 0;
+      exit;
+  }
+
+  $output = array();
+  foreach ($array_uids as $uid) {
+    // Prevent duplicated messages if same user have multiple tasks
+    $output[$uid] = array();
+    $account = user_load_by_name(trim($uid));
+    $nids = (array) $nids;
+    foreach ($nids as $nid) {
+      $node = node_load($nid);
+      if (!node_access('update', $node, $account)) {
+        $output[$uid][] = t("@username does not have permissions to modify the document : @title", array("@username" => gofast_user_display_name($account), "@title" => $node->title), array("context" => "gofast:gofast_workflows"));
+      }
+    }
+  }
+  
+  if(empty($output)){
+    print 0;
+    exit;
+  }
+    
+  gofast_api_success($output);
 }

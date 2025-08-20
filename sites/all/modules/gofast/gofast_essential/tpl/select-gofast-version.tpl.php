@@ -50,7 +50,7 @@
   }
 
   #selection-version-logo {
-    background-color: rgb(58, 121, 180) !important;
+    background-color: rgb(58, 121, 180);
     height: 25%;
     width: 100%;
     text-align: center;
@@ -101,7 +101,7 @@
   }
 
   #selection-version-footer {
-    background-color: rgb(58, 121, 180) !important;
+    background-color: rgb(58, 121, 180);
     height: 35%;
     width: 100%;
     text-align: center;

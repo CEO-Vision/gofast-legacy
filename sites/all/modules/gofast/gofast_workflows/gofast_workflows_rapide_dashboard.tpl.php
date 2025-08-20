@@ -105,8 +105,8 @@
                 clearInterval(dropdownInterval);
                 jQuery("#refresh-lightdashboard").click(function(){
                     Drupal.gofast_workflows.ceo_vision_js_check_login(function(){
-                        jQuery('iframe#bonita_form_process')[0].contentWindow.location.reload(true);
-                        jQuery('iframe#bonita_form_process_other')[0].contentWindow.location.reload(true);
+                        jQuery('iframe#bonita_form_process')[0]?.contentWindow?.location?.reload(true);
+                        jQuery('iframe#bonita_form_process_other')[0]?.contentWindow?.location?.reload(true);
                     });
                 });
                 jQuery("#refresh-pagedashboard").click(function(){

@@ -1,0 +1,6 @@
+<webscript>
+  <shortname>Update node type</shortname>
+  <description>Update node type</description>
+  <url>/updatenodetype?nodeRef={nodeRef}&amp;qnameType={qnameType}</url>
+  <authentication>user</authentication>
+</webscript>

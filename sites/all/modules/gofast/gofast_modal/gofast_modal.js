@@ -331,11 +331,19 @@
   Drupal.CTools.Modal.modal_display = function(ajax, response, status) {
     var target = "#gofast_basicModal";
 
+    // If ajax commands sets resizable modal setting, defaults to true
+    if (response.settings && response.settings.resizable === false) {
+      $('.modal-content').attr("data-resizable", false);
+    } else {
+      $('.modal-content').attr("data-resizable", true);
+    }
+
     if (ajax.allowStretch != undefined && ajax.allowStretch == true) {
       $("#modal-content").removeClass("w-100");
     }
     //reset with if it has been previously changed by Bonita iframe 
-    $("#modal-content").css("width", '');
+    $("#modal-content").css("width", '').css("height", '');
+    $(".modal-content").css("width", '');
     
     // Recenter modal
     $(target).css({
@@ -391,7 +399,7 @@
 
       // Remove form actions from content
       $('.node-forum-form .card-footer').attr('style', 'display: none !important')
-      $('#modal-footer button').click(function (e) {
+      $('#modal-footer button[id]').click(function (e) {
         e.preventDefault();
         e.stopPropagation();
         var _buttonIdFooter = $(this).attr('id');
@@ -435,14 +443,34 @@
 
     Gofast.removeLoading();
     $(target).modal('show').data('triggered', false);
+    $("[data-toggle='tooltip']").tooltip("hide"); // hide the tooltip if there was one on the button opening the modal
 
     //Remove backdrop when we have a comment modal
     if($('.comment-form').length>0) {
-        $('.modal-backdrop.fade.show').hide();
+        $('.modal-backdrop.show').hide();
         Drupal.CTools.Modal.closeOnBlur(false);
+        // Allow scroll on background
+        $(target).css({
+          "pointer-events": "none",
+        })
         return;
+    } else {
+      $(target).css({
+        "pointer-events": "",
+      })
     }
     Drupal.CTools.Modal.closeOnBlur(true);
+
+    //Handle slick library sizing in modal context
+    if ($('.slick-slider').length) {
+      //We enforce the sizing on each slide
+      $(".slick-slider").on('afterChange', function(event, slick, currentSlide){
+        $(".slick").show();
+        const slickListWidth = $('.slick-list').width();
+        $('.slick-slide').width(slickListWidth);
+      });
+      $(".slick-slider").slick("slickGoTo", 0);
+    }
   };
 
 

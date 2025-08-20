@@ -160,7 +160,6 @@
   };
 
   Gofast.taxonomy_manage_folders_locations_process = function(){
-    debugger;
     var panels = $(".manage-folders-locations-panel");
     var timeout = 0;
 
@@ -281,10 +280,12 @@
         var field = $(panel).find('#field').text();
         //Retrieve value
         var value = $(panel).find('#value').text();
+        //Retrieve field type
+        var field_type = $(panel).find('#field_type').text();
         $(panel).find('.panel-body').find(".manage-locations-info").html("<i class='fa fa-arrow-right' style='color:#3498db' aria-hidden='true'></i> " + Drupal.t("Processing...", {}, {context: 'gofast:taxonomy'}));
         
         //Process the request
-        $.post(location.origin + "/taxonomy/manage_taxonomy/process", {process_nid : nid, process_vid : vid, process_field : field, process_value : value}).done(function(data) {
+        $.post(location.origin + "/taxonomy/manage_taxonomy/process", {process_nid : nid, process_vid : vid, process_field : field, process_value : value, field_type: field_type}).done(function(data) {
           if (field == "field_date") data = window.GofastFormatAsDrupalDate(data, Drupal.settings.date_format_short, false);
           // update progress bar
           processedPanels++;
@@ -297,10 +298,9 @@
           if(data.indexOf("[") !== -1){
             var tags = [];
             JSON.parse(data).forEach(function(v){tags.push(v.tid)});
-            var avalue = value.split(',');
             
             //Check if value matches the returned data
-            if(Drupal.arr_diff(tags, avalue).length == 0){
+            if(JSON.stringify(tags) == value){
               $(panel).find('.panel-body').find(".manage-locations-info").html("<i class='fa fa-check' style='color:green' aria-hidden='true'></i> " + Drupal.t("Processed !", {}, {context: 'gofast:taxonomy'}));
             }else{
               $(panel).find('.panel-body').find(".manage-locations-info").html("<i class='fa fa-times' style='color:red' aria-hidden='true'></i> " + Drupal.t("Error, you might not have some necessary rights.", {}, {context: 'gofast:taxonomy'}));

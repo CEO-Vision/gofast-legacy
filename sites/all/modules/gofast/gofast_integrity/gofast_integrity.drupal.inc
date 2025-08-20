@@ -136,7 +136,7 @@ function gofast_integrity_drupal_identify_documents_metadata($items){
         }
         
         $title = $node->title;
-        $locations_array = array_merge((array) $node->field_main_emplacement['und'], $node->field_emplacement['und']);
+        $locations_array = array_merge((array) $node->field_main_emplacement['und'], (array) $node->field_emplacement['und']);
         $locations = array();
         foreach($locations_array as $location){
             $locations[] = $location['value'];

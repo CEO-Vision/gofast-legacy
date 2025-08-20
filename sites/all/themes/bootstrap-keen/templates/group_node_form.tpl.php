@@ -9,6 +9,9 @@
         <div class="GofastForm__Field GofastForm__Field--administrator">
             <?php echo render($form['field_other_admin_uid']); ?>
         </div>
+        <div class="GofastForm__Field GofastForm__Field--metadata">
+            <?php echo render($form['space_metadata']); ?>
+        </div>
         <div class="GofastForm__Field GofastForm__Field--folder">
             <div class="d-flex" style="gap: 2rem;">
                 <div class="w-75">

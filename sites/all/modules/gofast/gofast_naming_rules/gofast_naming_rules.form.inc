@@ -60,6 +60,7 @@ function gofast_naming_rules_post_rule($term)
         $term->field_naming_rules[LANGUAGE_NONE][0]["value"] = $intended_rule;
     }
     taxonomy_term_save($term);
+    
     return json_encode([
         "message" => ["status" => "success",  "value" => t("The naming rule has been set successfully", [], ["context" => "gofast:gofast_naming_rules"])],
         "callback" => ["function" => "GofastKDataTableReload", "arguments" => ["gofastCategoriesTable"]]

@@ -273,13 +273,13 @@ function gofast_kanban_checklistItem_create($cid, $label, $attrs = array()) {
   $values = gofast_kanban_get_task_checklists($node->nid);
 
   $query = db_insert('gofast_kanban_checklist_item')
-      ->fields( array(
-        'cid'=> $cid,
-        'label' => $label,
-        'deadline' => (isset($attrs['deadline'])? $attrs['deadline']: NULL ),
-        'uid' => (isset($attrs['uid'])? $attrs['uid']: NULL ),         
-      ));
-  
+        ->fields( array(
+          'cid'=> $cid,
+          'label' => $label,
+          'deadline' => (isset($attrs['deadline']) && $attrs['deadline'] !== '' ? $attrs['deadline'] : NULL),
+          'uid' => (isset($attrs['uid']) && $attrs['uid'] !== '' ? $attrs['uid'] : NULL),
+        ));
+        
   $id = $query->execute();
   
   //Save entities ( audit and notificiation)

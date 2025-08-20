@@ -124,7 +124,7 @@
                       $("#gofastSubscriptionsTable").trigger("datatable-on-check");
                     });
                     $("#gofastSubscriptionsTable").on("datatable-on-update-perpage datatable-on-goto-page", function(){
-                      GofastKDataTableReload();
+                      GofastKDataTableReload("gofastSubscriptionsTable");
                     });
                     $("#gofastSubscriptionsTable").on("datatable-on-ajax-done", function(event){
                       setTimeout(function(){
@@ -359,7 +359,7 @@
             $.get(elem);
         })
         Gofast.toast(Drupal.t('You are no longer subscribed to this content.'));
-        GofastKDataTableReload();
+        GofastKDataTableReload("gofastSubscriptionsTable");
     }
   Gofast.subscriptionUpdateSelected = function(){
     var selected = Gofast.subscriptionTable.getSelectedRecords();

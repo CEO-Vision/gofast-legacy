@@ -141,8 +141,7 @@ function gofast_kanban_poll($poll_name, $poll_info, $context) {
         }
         $old_checklists_progress = json_decode($context['gofast_kanban_checklist']['kanban_checklists_progress'], TRUE);
         $old_checklists_progress = reset(array_values($old_checklists_progress));
-        $new_tasks = gofast_kanban_get_tasks($node);
-        $new_checklists_progress = gofast_kanban_get_checklists_progress_by_board_tasks($new_tasks);
+        $new_board_tasks = gofast_kanban_get_tasks($node);
         $tasks_were_updated = FALSE;
         $checklists_were_updated = FALSE;
 
@@ -150,23 +149,18 @@ function gofast_kanban_poll($poll_name, $poll_info, $context) {
         foreach ($board_tasks as $column_tid => $tasks) {
           $nb_tasks = count($tasks);
           // Do not take into account old/deleted columns still presents in context
-          if(!array_key_exists($column_tid, $new_tasks)){
+          if(!array_key_exists($column_tid, $new_board_tasks)){
             $tasks_were_updated = FALSE;
             break;
           }
-          if (count($new_tasks[$column_tid]) != $nb_tasks) {
+          if (count($new_board_tasks[$column_tid]) != $nb_tasks) {
             $tasks_were_updated = TRUE;
             break;
           }
         }
 
         // checklist progress check
-        foreach($new_checklists_progress as $key => $progress){
-          if($old_checklists_progress[$key] != $progress) {
-            $checklists_were_updated = TRUE;
-            break;
-          }
-        }
+        $checklists_were_updated = gofast_kanban_are_board_tasks_progress_changed($board_tasks, $new_board_tasks);
 
         // update if needed
         if ($tasks_were_updated == TRUE) {

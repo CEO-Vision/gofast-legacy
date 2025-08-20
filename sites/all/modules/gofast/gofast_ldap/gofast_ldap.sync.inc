@@ -74,7 +74,7 @@ function gofast_ldap_synchronize_accounts($remote_accounts){
   //Check if we have accounts to synchronize
   if(count($remote_accounts) == 0){
     variable_set('gofast_ldap_processing_sync', 0);
-    variable_set('gofast_ldap_remote_accounts', array());
+    cache_set("gofast_ldap_remote_accounts", [], "cache_gofast_ldap_sync", CACHE_PERMANENT);
     return;
   }
   
@@ -117,18 +117,23 @@ function gofast_ldap_synchronize_accounts($remote_accounts){
     }
     
     unset($remote_accounts[$k]);
-    variable_set('gofast_ldap_remote_accounts', $remote_accounts);
     
     if($count == GOFAST_LDAP_MAX_SYNC_PER_CRON){
-      return;
+      break;
     }
     $count++;
   }
   
-  //All accounts have been synchronized, end of synchronization
-  watchdog('Directory Synchronization', "All accounts have been synchronized", array(), WATCHDOG_INFO);
-  variable_set('gofast_ldap_processing_sync', 0);
-  variable_set('gofast_ldap_remote_accounts', array());
+  if(count($remote_accounts)){
+    watchdog('Directory Synchronization', "Breaking synchronisation for this cron, " . count($remote_accounts) . " remaining.", array(), WATCHDOG_INFO);
+    cache_set("gofast_ldap_remote_accounts", $remote_accounts, "cache_gofast_ldap_sync", CACHE_PERMANENT);
+  }else{
+      //All accounts have been synchronized, end of synchronization
+    watchdog('Directory Synchronization', "All accounts have been synchronized", array(), WATCHDOG_INFO);
+    variable_set('gofast_ldap_processing_sync', 0);
+    cache_set("gofast_ldap_remote_accounts", [], "cache_gofast_ldap_sync", CACHE_PERMANENT);
+  }
+  
   return;
 }
 
@@ -160,7 +165,8 @@ function gofast_ldap_synchronize_create_account($account){
         break;
       case 'company':
         if(!empty($account[$remote_field][0])){
-          $options['ldap_user_o'] = $account[$remote_field][0];
+          $entity_term = gofast_taxonomy_get_or_add_term(GOFAST_VID_ENTITY, $account[$remote_field][0]);
+          $options['field_entity'] = $entity_term->tid;
         }
         break;
       case 'phone':
@@ -250,9 +256,11 @@ function gofast_ldap_synchronize_update_account($account){
         }
         break;
       case 'company':
-        if($user->ldap_user_o[LANGUAGE_NONE][0]['value'] != $account[$remote_field][0]){
+        $entity_term = gofast_taxonomy_get_or_add_term(GOFAST_VID_ENTITY, $account[$remote_field][0]);
+        // Fill user's entity taxonomy ID if it doesn't match
+        if($user->field_entity[LANGUAGE_NONE][0]['tid'] != $entity_term->tid){
           watchdog('Directory Synchronization', "Updating company", array(), WATCHDOG_NOTICE);
-          $user->ldap_user_o[LANGUAGE_NONE][0]['value']=$account[$remote_field][0];
+          $user->field_entity[LANGUAGE_NONE][0]['tid'] = $entity_term->tid;
           $need_sync = true;
         }
         break;
@@ -329,4 +337,72 @@ function gofast_ldap_synchronize_update_account($account){
   }else{
     watchdog('Directory Synchronization', "No update needed for " . $uname . "/" . $user->uid, array(), WATCHDOG_INFO);
   }
+}
+
+/**
+ * Get from the active directory the current password expiration for user with $uid.
+ */
+function gofast_ldap_ppolicy_get_password_expiration($uid, $format = true, $with_settings = false){
+  $dn = gofast_ldap_user_dn($uid);
+
+  module_load_include('inc', 'gofast_ldap', 'gofast_ldap.settings');
+  $LdapServer = gofast_ldap_server_load(GOFAST_LDAP_INT_SERVER);
+
+  $ppolicy_ldap_infos = gofast_ldap_get_ppolicy_infos_from_account($dn,$LdapServer);
+  $timestamp_password_changed =  strtotime($ppolicy_ldap_infos["pwdChangedTime"]);
+  $ldap_password_settings = gofast_ldap_get_password_policy_settings();
+
+  $timestamp_password_expire = $timestamp_password_changed + $ldap_password_settings["max_password_lifetime"];
+  if($format){
+    return format_date($timestamp_password_expire, 'custom', "d/m/Y H:i");
+  } else if ($with_settings) {
+    return [$timestamp_password_expire, $ldap_password_settings];
+  } else {
+    return $timestamp_password_expire;
+  }
+}
+
+/**
+ * Retrieve all password expirations from LDAP.
+ * @return array ["uid" => int, "expiration" => int]
+ */
+function gofast_ldap_get_all_password_expirations_from_ldap($LdapServer) {
+  $ldap_password_settings = gofast_ldap_get_password_policy_settings();
+
+  $base_dn = reset($LdapServer->basedn);
+  $filter = "(objectClass=person)"; // match all people
+  $attributes = ["pwdChangedTime"];
+  $results = $LdapServer->search($base_dn, $filter, $attributes);
+
+  $expirations = [];
+  foreach ($results as $key => $result) {
+    if (!is_numeric($key)) {
+      continue; // skip pagination controls
+    }
+    if (!$result["pwdchangedtime"]) {
+      continue;
+    }
+
+    $dn = $result["dn"];
+    preg_match('/uid=([^,]+)/', $dn, $matches);
+    $username = $matches[1];
+    if (!$username) {
+    continue;
+    }
+
+    $expiration = $result["pwdchangedtime"][0];
+    if (!$expiration) {
+      continue;
+    }
+    $expiration =  strtotime($expiration);
+    $expiration = $expiration + $ldap_password_settings["max_password_lifetime"];
+
+    $uid = gofast_user_get_uid_by_login($username);
+    if (!$uid || $uid <= 1) {
+      continue;
+    }
+    $expirations[] = ["uid" => $uid, "expiration" => $expiration];
+  }
+
+  return $expirations;
 }

@@ -10,6 +10,8 @@
         let _psBoardsContainer;
         let _psBoards = [];
         let _searchInput;
+        let _tagInput;
+        let _tagEditableInput;
         let _modal;
         let _modalTitle;
         let _modalContent;
@@ -33,8 +35,11 @@
             nb_items: undefined,
             nb_items_completed: undefined,
             members: [],
+            task_color:undefined,
+            tags: [],
             board_id: undefined,
             state: undefined,
+            canDuplicate: false,
             element() {
 
                 let members;
@@ -70,23 +75,30 @@
                 })
 
                 let deadline_color =  'label-success';
+                let border_color = 'border-left-color:' + (this.task_color ?? "#fff");
                 if(this.deadline_color_indicator == 'deadline-nearly-reached'){
                     deadline_color =  'label-warning';
                 }else if(this.deadline_color_indicator == 'deadline-reached'){
                     deadline_color =  'label-danger';
                 }else if(this.deadline_color_indicator == 'deadline-reached-off' || this.deadline_color_indicator == 'deadline-nearly-reached-off' ){
-                     deadline_color =  'label-secondary';
+                    deadline_color =  'label-secondary';
                 }
 
-                return '\n<div class="card card-custom p-4"> <!--begin::Header--> <div class=""> <!--begin::Info--> <div class="d-flex align-items-center justify-content-between"> <div class="d-flex flex-column w-100"> <div class="d-flex justify-content-between w-100"> <a href="#" class="text-dark-75 text-hover-primary font-weight-bolder font-size-lg">' +
-                this.title +
-                "</a> " +
+                return '\n<div class="card card-custom p-4" style ="border-left-width:4px; border-left-style: solid; '+ border_color+'"> <!--begin::Header--> <div class=""> <!--begin::Info--> <div class="d-flex "> <div class="d-flex flex-column w-100">' +
+                '<div class="d-flex justify-content-between w-100">' +
+                (this.logo
+                    ? '<div class="symbol symbol-75"><img typeof="foaf:Image" src="' + this.logo + '"></div>'
+                    : "") +
                 (this.localized_state
-                  ? ' <span class="h-100 label label-sm label-outline-' + this.localized_state_indicator + ' label-pill label-inline">' +
-                    this.localized_state +
-                    "</span> "
-                  : "") +
-                " </div> " +
+                    ? ' <span class="label label-sm label-outline-' + this.localized_state_indicator + ' label-pill label-inline">' +
+                      this.localized_state +
+                      "</span> "
+                    : "") +
+                '</div>' +
+                '<div class="d-flex justify-content-between w-100">' +
+                '<a href="#" class="text-dark-75 text-hover-primary font-weight-bolder font-size-lg" style="word-break: break-all;">' +
+                this.title +
+                "</a></div>" +
                 (this.deadline
                   ? ' <div class="d-flex align-items-center mt-2">  <span class="label label-xl label-dot ' +
                     deadline_color +
@@ -128,7 +140,13 @@
                     this.comments_count +
                     "</span> </div>"
                   : "") +
-                " </div> </div> <!--end::Body-->\n</div>\n";
+                " </div> " +
+                (this.tags.length > 0
+                    ? '<tags class="mt-2 d-flex" style="gap: .5rem;">' +
+                        this.tags.map(tag => '<tag class="label label-inline label-secondary">' + tag.name + '</tag>').join('') +
+                        "</tags>"
+                    : "") 
+                + " </div> <!--end::Body-->\n</div>\n";
             }
         }
 
@@ -201,6 +219,7 @@
                     loader = component.querySelector('.gofastSpinner')
                     kanbanContainer = component.querySelector('#goKanban')
                     _searchInput = document.querySelector('#gofastKanbanSearchQuery')
+                    _tagInput = document.querySelector('#gofastKanbanTagQuery');
 
                     // set modal task detail
                     _modal = document.querySelector('#gofastKanbanModal')
@@ -255,14 +274,26 @@
                     }
 
                     // set onchange search handler
-                    let timeout = null
                     _searchInput.oninput = function (e) {
-                        clearTimeout(timeout)
-                        _setLoadingState(true)
-                        timeout = setTimeout(function () {
-                            _handleSearhChange(_searchInput.value)
-                        }, 500)
+                        const searchValue = _searchInput.value
+                        _filterCardsFromSearch(searchValue);
                     }
+                    _tagEditableInput = GofastEditableInput(_tagInput, [], 'tags', {
+                        tagIcon: "<i class='flaticon2-tag icon-nm text-info'></i>",
+                        tagDropdownIcon: "<i class='flaticon2-tag icon-2x text-info'></i>",
+                        isEditable : true,
+                        forceEditing: true,
+                        tagifyClasses: ["d-flex", "flex-grow-1", "align-items-center", "form-control"],
+                        tagifyIcon: "fas fa-tags mx-2",
+                        save: () => {},
+                    });
+                    _tagEditableInput.DOM.customInput.on("change", function(e) {
+                        _filterCardsFromSearch(_searchInput.value);
+                    });
+                    const _tagCheckbox = document.querySelector("[name='gofast-kanban-tag-query-checkbox']");
+                    _tagCheckbox.addEventListener("change", function(e) {
+                        _filterCardsFromSearch(_searchInput.value);
+                    })
                 }
             } else {
                 return new Error('Kanban not found');
@@ -290,6 +321,35 @@
                     }
                 },50)
             }
+        }
+
+        var _filterCardsByTags = function(filterTags = []){
+            if (!filterTags.length) {
+                $(".gofastKanban__item").removeClass("d-none");
+                return;
+            }
+            const allTagsAreMandatory = $("[name='gofast-kanban-tag-query-checkbox']")[0].checked;
+            $(".gofastKanban__item").filter((i, el) => {
+                $(el).removeClass("d-none");
+                const cardTags = $(el).find("tag").toArray().map(tag => $(tag).text().trim()); // get content of all tags in the card
+                const arrayMethod = allTagsAreMandatory ? "every" : "some";
+                const hasMandatoryTags = filterTags[arrayMethod](filterTag => cardTags.includes(filterTag)); // check if filtered tags are present
+                return !hasMandatoryTags; // if mandatory tags are present: don't hide the card
+            }).each((i, el) => {
+                $(el).addClass("d-none");
+            });
+        }
+
+        var _filterCardsFromSearch = function(searchValue){
+          const filterTags = _tagEditableInput ? _tagEditableInput.DOM.customInput.value.map(el => el.name) : [];
+          _filterCardsByTags(filterTags);
+          $(".gofastKanban__item:not(.d-none)").each((i, el) => {
+              $(el).removeClass("d-none");
+              const cardTitle = $(el).find("a[href]").text()
+              if(!cardTitle.includes(searchValue)){
+                  $(el).addClass("d-none");
+              }
+          });
         }
 
         var _createKanban = function () {    
@@ -430,6 +490,7 @@
             const data = await res.json()
             _reloadKanbanBoards(data)
             _setAllPopovers()
+            _filterCardsFromSearch(_searchInput.value)
 
         }
 
@@ -940,38 +1001,6 @@
             }
         }
 
-        var _handleSearhChange = async function (value) {
-
-            if (!!value && value.length > 2) {
-                try {
-
-                    let formData = new FormData()
-                    formData.append('filter', value)
-
-                    let url = window.origin + '/kanban/' + kanbanId + '/search';
-                    const res = await fetch(url, {
-                        method: 'POST',
-                        body: formData
-                    })
-                    const data = await res.json()
-
-                    _displayTaskFiltred(await data)
-
-
-                } catch (error) {
-                    console.log(error)
-                }
-
-            } else {
-                _displayAllTask()
-
-            }
-            _setLoadingState(false)
-
-
-        }
-
-
         var _handleBoardDelete = async function (boardId) {
 
             try {
@@ -1044,7 +1073,6 @@
             if (_modalTitle) {
             _modalTitle.innerText = Drupal.t('Card detail', {}, {context: "gofast:gofast_kanban"});
             }
-            // _modalFooter.classList = 'd-none modal-footer'
 
             try {
 
@@ -1063,6 +1091,21 @@
                 closeBtn.classList = "btn btn-sm btn-bg-secondary";
                 closeBtn.setAttribute("data-dismiss", "modal");
                 
+                let duplicateBtn = document.createElement('button');
+                duplicateBtn.type = 'button'
+                duplicateBtn.innerText = Drupal.t('Copy this card', {}, {'context': 'gofast_kanban'})
+                duplicateBtn.classList = "btn btn-sm btn-bg-secondary disabled"
+
+                if(data.canDuplicate == true){
+                    duplicateBtn.classList = "btn btn-sm btn-warning"
+                    duplicateBtn.onclick = function (e) {
+                        e.preventDefault()
+                        _cardDetail.copy(cardEl, function(e){
+                            _modalFooter.innerHTML = '';
+                        })
+                    }
+                }
+
                 let deleteBtn = document.createElement('button');
                 deleteBtn.type = 'button'
                 deleteBtn.innerText = Drupal.t('Delete this card', {}, {'context': 'gofast_kanban'})
@@ -1078,6 +1121,7 @@
                     }
                 }
                 _modalFooter.appendChild(closeBtn);
+                _modalFooter.appendChild(duplicateBtn);
                 _modalFooter.appendChild(deleteBtn);
                 
                 $(_modal).modal('show')
@@ -1093,16 +1137,22 @@
         }
 
         var _getTaskModelContent = function (tid) {
-            return '\n<div class="gofastKanbanCardDetail pt-1 pb-8 px-8"> <div class ="row"> <div class="col-lg-8 KanbanCard_leftCol"> <div class="row mb-8"> <div class="d-flex mw-100"> <div class="KanbanCard__title Detail__container"> <div class="KanbanCard__InputEditable EditableInput"></div> </div><a  href="' + window.location.origin + "/node/" + tid + '" style="padding: 2px 7px; vertical-align: middle; color:#3498db; margin-left:10px;" class="btn-sm btn btn-default btn-outline-secondary btn-icon permalink m-auto"><i class="fas fa-link"></i></a></div></div> <div class="row mb-8"> <div class="col-lg-4"> <div class="KanbanCard__created Detail__container inline-label"> <span class="font-weight-bolder">' +
+            const vid = $("#gofastKanban").attr("data-vid");
+            const kid = $("#gofastKanban").attr("data-kid");
+            const gid = $("#gofastKanban").attr("data-gid");
+
+            return '\n<div class="gofastKanbanCardDetail pt-1 pb-8 px-8"> <div class ="row"> <div class="col-lg-8 KanbanCard_leftCol"> <div class="row mb-8"> <div class="d-flex mw-100" style="gap: 10px;"><div id="gofastKanbanTaskLogo"></div><div class="KanbanCard__color Detail__container d-inline-flex align-items-center"><div class="KanbanCard__InputEditable EditableInput"></div></div><div class="KanbanCard__title Detail__container d-inline-flex align-items-center"> <div class="KanbanCard__InputEditable EditableInput"></div> </div><a  href="' + window.location.origin + "/node/" + tid + '" style="padding: 2px 7px; vertical-align: middle; color:#3498db; margin-left:10px;" class="btn-sm btn btn-default btn-outline-secondary btn-icon permalink m-auto"><i class="fas fa-link"></i></a></div></div> <div class="row mb-8"> <div class="col-lg-4"> <div class="KanbanCard__created Detail__container inline-label"> <span class="font-weight-bolder">' +
             window.parent.Drupal.t("Created", {}, { context: "gofast_kanban" }) +
             ':</span> <div class="KanbanCard__InputEditable EditableInput"></div> </div> </div> <div class="col-lg-4"> <div class="KanbanCard__deadline Detail__container inline-label"> <span class="font-weight-bolder">' +
             window.parent.Drupal.t("Deadline", {}, { context: "gofast_kanban" }) +
             ':</span> <div class="KanbanCard__InputEditable EditableInput"></div> </div> </div> <div class="col-lg-4"> <div class="KanbanCard__state Detail__container inline-label"> <span class="font-weight-bolder">' +
             window.parent.Drupal.t("Status", {}, { context: "gofast_kanban" }) +
-            ':</span> <div class="KanbanCard__InputEditable EditableInput"></div> </div> </div> </div> <div class="row mb-8 justify-content-between"> <div class="col-lg-6"> <div class="KanbanCard__responsable Detail__container"> <label class="font-weight-bolder">' +
+            ':</span> <div class="KanbanCard__InputEditable EditableInput"></div> </div> </div> </div> <div class="row mb-8 justify-content-between"> <div class="col-lg-4"> <div class="KanbanCard__responsable Detail__container"> <label class="font-weight-bolder">' +
             window.parent.Drupal.t("Responsible", {}, { context: "gofast_kanban" }) +
-            ':</label> <div class="KanbanCard__InputEditable EditableInput"></div> </div> </div> <div class="col-lg-6"> <div class="KanbanCard__members Detail__container"> <label class="font-weight-bolder">' +
+            ':</label> <div class="KanbanCard__InputEditable EditableInput"></div> </div> </div> <div class="col-lg-4"> <div class="KanbanCard__members Detail__container"> <label class="font-weight-bolder">' +
             window.parent.Drupal.t("Members", {}, { context: "gofast_kanban" }) +
+            `:</label> <div class="KanbanCard__InputEditable EditableInput"></div> </div> </div> <div class="col-lg-4"> <div class="KanbanCard__tags Detail__container" data-enforce="true" data-vid="${vid}" data-filters="${btoa(JSON.stringify([{field: "field_tags_gid", gid: gid}, {field: "field_tags_bundle", bundle: ["task"]}]))}"> <label class="font-weight-bolder">` +
+            window.parent.Drupal.t("Tags", {}, { context: "gofast_kanban" }) +
             ':</label> <div class="KanbanCard__InputEditable EditableInput"></div> </div> </div> </div> <div class="separator separator-solid my-3"></div> <div class="row"> <div class="col-lg-12"> <div class="KanbanCard__description Detail__container"> <label class="font-weight-bolder">' +
             window.parent.Drupal.t("Description", {}, { context: "gofast_kanban" }) +
             ':</label> <div class="KanbanCard__InputEditable EditableInput"></div> </div> </div> </div> <div class="separator separator-solid my-3"></div> <div class="row"> <div class="col-lg-12"> <div class="KanbanCard__documents Detail__container"> <label class="font-weight-bolder">' +
@@ -1206,7 +1256,6 @@
                 
 
                 if (!gofastKanban.classList.contains('processed')) {
-                    console.log('gofastKanban loading....')
                     gofastKanban.classList.add('processed')
                     window.ktKanbanItem = KTKanbanBoard ;
                     window.ktKanbanItem.init();                    

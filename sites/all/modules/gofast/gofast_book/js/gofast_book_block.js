@@ -5,11 +5,11 @@
         return;
     }
           $("#explorer-wiki").on('click', function(){      
-            if($("#wiki .gofast-spinner-xxl").length == 1){
+            if($("#book-browser .gofast-spinner-xxl").length == 1){
               setTimeout(function(){
-          $.get(window.origin + "/gofast/book/explorer").done(function(data){
-            $("#wiki").html(data);
-            Gofast.selectCurrentWikiArticle();
+          $.get(window.origin + "/gofast/book-browser/explorer").done(function(data){
+            $("#book-browser").html(data);
+            Gofast.sideFileBrowser.selectCurrentItem("book-browser");
           });
         }, 500); 
       }
@@ -40,16 +40,16 @@
     if(bookExplorerParams.length) {
       bookExplorerQueryString = "?";
       for (const param of bookExplorerParams) {
-        bookExplorerQueryString.concat(param + "=true");
+        bookExplorerQueryString = bookExplorerQueryString.concat(param + "=true");
       }
     }
     // get stuff
     container.html('<div class="d-flex min-h-200px min-w-40px h-100 w-100"><div class="spinner spinner-primary m-auto"></div></div>');
-    $.get(window.origin + "/gofast/book/explorer" + bookExplorerQueryString).done(function(data){
+    $.get(window.origin + "/gofast/book-browser/explorer" + bookExplorerQueryString).done(function(data){
       container.replaceWith(data);
     });
     if (!widget) {
-      Gofast.selectCurrentWikiArticle();
+      Gofast.sideFileBrowser.selectCurrentItem("book-browser");
 
     }
   }

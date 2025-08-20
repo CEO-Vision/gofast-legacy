@@ -1,7 +1,13 @@
-#usr/bin/bash
-#Script displaying versions of some of the installed components
+#!/bin/bash
 
-source ~/.bashrc
+# ==================================================================
+# Title: version-script.sh
+# Author: CEO-Vision
+# Date: 01.08.2024
+# Version  1.0
+# GoFAST Version: 4.3.0_r2
+# Description: Version Script for GoFAST MAIN
+# ==================================================================
 
 echo 
 echo @site_name includes the following technologies:
@@ -12,16 +18,15 @@ echo -e GoFAST: ' \t '' \t ' ${gofast_version} ' \t ' Free and Open-source licen
 cd
 echo -e GoFAST File Browser: ' \t ' ${gofast_version} ' \t ' Free and Open-source licence GPL-2.0+
 
-
 ajax_library_version=$(cat /var/www/d7/sites/all/libraries/ajax_file_browser/version.txt)
 echo -e WebDAV Ajax Library: ' \t ' $ajax_library_version ' \t ' Free and Open-source licence GPL-2.0+
 
-drupal_version=$(drush @d7 status | grep "Drupal version")
+drupal_version=$(drush-d7 @d7 status | grep "Drupal version")
 drupal_version=${drupal_version#*:}
 echo -e Drupal: ' \t '' \t ' $drupal_version ' \t ' Free and Open-source licence GPL-2.0+
 
-centos_version=$(cat /etc/centos-release | grep -o '[0-9]\.[0-9]')
-echo -e CentOS: ' \t '' \t ' $centos_version ' \t ' ' \t ' Free and Open-source licence GPL-2.0+
+almalinux_version=$(cat /etc/almalinux-release | grep -o '[0-9]\.[0-9]')
+echo -e Almalinux: ' \t '' \t ' $almalinux_version ' \t ' ' \t ' Free and Open-source licence GPL-2.0+
 
 php_version=$(php --version | grep built | sed 's/[^0-9]*\([0-9.]*\).*/\1/')
 echo -e PHP: ' \t ' ' \t '' \t '  $php_version ' \t ' Open-source licence PHP License v3.01
@@ -30,18 +35,18 @@ apache_version=$(yum info httpd | grep "Version" | head -1)
 apache_version=${apache_version#*:}
 echo -e Apache: ' \t '' \t '  $apache_version ' \t ' Free and Open-source licence GPL-3.0
 
-tomcat_version=$(/usr/share/tomcat/bin/version.sh | grep "Server number:" | awk '{print $3}')
+tomcat_version=$(tomcat version 2>/dev/null | grep -o "/[0-9].*" | sed -e 's/\///g')
 echo -e Tomcat: ' \t '' \t '  $tomcat_version ' \t ' Free and Open-source licence Apache-2.0
 
 openldap_version=$(yum info openldap | grep "Version" | head -1)
 openldap_version=${openldap_version#*:}
 echo -e OpenLDAP: ' \t '' \t '  $openldap_version ' \t ' Public licence OpenLDAP Public License version 2.8
 
-libreoffice_version=$(find /opt -wholename *libreoffice7*program/soffice*)
+libreoffice_version=$(find /opt -wholename *libreoffice7*program/soffice)
 libreoffice_version=$($libreoffice_version --version | sed 's/[^0-9]*\([0-9.]*\).*/\1/')
 echo -e Libre Office: ' \t '' \t ' $libreoffice_version ' \t ' Free licence LGPL-3.0+ and MPL-2.0
 
-mysql_version=$(mysql --version | sed 's/[^0-9]*\([0-9.]*\).*/\1/')
+mysql_version=$(mysql -V | grep -o -E "([0-9]+\.?){3}")
 echo -e MySQL: ' \t '' \t ' $mysql_version ' \t ' Free and Open-source licence GNU GPL
 
 jquery_last_version_folder=$(ls -r /var/www/d7/sites/all/modules/jquery_update/replace/jquery | head -n1)
@@ -69,14 +74,14 @@ tika_version=$(ls tika-app-* | sed 's/[^0-9.]*\([0-9.]*\).*/\1/' | head -c -2)
 echo -e Apache Tika: ' \t '' \t ' $tika_version ' \t ' Free licence Apache-2.0
 cd
 
-alfresco_version_number=$(grep "ALF_VERSION" /opt/config/versions.conf | sed 's/[^0-9.]*\([0-9.]*\).*/\1/' | tr -d '\n\r')
-alfresco_build_number=$(grep 'Specification-Version' /var/lib/tomcats/alfresco/webapps/alfresco/META-INF/MANIFEST.MF | tr -d '\n\r') # remove end of lines otherwise it may break
-alfresco_build_number=${alfresco_build_number#*:}
-alfresco_build_number=$(echo "$alfresco_build_number" | sed 's/^[ \t]*//;s/[ \t]*$//') # remove whitespaces
-alfresco_version="${alfresco_version_number}-build${alfresco_build_number}" # we can't put whitespaces before the Drupal-side parsing has been entirely refactored
+alfresco_all_version=$(cat /var/lib/tomcats/alfresco/webapps/alfresco/WEB-INF/classes/alfresco/version.properties)
+alfresco_major_version=$(echo $alfresco_all_version | grep -o "version.major=[0-9]" | cut -d= -f2)
+alfresco_minor_version=$(echo $alfresco_all_version | grep -o "version.minor=[0-9]" | cut -d= -f2)
+alfresco_revision_version=$(echo $alfresco_all_version | grep -o "version.revision=[0-9]" | cut -d= -f2)
+alfresco_version=$alfresco_major_version.$alfresco_minor_version.$alfresco_revision_version
 echo -e Alfresco: ' \t '' \t ' $alfresco_version  ' \t ' Free licence LPGL-3.0
 
-test=`drush @d7 pm-info gofast_workflows | grep Status | sed -e "s/ Status           :  //g"` 
+test=`drush-d7 @d7 pm-info gofast_workflows | grep Status | sed -e "s/ Status           :  //g"` 
 if [ $test == 'enabled' ]
     then
 bonita_version=$(cat /var/lib/tomcats/bonita/webapps/bonita/VERSION | head -n 1)

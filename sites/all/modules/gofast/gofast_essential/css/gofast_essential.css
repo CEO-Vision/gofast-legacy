@@ -52,7 +52,7 @@
 }
 
 :is(#gofastBrowserNavTabs, #gofast_file_browser_side_content) a.active:is(.essentialNavTab, .gofast-file-browser-side-content-tab){
-  background-color: #3699FF !important;
+  background-color: #3699FF;
 }
 
 :is(#gofastBrowserNavTabs, #gofast_file_browser_side_content) a.active:is(.essentialNavTab, .gofast-file-browser-side-content-tab) > .nav-icon > i, :is(#gofastBrowserNavTabs, #gofast_file_browser_side_content) a.active:is(.essentialNavTab, .gofast-file-browser-side-content-tab) > .nav-text{
@@ -60,7 +60,7 @@
 }
 
 :is(#gofastBrowserNavTabs, #gofast_file_browser_side_content):is(.essentialBrowserNavTabs, .gofast-file-browser-side-content-tabs) {
-  border-color: #3699FF !important;
+  border-color: #3699FF;
 }
 
 #forum_explorer_body > table.forum-explorer-element-table > tbody{

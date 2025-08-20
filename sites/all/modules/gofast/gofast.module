@@ -44,6 +44,27 @@ define('GOFAST_DEFAULT_VALUE_PREVENT_NOTIFY', variable_get('gofast_default_value
  */
 define('GOFAST_CLASS_PREVENT_NOTIFY', variable_get('GOFAST_CLASS_PREVENT_NOTIFY', "gofast_display_none"));
 
+/**
+ * The maximum value to display in badges for the number of co-editing users.
+ */
+define('GOFAST_CO_EDITING_NUMBER_BADGE_MAX_VALUE_THRESHOLD', 9);
+
+/**
+ * List of folder names which, when at the root of a space, have a particular
+ * purpose to fill. These are used in code and MAY be expected to exist for any
+ * given space.
+ *
+ * These include:
+ * - TEMPLATES
+ * - Wikis
+ *
+ * @var string[]
+ */
+define('GOFAST_TECHNICAL_FOLDER_NAMES', [
+  'TEMPLATES',
+  'Wikis',
+]);
+
 module_load_include('inc', 'gofast', 'gofast.settings');
 module_load_include('inc', 'gofast', 'gofast.utils');
 module_load_include('inc', 'gofast', 'gofast.ztree');
@@ -65,8 +86,27 @@ function gofast_add_ckeditor_profiles($profiles) {
   $gofast_locale = $user->language;
   $gofast_upload_adapter = 'GofastCKEditorUploadAdapterPlugin';
 
+  // partial ckeditor configuration options to include the 'open in a new tab'
+  // toggle switch when editing links
+  $link_open_in_new_tab_decorator = [
+    'link' => [
+      'decorators' => [
+        'openInNewTab' => [
+          'mode' => 'manual',
+          'label' => t('Open in a new tab', [], ['context' => 'gofast']),
+          'defaultValue' => true,
+          'attributes' => [
+            'target' => '_blank',
+            'rel' => 'noopener noreferrer',
+          ],
+        ],
+      ],
+    ],
+  ];
+  $image_decorator = ["image" => ["toolbar" => ['imageStyle:inline', 'imageStyle:wrapText', 'imageStyle:breakText', '|', 'toggleImageCaption', 'imageTextAlternative']]];
+
   $profiles["ckeditor-classic"] = [
-    "removePlugins" => ['ImageToolbar', 'ImageUpload', 'ImageInsert'], // avoid triggering an error because there is no upload adapter on the classic editor
+    "removePlugins" => ['ImageUpload', 'ImageInsert'], // avoid triggering an error because there is no upload adapter on the classic editor
     "language" => $gofast_locale,
     "toolbar" => [
         "items" => [                                           
@@ -86,9 +126,10 @@ function gofast_add_ckeditor_profiles($profiles) {
         ],
       ],
     ],
+    ...$link_open_in_new_tab_decorator,
+    ...$image_decorator,
   ];
   $profiles["ckeditor-full"] = [
-    "removePlugins" => ["ImageToolbar"], // remove image toolbar for now since it's very buggy
     "extraPlugins" => [$gofast_upload_adapter],
     "language" => $gofast_locale,
     "toolbar" => [
@@ -118,11 +159,13 @@ function gofast_add_ckeditor_profiles($profiles) {
             "startIndex" => true,
             "reversed" => true
         ]
-    ]
+    ],
+    ...$link_open_in_new_tab_decorator,
+    ...$image_decorator,
   ];
   gofast_ckeditor_add_mention_plugin($profiles["ckeditor-full"]);
   $profiles["ckeditor-classic-enrich"] = [
-    "removePlugins" => ["ImageToolbar"],
+    "removePlugins" => ['ImageUpload', 'ImageInsert'], // avoid triggering an error because there is no upload adapter on the classic editor
     "language" => $gofast_locale,
     "toolbar" => [
         "items" => [
@@ -142,15 +185,19 @@ function gofast_add_ckeditor_profiles($profiles) {
         ],
       ],
     ],
+    ...$link_open_in_new_tab_decorator,
+    ...$image_decorator,
   ];
   $profiles["ckeditor-comment"] = [
-    "removePlugins" => ["ImageToolbar"],
+    "removePlugins" => ['ImageUpload', 'ImageInsert'], // avoid triggering an error because there is no upload adapter on the classic editor
     "language" => $gofast_locale,
     "toolbar" => [
         "items" => [
-            'heading', '|', 'bold', 'italic', 'underline', 'strikethrough', '|', 'alignment', '|', 'numberedList', 'bulletedList', '|', 'link', 'blockquote', '|', 'undo', 'redo'
+            'heading', '|', 'bold', 'italic', 'underline', 'strikethrough', '|', 'alignment', '|', 'numberedList', 'bulletedList', '|', 'link', 'blockquote', '|','emoji', 'undo', 'redo'
         ]
-    ]
+    ],
+    ...$link_open_in_new_tab_decorator,
+    ...$image_decorator,
   ];
   gofast_ckeditor_add_mention_plugin($profiles["ckeditor-comment"]);
   return $profiles;
@@ -182,9 +229,13 @@ function gofast_ckeditor_add_mention_plugin(&$profile) {
 function gofast_init() {
   //GOFAST-8195
   //Security : Prevent all requests with CORS policy expressly disabled
+  
+  //Get request URI without query string
+  $request_uri = explode('?', $_SERVER['REQUEST_URI'], 2)[0];
+  
   if(function_exists('getallheaders')){
     $cors_header = getallheaders()["Sec-Fetch-Mode"];
-    if ($cors_header == 'no-cors') {
+    if ($cors_header == 'no-cors' && !in_array($request_uri, gofast_get_allowed_no_cors_requests())) {
       header('HTTP/1.1 403 Forbidden');
       exit;
     }
@@ -348,8 +399,8 @@ function gofast_cron() {
   /*
    * Alfresco status
    */
-  $alfresco_status = gofast_get_http_code('http://localhost:8080' . '/alfresco/');
-  $alfresco_status_second_try = gofast_get_http_code('http://localhost:8080' . '/alfresco/');
+  $alfresco_status = gofast_get_http_code('http://localhost:8080' . '/alfresco/', 7);
+  $alfresco_status_second_try = gofast_get_http_code('http://localhost:8080' . '/alfresco/', 7);
   if (200 !== $alfresco_status && 200 !== $alfresco_status_second_try && $gofast_status["alfresco"]["state"] !== "KO") {
     watchdog("GOFAST Report", "Alfresco is down");
 
@@ -493,7 +544,7 @@ function gofast_cron() {
   /*
    * Bonita status
    */
-  $bonita_status = gofast_get_http_code('http://localhost:8081' . '/bonita');
+  $bonita_status = gofast_get_http_code('http://localhost:8081' . '/bonita', 5);
   if (302 !== $bonita_status && $gofast_status["bonita"]["state"] !== "KO") {
     watchdog("GOFAST Report", "Bonita is down");
 
@@ -891,17 +942,17 @@ function gofast_library() {
       $path . '/js/gofastSelect2.js' => array(
         'group' => JS_LIBRARY,
         'every_page' => TRUE,
-        'weight' => 3
+        'defer' => TRUE,
       ),
       $path . '/js/gofastDatetimepicker.js' => array(
         'group' => JS_LIBRARY,
         'every_page' => TRUE,
-        'weight' => 3
+        'defer' => TRUE,
       ),
       $path . '/js/gofastDateRangePicker.js' => array(
         'group' => JS_LIBRARY,
         'every_page' => TRUE,
-        'weight' => 3
+        'defer' => TRUE,
       ),
       $path . '/js/jquery.ac.html.js' => array(
         'group' => JS_LIBRARY,
@@ -960,7 +1011,7 @@ function gofast_library() {
         'type' => 'file',
         'media' => 'screen',
         'group' => CSS_THEME,
-        'weight' => 2
+        'weight' => 100
       ),
       $lib . '/mCustomScrollbar/jquery.mCustomScrollbar.css' => array(
         'type' => 'file',
@@ -1011,6 +1062,58 @@ function gofast_library() {
       )
     )
   );
+
+  // PDF.js as drupal library
+  $libraries['pdfjs-drupal'] = [
+    'title' => 'PDF.js as Drupal-compatible library.',
+    'js' => [
+      // Add PDF.js code as normal JS (may be aggregated)
+      libraries_get_path('pdf') . '/build/pdf.js' => [],
+      // Add JS code to configure url/path used to load PDF.js worker
+      // code. This is what generally fails with a simple drupal_add_js
+      // when file is aggregated as it tries to load a file based on
+      // the current script source path for the worker, which is
+      // nonsensical because of the aggregated file name and as such does not exist.
+      'pdfjsLib.GlobalWorkerOptions.workerSrc = location.origin + "/sites/all/libraries/pdf/build/pdf.worker.js"' => [
+        'type' => 'inline',
+      ],
+    ],
+  ];
+
+  // Placer widget library
+  $libraries['gofast-placer'] = [
+    'title' => 'Gofast Placer',
+    'js' => [
+      $path . '/lib/placer/utils.js' => [],
+      $path . '/lib/placer/gofast_vec2.js' => [],
+      $path . '/lib/placer/gofast_pdf_page_view.js' => [],
+      $path . '/lib/placer/gofast_placer_element.js' => [],
+      $path . '/lib/placer/gofast_placer_element_instance.js' => [],
+      $path . '/lib/placer/gofast_placer.js' => [],
+    ],
+    'css' => [
+      $path . '/lib/placer/gofast_placer.css' => [],
+    ],
+    'dependencies' => [
+      // JQuery UI
+      ['system', 'ui'],
+      // PDF.js
+      ['gofast', 'pdfjs-drupal'],
+    ],
+  ];
+
+  // Extend states library features.
+  $libraries['states-extended'] = [
+    'title' => 'Drupal states library extensions',
+    'js' => [
+      $path . '/js/gofast_states_extended.js' => [],
+    ],
+    'dependencies' => [
+      // Extending the states feature requires the states library.
+      ['system', 'drupal.states'],
+    ],
+  ];
+
   return $libraries;
 }
 
@@ -1260,13 +1363,6 @@ function gofast_menu() {
     'access arguments' => array('administer site configuration'),
   );
 
-   $items['gofast/stamp/add'] = array(
-    'page callback' => 'gofast_stamp_add',
-    'type' => MENU_CALLBACK,
-    'access arguments' => array('access content'),
-    'access callback' => 'user_access'
-  );
-
    $items['gofast/node/%/get_audit_node'] = array(
     'page callback' => 'gofast_directory_display_audit_page',
     'page arguments' => array("node", 2),
@@ -1332,6 +1428,20 @@ function gofast_menu() {
     'page arguments' => array(1),
     'access arguments' => ['administer general configuration'],
     'type' => MENU_CALLBACK,
+  ];
+
+  $items['gofast/show_more_space'] = array(
+    'page callback' => 'gofast_get_show_more_space_template',
+    'type' => MENU_CALLBACK,
+    'access arguments' => array('access content'),
+    'access callback' => 'user_access',
+  );
+
+  $items['embedded/signature/signature_placer_widget'] = [
+    'page callback' => 'gofast_signature_placer_embedded_widget',
+    'type' => MENU_CALLBACK,
+    'access callback' => TRUE,
+    'access arguments' => [],
   ];
 
   return $items;
@@ -1513,6 +1623,11 @@ function gofast_permission() {
       'description' => t('Access the configuration page, update Gofast settings.', array(), array('context' => 'gofast')),
       'restrict access' => TRUE
     ),
+    'administer entities configuration' => array(
+      'title' => t('Administer Gofast Entities Settings', array(), array('context' => 'gofast')),
+      'description' => t('Access the configuration page, update Gofast settings.', array(), array('context' => 'gofast')),
+      'restrict access' => TRUE
+    ),
     'administer categories configuration' => array(
       'title' => t('Administer Gofast Categories Settings', array(), array('context' => 'gofast')),
       'description' => t('Access the configuration page, update Gofast settings.', array(), array('context' => 'gofast')),
@@ -1525,6 +1640,11 @@ function gofast_permission() {
     ),
     'administer retention configuration' => array(
       'title' => t('Administer Gofast Retention Settings', array(), array('context' => 'gofast')),
+      'description' => t('Access the configuration page, update Gofast settings.', array(), array('context' => 'gofast')),
+      'restrict access' => TRUE
+    ),
+    'administer ai configuration' => array(
+      'title' => t('Administer Gofast Mistral Settings', array(), array('context' => 'gofast')),
       'description' => t('Access the configuration page, update Gofast settings.', array(), array('context' => 'gofast')),
       'restrict access' => TRUE
     ),
@@ -2711,6 +2831,94 @@ function gofast_comment_update($comment){
   }
 }
 
+/**
+ * Get the formatter thunk for the list summary of users co-editing the node in onlyoffice.
+ *
+ * A list summary depends on the number of users editing and whether the current user is among them.
+ *
+ * The output string is formatted such that two users are mentionned and then
+ * the number of remaining user is given. In case the current user is within the
+ * list, they are put first and referred to as "You". Possible string shapes include:
+ * - You are co-editing
+ * - You and @user are co-editing
+ * - You, @user and @count others are co-editing
+ * - @user and @otherUser are co-editing
+ * - etc
+ *
+ * @param string[]|false $editing_users The list of editing users to format.
+ *  Can handle being passed a `FALSE` value representing a previous failure.
+ * @param object|null $current_account The account to assume as current. Will
+ *  default to the global $user when null. Used to get the account's user name,
+ *  which is used to know if it is present in the list to display 'You' as the
+ *  first user.
+ * @return callable():string|false Returns a function that returns the necessary
+ *  translated string, or false if something failed
+ */
+function gofast_get_co_editing_user_list_summary_formatter($editing_users, $current_account = NULL) {
+  $current_account = isset($current_account) ? $current_account : $GLOBALS['user'];
+
+  // also handles the case where $editing_users is false because of a previous failure
+  if (empty($editing_users)) {
+    return FALSE;
+  }
+
+  return function () use (&$editing_users, &$current_account) {
+    $current_user_editing_index = array_search($current_account->name, $editing_users);
+    $is_current_user_editing = $current_user_editing_index !== FALSE;
+    if ($is_current_user_editing) {
+      // remove current user from list, they will be handled separately
+      array_splice($editing_users, $current_user_editing_index, 1);
+    }
+
+    $first_user = $is_current_user_editing ?
+      t('You')
+      : gofast_user_display_name(user_load_by_name(array_shift($editing_users)));
+
+    $second_user = !empty($editing_users) ?
+      gofast_user_display_name(user_load_by_name(array_shift($editing_users)))
+      : FALSE;
+
+    $remaining_user_count = count($editing_users);
+
+    if ($remaining_user_count > 0) {
+      return format_plural(
+        $remaining_user_count,
+        '@first_user, @second_user and 1 other are co-editing',
+        '@first_user, @second_user and @count others are co-editing',
+        ['@first_user' => $first_user, '@second_user' => $second_user],
+      );
+    }
+
+    if ($second_user !== FALSE) {
+      return t(
+        '@first_user and @second_user are co-editing',
+        ['@first_user' => $first_user, '@second_user' => $second_user],
+      );
+    }
+
+    if ($is_current_user_editing) {
+      return t('You are co-editing', ['@user' => $first_user]);
+    }
+
+    return t('@user is co-editing', ['@user' => $first_user]);
+  };
+}
+
+/**
+ * Formats a number to not exceed the given threshold in display.
+ *
+ * If the given number exceeds the threshold (strictly superior), a `+` sign is
+ * appended to the maximum threshold.
+ * @param int|float $number The number value to format
+ * @param int|float $max_threshold The maximum value the displayed number can be.
+ */
+function gofast_format_number_with_maximum_threshold($number, $max_threshold) {
+  if($number > $max_threshold) {
+    return ((string)$max_threshold) . '+';
+  }
+  return (string)$number;
+}
+
 function gofast_get_lock_action_node($node) {
   $lock_action = array();
 
@@ -2732,16 +2940,52 @@ function gofast_get_lock_action_node($node) {
     else {
       $locked_owner = $locked_owner ? user_load_by_name(array('name' => trim($locked_owner))) : NULL;
       $is_soft_lock = gofast_onlyoffice_document_get_soft_lock($node);
+
+      $get_title = fn() => t('@user is locking this document', array('@user' => gofast_user_get_display_name_sql($locked_owner->uid)));
+
+      $editing_list = FALSE;
+      if ($is_soft_lock) {
+        $editing_list = gofast_onlyoffice_get_users_editing_by_node($node);
+        $list_summary = gofast_get_co_editing_user_list_summary_formatter($editing_list);
+        if ($list_summary !== FALSE) {
+          $get_title = $list_summary;
+        }
+      }
+
       $lock_icon = $is_soft_lock ? 'fa-unlock' : 'fa-lock';
+
       if ($locked_owner !== NULL) {
+        $number_of_co_editing_users = $editing_list !== FALSE ? count($editing_list) : NULL;
+        $user_full_name = $locked_owner->ldap_user_givenname['und'][0]['value']
+          . " "
+          . $locked_owner->ldap_user_sn['und'][0]['value'];
+        $avatar = theme(
+          'contextual_links_co_editing_avatar',
+          [
+            'user_name' => $user_full_name,
+            'picture_url' =>
+              gofast_get_url_picture_by_id($locked_owner->picture->fid),
+            'number_of_co_editing_users' => $number_of_co_editing_users,
+            'display_badge' =>
+              $is_soft_lock && $number_of_co_editing_users !== 0,
+            'displayed_number_of_co_editing_users' =>
+              $number_of_co_editing_users !== NULL ?
+                gofast_format_number_with_maximum_threshold(
+                  $number_of_co_editing_users,
+                  GOFAST_CO_EDITING_NUMBER_BADGE_MAX_VALUE_THRESHOLD
+                )
+                : '?',
+            'lock_icon' => $lock_icon,
+          ]
+        );
+
         $unlock_button = array(
           'id' => 'unlock_document_span',
-          'title' => t('@user is locking this document', array('@user' => gofast_user_get_display_name_sql($locked_owner->uid) )),
+          'title' => $get_title(),
           'button-text' => '',
-          'icon-class' => 'fa document_locked ' . $lock_icon,
           'alt' => 'Unlock',
-          'classes' => $is_soft_lock ? array("disabled") : array(),
-           'avatar' => "<img title='".$locked_owner->ldap_user_givenname['und'][0]['value']." ".$locked_owner->ldap_user_sn['und'][0]['value']."' style='margin-right:2px;width:20px;height:20px;' src='".gofast_get_url_picture_by_id($locked_owner->picture->fid)."' />"
+          'classes' => [...($is_soft_lock ? ["disabled"] : []), "opaque"],
+          'avatar' => $avatar,
         );
         if (!gofast_user_can_unlock_document($node, $locked_owner) || $is_soft_lock) {
           //$unlock_button['disabled'] = true;
@@ -2846,7 +3090,7 @@ function gofast_get_contextual_actions_node($node, $browser_path = FALSE, $fromT
             $title = t("This document is locked");
             $disabled_class = "disabled";
         }else{
-            $href = $base_url . '/onlyoffice/editor/' . $node->nid;
+            $href = $base_url . '/onlyoffice/editor/' . $node->nid . '?start=' . time();
             $title = t("Edit this document with OnlyOffice");
             $disabled_class = "";
         }
@@ -3038,9 +3282,10 @@ function gofast_get_mass_actions_on_selected_items($selected){
           'onClick' => 'Gofast.ITHit.downloadSelected()',
         ));
       }
-    if(!$contains_unreplicated_document){
       $actions[]['themed'] = gofast_dropdown_link(t('Compress', array(), array('context' => 'gofast:ajax_file_browser')), '/modal/nojs/compress-files', 'compress_files', 'ctools-use-modal compress-files', 'fa fa-file-archive-o n-color', $attr);
-    }
+      if(!$contains_folder){
+        $actions[]['themed'] = gofast_dropdown_link(t('Extract', array(), array('context' => 'gofast')), '/modal/nojs/unzip-files', 'unzip-files', 'ctools-use-modal unzip-files', 'fa fa-file-archive-o n-color', $attr);
+      }
   }
 
   foreach(module_implements('alter_mass_actions_on_selected_items') as $module){
@@ -3404,6 +3649,17 @@ function gofast_theme() {
     )
   );
 
+  $themes['contextual_links_co_editing_avatar'] = array(
+    'template' => 'tpl/contextual_links_co_editing_avatar',
+    'variables' => array(
+      'user_name' => NULL,
+      'picture_url' => NULL,
+      'number_of_co_editing_users' => NULL,
+      'display_badge' => TRUE,
+      'displayed_number_of_co_editing_users' => '?',
+    )
+  );
+
     $themes['not_found'] = array(
     'template' => 'tpl/not_found',
   );
@@ -3564,6 +3820,9 @@ function gofast_theme() {
   $themes['gofast_node_forum_sidebar'] = array(
     'template' => 'tpl/gofast-node/forum/gofast-node-forum-sidebar',
   );
+  $themes['gofast_node_space_sidebar'] = array(
+    'template' => 'tpl/gofast-node/space/gofast-node-space-sidebar',
+  );
 
   $themes['gofast_node_external_sidebar'] = array(
     'template' => 'tpl/gofast-node/externalPage/gofast-node-external-sidebar',
@@ -3587,6 +3846,10 @@ function gofast_theme() {
 
   $themes['gofast_node_extra_metadatas'] = array(
     'template' => 'tpl/gofast-node/gofast-node-extra-metadata',
+  );
+
+  $themes['gofast_node_extra_metadatas_readonly'] = array(
+    'template' => 'tpl/gofast-node/gofast-node-extra-metadata-readonly',
   );
 
   $themes['gofast_node_metadata_info'] = array(
@@ -3688,6 +3951,39 @@ function gofast_theme() {
                     "address" => NULL,
                     "id" => NULL
                   ]
+  ];
+  
+  $themes['gofast_side_file_browser'] = array(
+    'template'  => 'tpl/gofast-side-file-browser/gofast-side-file-browser',
+  );
+
+  $themes['gofast_side_file_browser_element'] = array(
+    'template'  => 'tpl/gofast-side-file-browser/gofast-side-file-browser-element',
+  );
+
+  $themes['gofast_side_file_browser_no_item'] = array(
+    'template'  => 'tpl/gofast-side-file-browser/gofast-side-file-browser-no-item',
+  );
+
+  $themes['gofast_platform_logo'] = [
+    'template' => 'tpl/gofast-platform-logo',
+    'variables' => [
+      'imageUrl' => '',
+      'containerClass' => '',
+    ],
+  ];
+
+  $themes['gofast_help_links'] = [
+    'template' => 'tpl/gofast-help-links',
+  ];
+
+  $themes['gofast_signature_placer_widget'] = [
+    'template' => 'tpl/gofast-signature-placer',
+  ];
+
+  // Add suggestion hook for page. Used instead of 'page' when path starts with '/embedded'
+  $themes['page__embedded'] = [
+    'template' => 'tpl/overrides/page--embedded',
   ];
 
   gofast_partials($themes);
@@ -4194,7 +4490,7 @@ function gofast_get_node_locations_async($node, $origine = null, $template = fal
       $role = reset($roles);
       $can_delete = false;
       //if it's a publication, always allow to uncheck preselected path
-      if ($role == "administrator member" || $node->uid == $user->uid || $is_publication) {
+      if (in_array($role, [GOFAST_OG_ROLE_ADMIN, GOFAST_OG_ROLE_MANAGER]) || $node->uid == $user->uid || $is_publication) {
         $can_delete = true;
       }
       if (!og_user_access('node', $gid, 'create alfresco_item content') ||  $can_delete == false) {
@@ -4578,17 +4874,20 @@ function gofast_node_info_get_history($node, $infos) {
 function gofast_node_info_links(&$info, $wrapper) {
   $node = $wrapper->value();
   // We retrieve the current node entity links
-  $target_attachment_nodes = isset($wrapper->{'field_lien'}) ? $wrapper->{'field_lien'}->value() : array();
-  $target_links = array_map(function($element) {
-    return isset($element) ? theme('node_title', array('node' => $element)) : '';
-  }, $target_attachment_nodes);
-  $info['node_target_lien'] = !empty($target_attachment_nodes) ? implode('<br />', $target_links) : '';
+  if(isset($wrapper->{"field_lien"})){
+    $target_attachment_nodes = isset($wrapper->{'field_lien'}) ? $wrapper->{'field_lien'}->value() : array();
+    $target_links = array_map(function($element) {
+      return isset($element) ? theme('node_title', array('node' => $element)) : '';
+    }, $target_attachment_nodes);
+    $info['node_target_lien'] = !empty($target_attachment_nodes) ? implode('<br />', $target_links) : '';
+  }
 
   // We retrieve entities that refers this node
   // Exclude : templates nodes
-  $is_template = gofast_contextual_menu_node_is_template($node, NULL, NULL, NULL);
-  $source_link_ids = array();
-  if ($is_template !== TRUE) {
+  if(isset($wrapper->{"field_target_link"})){
+    $is_template = gofast_contextual_menu_node_is_template($node, NULL, NULL, NULL);
+    $source_link_ids = array();
+    if ($is_template !== TRUE) {
     $results = db_select('field_data_field_target_link', 'f')
             ->fields('f')
             ->condition('field_target_link_target_id ', $node->nid)
@@ -4596,9 +4895,10 @@ function gofast_node_info_links(&$info, $wrapper) {
     foreach ($results as $row) {
       $source_link_ids[] = $row->entity_id;
     }
+    }
+    $source_links = node_load_multiple($source_link_ids);
+    $info['node_source_links'] = !empty($source_links) ? $source_links : '';
   }
-  $source_links = node_load_multiple($source_link_ids);
-  $info['node_source_links'] = !empty($source_links) ? $source_links : '';
 
 }
 
@@ -4609,17 +4909,19 @@ function gofast_node_info_links(&$info, $wrapper) {
 function gofast_node_info_attachments(&$info, $wrapper) {
   $node = $wrapper->value();
   // We retrieve the current node entity links
-  $target_attachment_nodes = isset($wrapper->{'field_lien'}) ? array_filter($wrapper->{'field_lien'}->value()) : array();
-  $target_links = array_map(function($element) {
-    return isset($element) ? theme('node_title', array('node' => $element)) : NULL;
-  }, $target_attachment_nodes);
-  $info['node_target_lien'] = !empty($target_attachment_nodes) ? implode('<br />', $target_links) : '';
-
+  if(isset($wrapper->{"field_lien"})){
+    $target_attachment_nodes = isset($wrapper->{'field_lien'}) ? array_filter($wrapper->{'field_lien'}->value()) : array();
+    $target_links = array_map(function($element) {
+      return isset($element) ? theme('node_title', array('node' => $element)) : NULL;
+    }, $target_attachment_nodes);
+    $info['node_target_lien'] = !empty($target_attachment_nodes) ? implode('<br />', $target_links) : '';
+  }
   // We retrieve entities that refers this node
   // Exclude : templates nodes
-  $excluded = FALSE;
-  $source_link_ids = array();
-  if (!$excluded) {
+  if(isset($wrapper->{"field_target_link"})){
+    $excluded = FALSE;
+    $source_link_ids = array();
+    if (!$excluded) {
     $results = db_select('field_data_field_lien', 'f')
             ->fields('f')
             ->condition('field_lien_target_id', $node->nid)
@@ -4629,9 +4931,10 @@ function gofast_node_info_attachments(&$info, $wrapper) {
     }
   }
   $source_links = array_map(function($element) {
-    return theme('node_title', array('node' => $element));
-  }, node_load_multiple($source_link_ids));
-  $info['node_source_lien'] = !empty($source_links) ? implode('<br /> ', $source_links) : '';
+      return theme('node_title', array('node' => $element));
+    }, node_load_multiple($source_link_ids));
+    $info['node_source_lien'] = !empty($source_links) ? implode('<br /> ', $source_links) : '';
+  }
 }
 
 function gofast_user_can_unlock_document($node, $lock_owner, $user = NULL) {
@@ -4645,11 +4948,14 @@ function gofast_user_can_unlock_document($node, $lock_owner, $user = NULL) {
   if ($user->uid === $lock_owner->uid) {
     return true;
   }
-    $user_managed_spaces = gofast_og_get_managed_spaces($user);
-    $node_parents = gofast_og_get_parent($node);
-    if (count(array_intersect($user_managed_spaces, $node_parents)) > 0) {
+  // Also allow space administrators
+  $node_parents = gofast_og_get_parent($node);
+  foreach($node_parents as $gid) {
+    $user_roles_for_space = reset(gofast_og_get_user_final_roles_for_space("node", $gid, $user->uid));
+    if ($user_roles_for_space == "administrator member" && og_user_access("node", $gid, "administer group", $user)) {
       return true;
     }
+  }
   return false;
 }
 
@@ -5473,8 +5779,7 @@ function gofast_archive_space($node): bool {
 
   $node = node_load(nid: $space_nid, reset:true);
   $node->field_archive[LANGUAGE_NONE][0]['value'] = 1;
-  field_attach_update('node', $node);
-
+  gofast_update_field_database($node, "field_archive");
   //GOFAST-6104 --- Archiving a space deletes the associated room
     $node_is_group = gofast_og_is_space($node);
     if ($node_is_group) {
@@ -5563,7 +5868,7 @@ function gofast_unarchive_space($node){
   variable_set("unarchiving_space_" . $node->nid, $state);
 
   $node->field_archive[LANGUAGE_NONE][0]["value"] = 0;
-  field_attach_update('node', $node);
+  gofast_update_field_database($node, "field_archive");
   gofast_cmis_webservice_space_assign_permissions($node);
   // gofast_cmis_webservice_item_set_permission(gofast_cmis_node_get_item_id($node), $node->name, TRUE);
 
@@ -5649,6 +5954,18 @@ function gofast_api_set_variable(){
          $name = $_POST["name"];
          $value = $_POST["value"];
 
+         // If a variable has a name beginning with one of these values, it may be edited by anyone
+         $variables_whitelist = ["ithit_bulk", "gofast_ldap_last_sync"];
+         $is_allowed = !empty(array_filter($variables_whitelist, function($whitelisted_value) use ($name) {
+          return str_starts_with($name, $whitelisted_value);
+         }));
+
+         if (!$is_allowed) {
+          drupal_add_http_header("Status", "403 Forbidden");
+          drupal_json_output(array("KO"));
+          exit;
+         }         
+
          variable_set($name, $value);
          drupal_json_output(array("OK"));
          exit;
@@ -5712,7 +6029,7 @@ function gofast_get_status(){
   /*
    * Alfresco status
    */
-  if (200 !== gofast_get_http_code('http://localhost:8080' . '/alfresco/')) {
+  if (200 !== gofast_get_http_code('http://localhost:8080' . '/alfresco/', 7)) {
     $status .='<div id="platform-status-replication" class="panel panel-danger">';
     $status .= '<div class="panel-heading">' . t('Platform status', array(), array('context' => 'gofast:status')) .'</div>';
     $status .= '<div class="panel-body">' . t("Alfresco service is down, please contact site administrator.", array(), array('context' => 'gofast:status')) . '<br />';
@@ -5723,7 +6040,7 @@ function gofast_get_status(){
   /*
    * Solr status
    */
-  if (302 !== gofast_get_http_code('http://localhost:8983' . '/solr')) {
+  if (302 !== gofast_get_http_code('http://localhost:8983' . '/solr', 5)) {
     $status .='<div id="platform-status-replication" class="panel panel-danger">';
     $status .= '<div class="panel-heading">' . t('Platform status', array(), array('context' => 'gofast:status')) .'</div>';
     $status .= '<div class="panel-body">' . t("Solr service is down, please contact site administrator.", array(), array('context' => 'gofast:status')) . '<br />';
@@ -5736,7 +6053,7 @@ function gofast_get_status(){
    */
   // if gofast_community module exist then bonita don't exist so don't display errors logs
   if (!module_exists('gofast_community')){
-  if (302 !== gofast_get_http_code('http://localhost:8081' . '/bonita')) {
+  if (302 !== gofast_get_http_code('http://localhost:8081' . '/bonita', 5)) {
     $status .='<div id="platform-status-replication" class="panel panel-danger">';
     $status .= '<div class="panel-heading">' . t('Platform status', array(), array('context' => 'gofast:status')) .'</div>';
     $status .= '<div class="panel-body">' . t("Bonita service is down, please contact site administrator.", array(), array('context' => 'gofast:status')) . '<br />';
@@ -5817,7 +6134,7 @@ function gofast_process_location_check_async($nid, $no_answer = false, $force_ex
     if (empty($node->{GOFAST_CMIS_REFERENCE_FIELD}[LANGUAGE_NONE][0]['value'])) {
       $reference = gofast_cmis_node_get_reference_by_path($node);
       $node->{GOFAST_CMIS_REFERENCE_FIELD}[LANGUAGE_NONE][0]['value'] = $reference;
-      field_attach_update('node', $node);
+      gofast_update_field_database($node, GOFAST_CMIS_REFERENCE_FIELD);
     }
 
     // check if emplacement fields are correct or not (in case of rename the folder)
@@ -5831,15 +6148,14 @@ function gofast_process_location_check_async($nid, $no_answer = false, $force_ex
     if ($node->status != 0){ //Node is published
       $is_equal = $parents_formatted === $node->{GOFAST_CMIS_LOCATIONS_FIELD}[LANGUAGE_NONE];
         if ($is_equal === false && ($user->uid != 1 || $force_execute == true)){
-          // We use field_attach_update because we don't hook on it (otherwise
+          // We use direct field update because we don't hook on it (otherwise
           // alfresco_script.php is eventually triggered with conflicting or
           // inconsistent data causing GOFAST-6350.
           $_POST['technically_save'] = TRUE;
           $node->technically_save = TRUE;
           $node->technically_changed = $node->changed;
           $node->{GOFAST_CMIS_LOCATIONS_FIELD}[LANGUAGE_NONE] = $parents_formatted;
-          field_attach_update('node', $node); // no hook_field_update()
-          entity_get_controller('node')->resetCache([$nid]);
+          gofast_update_field_database($node, GOFAST_CMIS_LOCATIONS_FIELD);
           $data['response'] = "reload";
         }
 
@@ -5852,8 +6168,7 @@ function gofast_process_location_check_async($nid, $no_answer = false, $force_ex
         }
         if($main_emplacement_exists == false){
             $node->{GOFAST_CMIS_MAIN_LOCATION_FIELD}[LANGUAGE_NONE][0]["value"] = $node->{GOFAST_CMIS_LOCATIONS_FIELD}[LANGUAGE_NONE][0]["value"];
-            field_attach_update('node', $node); // no hook_field_update()
-            entity_get_controller('node')->resetCache([$nid]);
+            gofast_update_field_database($node, GOFAST_CMIS_MAIN_LOCATION_FIELD);
             $data['response'] = "reload";
         }
 
@@ -6102,6 +6417,23 @@ function gofast_comment_view_access($op, $comment, $account){
 /*
  * Implements gofast_api_RESSOURCE_ACTION
  * @ressource node
+ * @action access
+ * @methods GET,POST
+ */
+function gofast_api_node_access($params){
+  //Handle methods
+  switch($params['method']){
+      case 'GET':
+          gofast_api_get_node_access($params);
+          break;
+      default:
+          gofast_api_not_implemented("This method");
+  }
+}
+
+/*
+ * Implements gofast_api_RESSOURCE_ACTION
+ * @ressource node
  * @action node
  * @methods GET
  */
@@ -6117,6 +6449,45 @@ function gofast_api_node_node($params){
             gofast_api_not_implemented("This method");
             break;
     }
+}
+
+function gofast_api_get_node_access($params) {
+    //Check content type
+    if(strpos($params['Content-Type'], "application/json") === FALSE){
+        return gofast_api_not_implemented("This Content-Type");
+    }
+    //Check authentication
+    global $user;
+    //Check if we have a nid param
+    if(isset($params['nid'])){
+        $nid = $params['nid'];
+    }else{
+        gofast_api_mandatory_parameter("nid");
+    }
+    $node = node_load($nid);
+    if (!$node) {
+      gofast_api_internal_server_error("Unable to load node with nid : " . $nid);
+    }
+
+    if($user->uid == 0){
+      if($node->type == "webform" && isset($params["hash"])){
+        $hash = $params["hash"];
+        $decryted_hash = gofast_decrypt(CIPHER_KEY, $hash);
+        $hash_data = json_decode($decryted_hash);
+        if($hash_data->nid == $node->nid){
+          gofast_api_success(["access" => "view"]);
+        }
+      }
+      gofast_api_success(["access" => false]);
+    }
+    $permission = FALSE;
+    foreach(["delete", "update", "view"] as $op) {
+      if(node_access($op, $node)) {
+        $permission = $op;
+        break;
+      }
+    }
+    gofast_api_success(["access" => $permission]);
 }
 
 
@@ -7275,11 +7646,17 @@ function template_preprocess_gofast_node_sidebar(&$variables){
       $theme = theme('gofast_node_forum_sidebar', array('node' => $node));
       break;
   }
+  if(gofast_og_is_space($node)){
+    $theme = theme("gofast_node_space_sidebar", array("node" => $node));
+  }
 
   $variables['theme'] = $theme;
 }
 
 function template_preprocess_gofast_node_og(&$variables){
+  if(gofast_og_is_space($variables["node"])){
+    $variables["side_content"] = theme('gofast_node_sidebar', array('node' => $variables["node"]));
+  }
   // Check if we hide some tabs
   $disabled = false;
   if(gofast_og_is_entity_hide_members_tab($variables['node'])){
@@ -7858,13 +8235,34 @@ function gofast_get_url_picture_by_id($id) {
     return $base_url . "/sites/all/themes/bootstrap-keen/keenv2/assets/media/users/blank.png"; // default avatar
 }
 
-function gofast_get_roles() {
+/**
+ * Gets role(s) from the database, optionally filtered by role name, with caching.
+ *
+ * @param string $role_name
+ *   (Optional) Role name to filter by.
+ *
+ * @return object|array
+ *   A role object if name is given, or an array of all roles.
+ */
+function gofast_get_roles($role_name = "") {
+    $cache = cache_get($role_name . "_roles", 'cache');
+    if ($cache->data) {
+      return $cache->data;
+    }
 
     $query = db_select('role', 'r');
     $query->fields('r', ['rid', 'name']);
+    if (strlen($role_name)) {
+      $query->condition("name", $role_name);
+    }
     $result = $query->execute();
+    $result = $result->fetchAll();
+    if (strlen($role_name)) {
+      $result = reset($result);
+    }
 
-    return $result->fetchAll();
+    cache_set($role_name . "_roles", $result, 'cache', CACHE_PERMANENT);
+    return $result;
 }
 
 function gofast_get_node_properties_by_nid($nid, $properties = array()) {
@@ -8097,4 +8495,42 @@ function gofast_taxonomy_add_term_page($js = NULL) {
   }
   print ajax_render($commands);
 
+}
+
+/**
+ * Implements hook_preprocess_HOOK for gofast_platform_logo
+ *
+ * @param array $variables Template variables array
+ * @return void
+ */
+function gofast_preprocess_gofast_platform_logo(&$variables) {
+  $theme = variable_get('theme_bootstrap_gofast_settings');
+  $position = $theme['position'];
+  $enable = $theme['toggle_logo'];
+  $logoPath = $theme['logo_path'];
+
+  if ($enable == 1 && $logoPath !== null && $logoPath !== '') {
+    $variables['imageUrl'] = file_create_url($logoPath);
+    $variables['containerClass'] = match ($position) {
+      1 => 'd-flex justify-content-end align-items-center',
+      2 => 'd-flex justify-content-end align-items-end',
+      // We only render it in the content part of the page for now, add/refactor
+      // necessary logic to handle these cases later ?
+      3 => 'd-none',
+      default => ''
+    };
+  }
+}
+
+/**
+ * Page callback function
+ */
+function gofast_signature_placer_embedded_widget() {
+  drupal_add_library('gofast', 'gofast-placer');
+
+  $module_path = drupal_get_path('module', 'gofast');
+  drupal_add_js($module_path . '/js/gofast_signature_placer.js');
+  drupal_add_css($module_path . '/css/gofast_signature_placer.css');
+
+  return theme('gofast_signature_placer_widget');
 }

@@ -215,7 +215,7 @@ function gofast_link_sharing_multi_link_page($hash){
   
   $data = ['form' => $multi_link_form, 'ask_join_link' => $ask_join_link, 'hash' => $hash_code];
   $content = theme('gofast-link-sharing-multi-file-details', $data);
-  return gofast_create_page_content($content);
+  return $content;
 }
 
 function gofast_link_sharing_get_shared_folder_content($store_id): stdClass {

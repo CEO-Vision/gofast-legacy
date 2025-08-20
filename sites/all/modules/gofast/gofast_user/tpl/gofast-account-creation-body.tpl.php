@@ -489,7 +489,7 @@ global $user;
                                                     <tbody>
                                                         <tr>
                                                             <td style="padding-top: 5px;">
-                                                                <a href="https://gofast-docs.readthedocs.io/<?= $user->language  ?>/4.0/docs-gofast-users/doc-gofast-guide-utilisateurs.html#mon-profil"><img src="<?= $base_url . '/' . drupal_get_path('module', 'gofast_mail_queue') . '/icon/' ?>user-border.png" alt="<?= t("Profile Picture", array(), array("context" => "gofast:gofast_user")) ?>" width="40" /></a>
+                                                                <a href="<?= $documentation_profile_url ?>"><img src="<?= $base_url . '/' . drupal_get_path('module', 'gofast_mail_queue') . '/icon/' ?>user-border.png" alt="<?= t("Profile Picture", array(), array("context" => "gofast:gofast_user")) ?>" width="40" /></a>
                                                             </td>
                                                         </tr>
                                                     </tbody>
@@ -511,7 +511,7 @@ global $user;
                                                     <tbody>
                                                         <tr>
                                                             <td style="padding-top: 5px;">
-                                                                <a href="https://gofast-docs.readthedocs.io/<?= $user->language  ?>/4.0/docs-gofast-users/doc-gofast-guide-utilisateurs.html#les-espaces-collaboratifs"><img src="<?= $base_url . '/' . drupal_get_path('module', 'gofast_mail_queue') . '/icon/' ?>collaborative-border.png" alt="<?= t("Profile Picture", array(), array("context" => "gofast:gofast_user")) ?>" width="40" /></a>
+                                                                <a href="<?= $documentation_spaces_url ?>"><img src="<?= $base_url . '/' . drupal_get_path('module', 'gofast_mail_queue') . '/icon/' ?>collaborative-border.png" alt="<?= t("Profile Picture", array(), array("context" => "gofast:gofast_user")) ?>" width="40" /></a>
                                                             </td>
                                                         </tr>
                                                     </tbody>
@@ -533,7 +533,7 @@ global $user;
                                                     <tbody>
                                                         <tr>
                                                             <td style="padding-top: 5px;">
-                                                                <a href="https://gofast-docs.readthedocs.io/<?= $user->language  ?>/4.0/docs-gofast-users/doc-gofast-guide-utilisateurs.html#creation-de-documents-contenus-utilisateurs"><img src="<?= $base_url . '/' . drupal_get_path('module', 'gofast_mail_queue') . '/icon/' ?>content-border.png" alt="<?= t("Profile Picture", array(), array("context" => "gofast:gofast_user")) ?>" width="40" /></a>
+                                                                <a href="<?= $documentation_content_creation_url ?>"><img src="<?= $base_url . '/' . drupal_get_path('module', 'gofast_mail_queue') . '/icon/' ?>content-border.png" alt="<?= t("Profile Picture", array(), array("context" => "gofast:gofast_user")) ?>" width="40" /></a>
                                                             </td>
                                                         </tr>
                                                     </tbody>
@@ -555,7 +555,7 @@ global $user;
                                                     <tbody>
                                                         <tr>
                                                             <td style="padding-top: 5px;">
-                                                                <a href="https://gofast-docs.readthedocs.io/<?= $user->language  ?>/4.0/docs-gofast-users/doc-gofast-guide-utilisateurs.html#gestion-des-abonnements"><img src="<?= $base_url . '/' . drupal_get_path('module', 'gofast_mail_queue') . '/icon/' ?>subscribe-border.png" alt="<?= t("Profile Picture", array(), array("context" => "gofast:gofast_user")) ?>" width="40" /></a>
+                                                                <a href="<?= $documentation_subscriptions_url ?>"><img src="<?= $base_url . '/' . drupal_get_path('module', 'gofast_mail_queue') . '/icon/' ?>subscribe-border.png" alt="<?= t("Profile Picture", array(), array("context" => "gofast:gofast_user")) ?>" width="40" /></a>
                                                             </td>
                                                         </tr>
                                                     </tbody>

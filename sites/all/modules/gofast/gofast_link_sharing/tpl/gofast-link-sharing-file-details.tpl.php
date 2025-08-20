@@ -51,8 +51,8 @@ global $user;
         </div>
         <div class="row d-block m-2">
           <div class="mb-5">J’ai un compte</div>
-          <div class="">
-            <a class="btn btn-primary gofast_link_sharing_button" href="<?php if (!empty($hash)) { print("/sharing/logged_in/".$hash); } ?>" role="button"><?php print t('Login', array(), array("context" => 'gofast')) ?></a>
+          <div class="auto-refresh">
+            <a class="btn btn-primary" href="<?php print("/node/".$nid); ?>" role="button"><?php print t('Login', array(), array("context" => 'gofast')) ?></a>
           </div>
         </div>
       <?php } else { ?>

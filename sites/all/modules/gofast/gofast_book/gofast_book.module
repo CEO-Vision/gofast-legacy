@@ -19,7 +19,7 @@ function gofast_book_init(){
 function gofast_book_menu() {
   $items = array();
 
-  $items['gofast/book/explorer'] = array(
+  $items['gofast/book-browser/explorer'] = array(
       'title' => 'Book explorer',
       'page callback' => 'gofast_book_browser_menu_ajax',
       'page arguments' => array('gofast_book_group', true),
@@ -91,27 +91,13 @@ function gofast_book_render_book_tree_widget_elements($json_books, $depth = 0, $
  * Implements hook_block_view
  */
 function gofast_book_browser_menu_ajax() {
-
-  $path = drupal_get_path('module', 'gofast_book');
-  drupal_add_js($path . '/js/gofast_book_block.js');
-
-
+  // if we need to filter by group and keep recursivity as well, we'll have to add a condition to call this differently
   if (isset($_GET["widget"])) {
-    $has_links = FALSE;
-    // the has_links parameter means the widget is not loaded into a form, so needs links but doesn't need empty wikis
-    if (isset($_GET["has_links"])) {
-      $has_links = TRUE;
-    }
-    $books_output = theme("gofast_book_tree_widget", ["has_links" => $has_links]);
+    $books_output = theme("gofast_book_tree_widget");
   } else {
-    // if we need to filter by group and keep recursivity as well, we'll have to add a condition to call this differently
-    $json_books = json_decode(gofast_book_get_json_books([]));
-    $settings = array('data_tree' => $json_books, "is_document" => "true");
-    drupal_add_js(array('gofast_book_tree' => $settings), 'setting');
-    $books = gofast_book_render_books_elements($json_books);   
-    $books_output = theme('gofast_book_file_browser', ['books' => $books]);
+    $json_books = json_decode(gofast_book_get_json_books());
+    $books_output = gofast_get_explorer_tree_template($json_books, "book-browser", "article");
   }
-
   print $books_output;
 }
 
@@ -294,16 +280,18 @@ function gofast_book_get_book_by_gid($gid, $fromAjax = FALSE, $asAdmin = FALSE) 
   $book->edit_link = FALSE;
   if (!$is_subwiki) {
     $book->edit_link = "/node/" . $gid . "#oghome";
+    $book->add_link = "/node/add/article?target_location=$gid";
   }
   $book->pid = 0;
   $book->id = random_int(0, 999999);
   $book->nid = $gid;
+  $book->icon = "fas fa-book";
 
   // use alfresco native API instead of webservice to avoid performance hit
   $descendants = gofast_cmis_alfresco_api_get_descendants($wikis_folder_item->id, "all", FALSE, TRUE, TRUE);
   $articles = [];
   foreach ($descendants as $descendant) {
-      $descendant = gofast_book_format_article_from_alfresco_api_descendant($descendant, $book, TRUE);
+    $descendant = gofast_book_format_article_from_alfresco_api_descendant($descendant, $book, TRUE);
       if (!$descendant) {
         continue;
       }

@@ -53,7 +53,7 @@ if (!empty($block_array)) {
                   <li class="navi-item">
                     <a onClick='Gofast.search.getAlfrescoItemForAddToCart()' class="center-block sidebar-items navi-link" aria-labelledby="addToCart" href="">
                       <span class="navi-icon list-items-icons"><i class="fas fa-shopping-basket" aria-hidden="true"></i></span>
-                      <span class="navi-text"><?php echo t('Add search results to cart', array(), array('context' => 'gofast:gofast_search')); ?></span>
+                      <span class="navi-text"><?php echo t('Add to cart', array(), array('context' => 'gofast:gofast_search')); ?></span>
                     </a>
                   </li>
                 </ul>

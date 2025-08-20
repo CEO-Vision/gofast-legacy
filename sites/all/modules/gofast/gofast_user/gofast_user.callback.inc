@@ -35,6 +35,13 @@ function gofast_user_menu()
     'delivery callback' => 'gofast_ajax_delivery'
   );
 
+  $items['profile/change-password'] = array(
+    'page callback' =>'gofast_user_change_password_redirect',
+    'type' => MENU_CALLBACK,
+    'access arguments' =>array('access content'),
+    'access callback'=>'user_access',
+  );
+
   $items['gofast/user-autocomplete/%'] = array(
     'page callback' => 'gofast_user_autocomplete',
     'page arguments' => array(2),
@@ -453,6 +460,16 @@ function gofast_user_save_lang($lang, $account = NULL)
   return theme('status_messages');
 }
 
+/**
+ * Generate a new pass reset token to force trigger password change.
+ */
+function gofast_user_change_password_redirect() {
+  $token = drupal_random_key();
+  global $user;
+  $_SESSION['pass_reset_' . $user->uid] = $token;
+  $_SESSION['pass_reset_no_redirect'] = TRUE;
+  drupal_goto('user/' . $user->uid . '/edit', array('query' => array('pass-reset-token' => $token)));
+}
 
 /**
  * Autocomplete callback for user lookups.
@@ -560,9 +577,11 @@ function gofast_crop_save_avatar_ajax()
 
       $http_status = '200 OK';
       $output = [
-        'status' => 1,
+        'success' => TRUE,
+        'status' => $http_status,
         'pictureUrl' => file_create_url($account->picture->uri),
-        'thumbnailUrl' => $thumbnail_uri
+        'thumbnailUrl' => $thumbnail_uri,
+        'uid' => $uid,
       ];
     }
   }
@@ -973,16 +992,46 @@ function gofast_user_profile_get_json($accountUid)
       $account->field_skills[LANGUAGE_NONE][$key]['value'] = $skills['tid'];
       $account->field_skills[LANGUAGE_NONE][$key]['name'] = taxonomy_term_load($skills['tid'])->name;
     }
+    // attributes for autocomplete input
+    $account->field_skills[LANGUAGE_NONE]['attributes'] = [
+      "data-vid" => GOFAST_VID_SKILLS,
+      "data-enforce" => "true",
+      "id" => "skills_id",
+    ];
     // @warning some ldap fields are objects, others are strings, but the front-end is able to handle that
     foreach($account->field_interests[LANGUAGE_NONE] as $key=>$interests){
       $account->field_interests[LANGUAGE_NONE][$key]['value'] = $interests['tid'];
       $account->field_interests[LANGUAGE_NONE][$key]['name'] = taxonomy_term_load($interests['tid'])->name;
     }
+    // attributes for autocomplete input
+    $account->field_interests[LANGUAGE_NONE]['attributes'] = [
+      "data-vid" => GOFAST_VID_INTERESTS,
+      "data-enforce" => "true",
+      "id" => "interests_id",
+    ];
     // @warning some ldap fields are objects, others are strings, but the front-end is able to handle that
     foreach($account->field_hobbies[LANGUAGE_NONE] as $key=>$hobbies){
       $account->field_hobbies[LANGUAGE_NONE][$key]['value'] = $hobbies['tid'];
       $account->field_hobbies[LANGUAGE_NONE][$key]['name'] = taxonomy_term_load($hobbies['tid'])->name;
     }
+    // attributes for autocomplete input
+    $account->field_hobbies[LANGUAGE_NONE]['attributes'] = [
+      "data-vid" => GOFAST_VID_HOBBIES,
+      "data-enforce" => "true",
+      "id" => "hobbies_id",
+    ];
+    // @warning some ldap fields are objects, others are strings, but the front-end is able to handle that
+    foreach($account->field_entity[LANGUAGE_NONE] as $key=>$entity){
+      $account->field_entity[LANGUAGE_NONE][$key]['value'] = $entity['tid'];
+      $account->field_entity[LANGUAGE_NONE][$key]['name'] = taxonomy_term_load($entity['tid'])->name;
+    }
+    // attributes for autocomplete input
+    $account->field_entity[LANGUAGE_NONE]['attributes'] = [
+      "data-vid" => GOFAST_VID_ENTITY,
+      "data-enforce" => "true",
+      "data-ac-max-tags" => 1, 
+      "id" => "department_id",
+    ];
 
     drupal_json_output([
       "firstname" => $ldap['ldap_user_givenname'],
@@ -990,7 +1039,7 @@ function gofast_user_profile_get_json($accountUid)
       "job" => $ldap['ldap_user_title'],
       "phone" => $ldap['ldap_user_telephonenumber'] ?: $ldap['ldap_user_mobile'],
       "email" => $account->mail,
-      "department" => $ldap['ldap_user_o'],
+      "department" => $account->field_entity[LANGUAGE_NONE],
       "birthdate" => $account->field_birthdate[LANGUAGE_NONE][0]['value'] ?? "",
       "expiration_date" => $account->field_extranet_expiration_date[LANGUAGE_NONE][0]["value"] ?? "",
       "manager" => $manager,

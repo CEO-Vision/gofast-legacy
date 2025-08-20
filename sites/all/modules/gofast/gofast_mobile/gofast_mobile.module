@@ -987,15 +987,24 @@ function gofast_mobile_get_node_locations($node, ?bool $canEdit)
 
 function gofast_mobile_get_node_publication_sources($node)
 {
+  ## Publication source node
   $publication_source = gofast_cmis_get_publication_source($node);
-  $publication_source_node = $publication_source !== FALSE ? node_load($publication_source) : NULL;
+  $publication_source_label = "Publication source";
+  ## Anonymization source node
+  $anonymization_source = gofast_cmis_get_publication_source($node, "anonymization");
+  $anonymization_source_label = "Anonymization source";
 
-  if ($publication_source_node !== null) {
-    $publication_source_value = $publication_source_node !== NULL ? l($publication_source_node->title, '/node/' . $publication_source_node->nid) : '';
-    return theme('gofast_node_info_field', array('title' => 'Publication Source', 'values' => $publication_source_value, 'multiline' => TRUE));
-  } else {
-    return '';
+  $return = "";
+  foreach (["publication_source", "anonymization_source"] as $publication_key) {
+    $source_nid = $$publication_key;
+    $source_node = $$publication_key !== FALSE ? node_load($source_nid) : NULL;
+    $source_title_variable = $publication_key . "_label";
+    $source_value = $source_node !== NULL ? l($source_node->title, '/node/' . $source_node->nid) : '';
+    if ($source_node !== null) {
+      $return .=  theme('gofast_node_info_field', array('title' => $$source_title_variable, 'values' => $source_value, 'multiline' => TRUE));
+    }
   }
+  return $return;
 }
 
 function gofast_mobile_get_node_link_to($node, $canEdit, $isMobile)
@@ -1320,6 +1329,12 @@ function gofast_mobile_get_node_info($node)
 
   if ($publication_source !== FALSE) {
     $info .= '<p class="text-danger bg-warning">' . t("This document is a publication", array(), array('context' => 'gofast')) . '</p><br />';
+  }
+
+  $anonymization_source = gofast_cmis_get_publication_source($node, "anonymization");
+
+  if (isset($anonymization_source) && $anonymization_source !== FALSE) {
+    $info .= '<p class="text-danger bg-warning">' . t("This document is an anonymization", array(), array('context' => 'gofast')) . '</p><br />';
   }
 
   if (!node_access("update", $node)) {

@@ -24,82 +24,82 @@ function gofast_date_formats() {
   $formats[] = array(
     'type' => 'long',
     'format' => 'l, j F, Y - H:i',
-    'locales' => array('fr'),
+    'locales' => array('fr', 'en'),
   );
   $formats[] = array(
     'type' => 'long',
     'format' => 'l, F j, Y - g:ia',
-    'locales' => array('nl', 'en'),
+    'locales' => array('nl'),
   );
   $formats[] = array(
     'type' => 'medium',
     'format' => 'D, d/m/Y - H:i',
-    'locales' => array('fr'),
+    'locales' => array('fr', 'en'),
   );
   $formats[] = array(
     'type' => 'medium',
     'format' => 'D, m/d/Y - g:ia',
-    'locales' => array('nl', 'en'),
+    'locales' => array('nl'),
   );
   $formats[] = array(
     'type' => 'short',
     'format' => 'd/m/Y - H:i',
-    'locales' => array('fr'),
+    'locales' => array('fr', 'en'),
   );
   $formats[] = array(
     'type' => 'short',
     'format' => 'm/d/Y - g:ia',
-    'locales' => array('nl','en'),
+    'locales' => array('nl'),
   );
   $formats[] = array(
     'type' => 'privatemsg_current_day',
     'format' => 'H:i',
-    'locales' => array('fr'),
+    'locales' => array('fr', 'en'),
   );
   $formats[] = array(
     'type' => 'privatemsg_current_day',
     'format' => 'g:i a',
-    'locales' => array('nl','en'),
+    'locales' => array('nl'),
   );
   $formats[] = array(
     'type' => 'privatemsg_current_year',
     'format' => 'j M',
-    'locales' => array('fr'),
+    'locales' => array('fr', 'en'),
   );
   $formats[] = array(
     'type' => 'privatemsg_current_year',
     'format' => 'M j',
-    'locales' => array('nl', 'en'),
+    'locales' => array('nl'),
   );
   $formats[] = array(
     'type' => 'privatemsg_years',
     'format' => 'd/m/y',
-    'locales' => array('fr'),
+    'locales' => array('fr', 'en'),
   );
   $formats[] = array(
     'type' => 'privatemsg_years',
     'format' => 'm/d/y',
-    'locales' => array('nl', 'en'),
+    'locales' => array('nl'),
   );
   $formats[] = array(
     'type' => 'short_without_hours',
     'format' => 'd/m/Y',
-    'locales' => array('fr'),
+    'locales' => array('fr', 'en'),
   );
   $formats[] = array(
     'type' => 'short_without_hours',
     'format' => 'm/d/Y',
-    'locales' => array('nl', 'en'),
+    'locales' => array('nl'),
   );
   $formats[] = array(
     'type' => 'extra_short',
     'format' => 'd/m/y - H:i',
-    'locales' => array('fr'),
+    'locales' => array('fr', 'en'),
   );
   $formats[] = array(
     'type' => 'extra_short',
     'format' => 'm/d/y - H:i',
-    'locales' => array('nl', 'en'),
+    'locales' => array('nl'),
   );
   return $formats;
 }

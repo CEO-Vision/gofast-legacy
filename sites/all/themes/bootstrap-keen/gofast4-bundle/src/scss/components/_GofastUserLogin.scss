@@ -1,5 +1,6 @@
 .login-content {
     max-width: 100% !important;
+    max-height: 100vh;
     & #user-pass-reset {
         display: flex !important;
         justify-content: center;
@@ -31,5 +32,9 @@
 
     .badge-light-info:hover i {
         color: #fff;
+    }
+
+    .region-content {
+      height: 100%;
     }
 }

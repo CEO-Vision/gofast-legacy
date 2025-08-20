@@ -144,6 +144,7 @@ function gofast_riot_preprocess_page(&$variables) {
     if ($deviceRiot) {
       $params['DEVICE_RIOT'] = $deviceRiot;
     }
+    $params['DISABLE_P2P_RIOT'] = $conf['disable-p2p-riot'] ?: FALSE;
 
     $path = drupal_get_path('module', 'gofast_riot');
     drupal_add_css($base_url . '/' . $path . '/css/gofast_riot.css', ['group' => CSS_THEME + 10]);
@@ -464,6 +465,10 @@ function gofast_riot_synchronize_permissions($node, $roomId) {
     "users" => $users,
     "users_default" => 0
   );
+  if($conf["synapse_has_call"] == 1) {
+    $param["events"]["org.matrix.msc3401.call"] = 0;
+    $param["events"]["org.matrix.msc3401.call.member"] = 0;
+  }
 
   $url = "https://internal-" . $conf['gofast-comm_domain'] . "/_matrix/client/r0/rooms/" . $roomId . "/state/m.room.power_levels?access_token=" . variable_get('riot_token_admin');
 
@@ -612,39 +617,59 @@ function gofast_riot_og_membership_delete(OgMembership $og_membership) {
   $node = node_load($og_membership->gid);
 
   if ($node->field_riot_identifier[LANGUAGE_NONE][0]['value'] != '') {
-    if ($og_membership->entity_type === 'userlist') {
-      $group_members = array_keys(gofast_userlist_get_members($og_membership->etid));
-      //pour eviter de supprimer des personnes qui sont dans la liste alors qu'ils sont aussi membre de l'espace sans cette liste
-      $members = array_merge(gofast_userlist_og_get_node_members_by_role($node->nid, array(OG_STATE_ACTIVE), "group contributor"), gofast_userlist_og_get_node_members_by_role($node->nid, array(OG_STATE_ACTIVE), "administrator member"), gofast_userlist_og_get_node_members_by_role($node->nid, array(OG_STATE_ACTIVE), "read only member"));
-      $users = array();
-      foreach ($members as $member) {
-        if ($member->entity_type != "userlist") {
-          $users[] = $member->etid;
+    $room_id = gofast_riot_get_RoomId($node);
+    if ($og_membership->entity_type === 'userlist') { // We are removing membership of a userlist
+      // Get all members of the userlist
+      $userlist_members = array_keys(gofast_userlist_get_members($og_membership->etid));
+      // Get users that have direct membership with space
+      $member_ids = gofast_og_get_members($node);
+      // Get other userlists that are member of the space
+      $space_userlists = gofast_og_get_memberships($node->nid, "userlist");
+      foreach($space_userlists as $userlist){
+        // Get all users that are member of other userlists
+        if($userlist->etid != $og_membership->etid){
+          $other_ul_members = gofast_userlist_get_members_without_entity_load($userlist->etid);
+          $other_ul_members = array_map(function($ul_member){
+            return $ul_member->uid;
+          }, $other_ul_members);
+
+          $member_ids = array_merge($member_ids, $other_ul_members);
         }
       }
-      $group_members = array_diff($group_members, $users);
+      // Get all members that are only member from the removed userlist
+      $group_members = array_diff($userlist_members, $member_ids);
+      // If some users have no membership after userlist deletion, kick them from the room
       if (!empty($group_members)) {
         gofast_riot_UpdateUserRiotRoom('kick', $node, '', true, $group_members);
       }
+      // Update permissions for remaining users that will have lower role
+      gofast_riot_synchronize_permissions($node, $room_id);
     }
-    else if ($og_membership->entity_type === 'user') {
+    else if ($og_membership->entity_type === 'user') { // We are removing direct membership of user
       $account = user_load($og_membership->etid);
       $nodeIsdelete = node_load($node->nid);
       if (!empty($nodeIsdelete)) {
         if (!empty($account)) {
-          //pour eviter de supprimer l'user du salon alors qu'il se trouve aussi dans une userliste du salon
-          $members = array_merge(gofast_userlist_og_get_node_members_by_role($node->nid, array(OG_STATE_ACTIVE), "group contributor"), gofast_userlist_og_get_node_members_by_role($node->nid, array(OG_STATE_ACTIVE), "administrator member"), gofast_userlist_og_get_node_members_by_role($node->nid, array(OG_STATE_ACTIVE), "read only member"));
-          $users = array();
-          foreach ($members as $member) {
-            if ($member->entity_type == "userlist") {
-              $userLists = array_keys(gofast_userlist_get_members($member->etid));
-              foreach ($userLists as $userlist) {
-                $users[] = $userlist;
-              }
+          // Get all userlists member of the space
+          $userlist_type_members = gofast_og_get_memberships($node->nid, "userlist");
+          $userlist_member_ids = array();
+          // Get users that have membership from userlists
+          foreach($userlist_type_members as $userlist){
+            if($userlist->etid != $og_membership->etid){
+              $ul_members = gofast_userlist_get_members_without_entity_load($userlist->etid);
+              $ul_members = array_map(function($ul_member){
+                return $ul_member->uid;
+              }, $ul_members);
+
+              $userlist_member_ids = array_merge($userlist_member_ids, $ul_members);
             }
           }
-          if (!in_array($og_membership->etid, $users)) {
+          // If the user is not in any userlists, it will no longer belong to the space, then kick it from the room
+          if (!in_array($og_membership->etid, $userlist_member_ids)) {
             gofast_riot_UpdateUserRiotRoom('kick', $node, strtolower($account->name));
+          } else {
+            // Update permissions to take highest role from userlists
+            gofast_riot_synchronize_permissions($node, $room_id);
           }
         }
       }
@@ -923,7 +948,7 @@ function gofast_riot_change_username() {
   global $user;
   
   $username = "@" . strtolower($user->name) . ":" . $conf['gofast-comm_domain'];
-  $url = "https://internal-" . $conf['gofast-comm_domain'] . "/_matrix/client/r0/profile/" . $username . "/displayname?access_token=" . $_SESSION['TOKEN_RIOT'];
+  $url = "https://internal-" . $conf['gofast-comm_domain'] . "/_matrix/client/v3/profile/" . $username . "/displayname?access_token=" . $_SESSION['TOKEN_RIOT'];
   $data_string = json_encode(["displayname" => gofast_user_display_name()]);
   
   $ch = curl_init();
@@ -1150,9 +1175,10 @@ function gofast_api_matrix_login($params){
               usurp(FALSE);
               
               //Register successful authrntication
-              flood_register_event('failed_login_attempt_ip');
-              flood_clear_event('failed_login_attempt_user', $params['auth']['localpart']);
-              _login_security_remove_events($params['auth']['localpart']);
+              // ! REVERT - Wait for a fix - See GOFAST-9174
+              //flood_register_event('failed_login_attempt_ip');
+              //flood_clear_event('failed_login_attempt_user', $params['auth']['localpart']);
+              //_login_security_remove_events($params['auth']['localpart']);
               
               //Authentication successfull
               $response->auth->success = true;
@@ -1166,11 +1192,12 @@ function gofast_api_matrix_login($params){
     }
     
     //Register failed authentication
-    flood_register_event('failed_login_attempt_ip', variable_get('user_failed_login_ip_window', 3600));
-    flood_register_event('failed_login_attempt_user', variable_get('user_failed_login_user_window', 21600), $params['auth']['localpart']);
-    _login_security_add_event($params['auth']['localpart'], ip_address());
-    $track = [ 'values' => [ 'name' => $params['auth']['localpart'] ] ];
-    login_security_validate(null, $track);
+    // ! REVERT - Wait for a fix - See GOFAST-9174
+    //flood_register_event('failed_login_attempt_ip', variable_get('user_failed_login_ip_window', 3600));
+    //flood_register_event('failed_login_attempt_user', variable_get('user_failed_login_user_window', 21600), $params['auth']['localpart']);
+    //_login_security_add_event($params['auth']['localpart'], ip_address());
+    //$track = [ 'values' => [ 'name' => $params['auth']['localpart'] ] ];
+    //login_security_validate(null, $track);
     
 
     //Authentication failed
@@ -1236,6 +1263,10 @@ function gofast_api_matrix_search($params){
     
     $outputs = gofast_ac_query($str, 'user', $options_ac_user);
     usurp(FALSE);
+
+    if($conf["synapse_has_whatsapp_bridge"] == 1 && (str_contains($str, "gofast") || str_contains($str, "whatsapp"))) {
+      $outputs[] = ["login" => "gofastwhatsapp", "displayname" => "GoFAST WhatsApp bridge bot"]; 
+    }
 
     foreach ($outputs as $output){
         $userReponse = new stdClass();

@@ -1751,7 +1751,8 @@ public/multi_sharing*
 Welcome
 Access_config
 conference/test-config
-not_supported',
+not_supported
+signature/yousign/sign',
     'roles' => array(),
     'themes' => array(
       'bootstrap_gofast' => array(

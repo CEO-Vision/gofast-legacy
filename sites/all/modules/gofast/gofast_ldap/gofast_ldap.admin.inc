@@ -178,6 +178,34 @@ function gofast_ldap_fetch_entries() {
         
     print $formatted_entries;
 }
+
+function gofast_ldap_fetch_sync_entries() {
+  $sid = GOFAST_LDAP_EXT_SERVER;
+  $server = gofast_ldap_server_load($sid);
+  
+  //Load used params
+  $opt_key = __FUNCTION__ . '_search_options';
+  $options = isset($form_state[$opt_key]) ? $form_state[$opt_key] : gofast_ldap_admin_options_default($sid);
+  $sync_settings = variable_get('gofast_directory_sync_config', array());
+  
+  //Set filters
+  if(!empty($sync_settings['filters'])){
+      unset($options['filters']);
+      
+      foreach($sync_settings['filters'] as $filter){
+          $options['filters'][] = array(
+              "attr" => $filter[0],
+              "value" => $filter[1]
+          );
+      }
+  }
+      
+  //Fetch entries and format
+  $entries = gofast_ldap_admin_query($server, $options);       
+  $formatted_entries = gofast_ldap_admin_entries_format($entries, $server, $sid);
+      
+  print $formatted_entries;
+}
     
 function gofast_ldap_admin_entries_format($entries, $server, $sid) {
     $formatted_entries = array();
@@ -245,6 +273,10 @@ function gofast_ldap_admin_entries_import_selected() {
             break;
           case "ldap_user_displayname":
             $data[$entry] = (empty($user[$remote])) ? $user["cn"] : $user[$remote];
+            break;
+          case "field_entity":
+            $entity_term = gofast_taxonomy_get_or_add_term(GOFAST_VID_ENTITY, $user[$remote]);
+            $data[$entry] = $entity_term->tid;
             break;
           default:
             $data[$entry] = $user[$remote];
@@ -600,7 +632,41 @@ function gofast_ldap_admin_query(LdapServer $LdapServer, $options) {
     
   $attributes = $options['attributes'];
       
-  return $LdapServer->searchAllBaseDns($filter, $attributes);
+  $results = $LdapServer->searchAllBaseDns($filter, $attributes);
+  
+  $results = gofast_ldap_admin_clear_query_results($results);
+  
+  return $results;
+  
+}
+
+/*
+ * Util function to clear query results of gofast_ldap_admin_query
+ * Used to fix character encoding and prevent further database storing issues
+*/
+function gofast_ldap_admin_clear_query_results($results){
+  if(is_array($results)){
+    //Open the array to find clearable values
+    foreach($results as $k => $result){
+      $results[$k] = gofast_ldap_admin_clear_query_results($result);
+    }
+    return $results;
+  }else if(is_string($results)){
+    //This value can be cleared
+    //Check if our string if UTF-8 compatible
+    if (!mb_check_encoding($results, 'UTF-8')) {
+      // This string is not UTF-8 compatible, convert it
+      $results = iconv('UTF-8', 'UTF-8//IGNORE', $results);
+    }
+    
+    //Remove unwanted characters
+    $results = preg_replace('/[\x00-\x1F\x80-\x9F]/u', '', $results);
+    
+    //Trim the string
+    $results = trim($results);
+  }
+  
+  return $results;
 }
     
 /**
@@ -921,6 +987,7 @@ function gofast_ldap_sasl_auth_on($account = NULL) {
       gofast_ldap_sasl_update_field($_account, 0);
       continue;
     }
+    gofast_ldap_update_password_expiration($_account);
         
     $success[$_account->uid] = t('SASL authentication activated successfully : !pw', array('!pw' => $userPassword), array('context' => 'gofast:gofast_ldap'));
     watchdog('Gofast LDAP', $success[$_account->uid]);
@@ -1039,6 +1106,7 @@ function gofast_ldap_sasl_auth_off($account = NULL) {
       $fail[$_account->uid] = $msg;
       continue;
     }
+    gofast_ldap_update_password_expiration($_account);
         
     $success[$_account->uid] = t('SASL authentication deactivated successfully for !user', array('!user' => $name), array('context' => 'gofast:gofast_ldap'));
     watchdog('Gofast LDAP', $success[$_account->uid]);
@@ -1265,4 +1333,35 @@ function gofast_ldap_search_autocomplete($str) {
       
   drupal_json_output($matches);
   exit;
+}
+
+/**
+ * Return a Keen DataTable to display the result of an LDAP query test for synchronisation
+ */
+function gofast_ldap_admin_ldap_sync_test_table(){
+    //Include table JS
+    drupal_add_js(drupal_get_path('module', 'gofast_ldap') . "/js/gofast_ldap_testSyncTable.js");
+
+    //Build table header
+    $columns = [];
+    
+    $config = variable_get('gofast_directory_sync_config', []);
+    
+    foreach($config['mapping'] as $field){
+      if(empty(trim($field))){
+        continue;
+      }
+      $columns[$field] = $field;
+    }
+    
+    foreach($config['filters'] as $field){
+      $field = trim($field[0], '!');
+      $columns[$field] = $field;
+    }
+    
+    $jsonColumns = json_encode($columns);
+  
+    $page = theme("gofast_ldap_test_sync_table", ["columns" => $jsonColumns]);
+    
+    return $page;
 }

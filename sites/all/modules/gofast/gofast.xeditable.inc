@@ -259,6 +259,7 @@ function gofast_update_node_field() {
 
   $nid = $pk;
   $field_name = $name;
+  $drupal_field_info = field_info_field($field_name);
 
   //Wait for the lock to be available
   lock_wait("update_node_field_" . $nid, 15);
@@ -292,9 +293,9 @@ function gofast_update_node_field() {
   if (is_array($value)) {
     $new_values = [];
     foreach($value as $vkey => $val){ // We need to clear technical values
-      if($field_name == "field_target_link"){
+      if($field_name == "field_target_link" || strpos($field_name, "nodes") != FALSE){
         array_push($new_values, gofast_xss_clean($val['value']));
-      }else if($field_name == "field_tags"){
+      }else if($drupal_field_info["type"] == "taxonomy_term_reference" && $drupal_field_info["cardinality"] != 1){ // If it's a multi-valued taxonomy field
         array_push($new_values, gofast_xss_clean(is_array($val) ? $val['name'] : $val));
       }else if($field_name == "field_external_page_url"){
         array_push($new_values, gofast_xss_clean($val));
@@ -448,7 +449,11 @@ function gofast_update_node_field() {
       $category = reset(taxonomy_get_term_by_name($value, "category"));
       if (isset($category->field_category_criticity[LANGUAGE_NONE][0]["tid"])) {
         $node->field_criticity[LANGUAGE_NONE][0]["tid"] = $category->field_category_criticity[LANGUAGE_NONE][0]["tid"];
-        field_attach_update('node', $node);
+        gofast_update_field_database($node, "field_criticity");
+      }
+      if (module_exists("gofast_mistral")) {
+        $data = ["Category" => ["tid" => $category->tid, "vid" => $category->vid, "name" => $category->name], "State" => false];
+        gofast_mistral_process_tracking_update("taxonomy", $node->nid, TRUE, time(), $data, "done");
       }
     }
   }else if (isset($form_state['values'][$field_name][LANGUAGE_NONE][0]['default'])) {
@@ -554,14 +559,14 @@ function gofast_update_node_field() {
       }
 
       if (!empty($terms) && $field_name === 'field_tags') {
-        $normalized_values = gofast_metadata_terms_get_from_array($vid, $terms);
+        $normalized_values = gofast_metadata_terms_get_from_array($vid, $terms, gofast_taxonomy_can_enforce_vocabulary($vid));
       }else if(!empty($terms)) {
-        $normalized_values = gofast_xeditable_terms_get_from_array($vid, $terms);
+        $normalized_values = gofast_xeditable_terms_get_from_array($vid, $terms, gofast_taxonomy_can_enforce_vocabulary($vid));
       }else{
         $normalized_values = null;
       }
-      // If dealing with other than tags, field is single valued
-      if($vid !== GOFAST_VID_TAGS && $normalized_values !== null) {
+      // If it's a single valued taxonomy field, get single value from array
+      if($drupal_field_info["cardinality"] == 1 && $normalized_values !== null) {
         $normalized_values = reset($normalized_values);
       }
     }  else {
@@ -1016,9 +1021,13 @@ function gofast_update_field() {
 
   // Values received is an array, multiple values, otherwise, single
   if (is_array($value)) {
+    $values = $wrapper->{$field_name}->value();
+    if (!is_array($values)) { // If entity taxonomy field is single-valued
+      $values = [$values];
+    }
     $values_filter_name = array_map(function($element) {
       return $element->name;
-    }, $wrapper->{$field_name}->value());
+    }, $values);
     // If at least one value is different
     if (count(array_diff($values_filter_name, $value)) === 0 && count(array_diff($value, $values_filter_name)) === 0) {
       return json_encode($value);
@@ -1070,7 +1079,8 @@ function gofast_update_field() {
       $form_state['values'][$field_name][LANGUAGE_NONE][0]['value'] = $date_str;
     } else {
       if (is_array($form_state['values'][$field_name])) {
-        if (is_array($form_state['values'][$field_name][LANGUAGE_NONE])) {
+        $value_key = reset(array_keys($field_info["columns"]));
+        if (is_array($form_state['values'][$field_name][LANGUAGE_NONE]) && $value_key == "value") {
           $form_state['values'][$field_name][LANGUAGE_NONE][0]['value'] = $value;
         }
         else {
@@ -1108,6 +1118,9 @@ function gofast_update_field() {
     // If vis param is present, we process taxonomy terms.
     if (isset($vid)) {
       $normalized_values = gofast_xeditable_terms_get_from_array($vid, $value);
+      if (!is_array($wrapper->{$field_name}->value())) { // If entity taxonomy field is single-valued
+        $normalized_values = reset($normalized_values) ?: NULL; // Type must be NULL if the value must be unset
+      }
     }
     else {
       $normalized_values = $value;
@@ -1294,21 +1307,49 @@ function gofast_taxonomy_category_allowed($term, $nodes = null) {
 function gofast_xeditable_vocabulary_to_select_items($vid, $node = null) {
   $options = array();
   $options_standard = array();
-  $allowed_term = TRUE;
-  foreach (taxonomy_term_load_multiple(FALSE, array('vid' => $vid)) as $term) {
-    if($vid === GOFAST_VID_CATEGORY) {
-      $allowed_term = gofast_taxonomy_category_allowed($term, $node);
-    } else if($vid === GOFAST_VID_CLASSIFICATION){
-      $allowed_term = TRUE;
-    }
-    
-    if($allowed_term) {
-      $localized_term = i18n_taxonomy_localize_terms($term);
-
-      if($vid === GOFAST_VID_CATEGORY && $localized_term->field_standard_gf[LANGUAGE_NONE][0]['value'] == 1){
-        $options_standard[] = array("id" => $localized_term->name, "text" => $localized_term->name, 'database_name' => $term->name);
+  global $user;
+  if($vid != GOFAST_VID_CLASSIFICATION){
+    // Fetch all first level terms to check if they have children
+    foreach(taxonomy_get_tree($vid, 0, 1, true) as $term){
+      $localized_term = i18n_object('taxonomy_term', $term)->localize($user->language);
+      if($vid == GOFAST_VID_CATEGORY){
+        $allowed_term = gofast_taxonomy_category_allowed($term, $node);
+        // Prevent showing term and it's children if not allowed in the space
+        if(!$allowed_term){
+          continue;
+        }
       }
-      else if ($vid === GOFAST_VID_CLASSIFICATION && $localized_term->field_classification_type[LANGUAGE_NONE][0]['tid']){
+      $children = taxonomy_get_children($term->tid);
+      // If the term is a parent term then process all children terms
+      if(!empty($children)){
+        $mapped_children = [];
+        foreach($children as $child_term){
+          if($vid == GOFAST_VID_CATEGORY){
+            $allowed_child_term = gofast_taxonomy_category_allowed($child_term, $node);
+            // Prevent showing specific term if not allowed in the space
+            if(!$allowed_child_term){
+              continue;
+            }
+          }
+          $localized_child_term = i18n_object('taxonomy_term', $child_term)->localize($user->language);
+          $mapped_children[$localized_child_term->name . rand()] = array("id" => $localized_child_term->name, "text" => $localized_child_term->name, 'database_name' => $child_term->name, 'tid' => $child_term->tid);
+        }
+        $term_group = array("text" => $localized_term->name, "children" => $mapped_children);
+        if($term->field_standard_gf[LANGUAGE_NONE][0]['value'] == 1){
+          $options_standard[] = $term_group;
+        } else {
+          $options[] = $term_group;
+        }
+
+      } else {
+        $options[] = array("id" => $localized_term->name, "text" => $localized_term->name, 'database_name' => $term->name, 'tid' => $term->tid);
+      }
+    }
+  } else {
+    foreach (taxonomy_term_load_multiple(FALSE, array('vid' => $vid)) as $term) {
+      $localized_term = i18n_object('taxonomy_term', $term)->localize($user->language);
+
+      if ($vid === GOFAST_VID_CLASSIFICATION && $localized_term->field_classification_type[LANGUAGE_NONE][0]['tid']){
         $type_tid = $localized_term->field_classification_type[LANGUAGE_NONE][0]['tid'];
         $type_term = taxonomy_term_load($type_tid);
         $localized_type_term = i18n_taxonomy_localize_terms($type_term);
@@ -1321,21 +1362,17 @@ function gofast_xeditable_vocabulary_to_select_items($vid, $node = null) {
             "database_name" =>  $term->name,
             "type" =>  $localized_type_term ? $localized_type_term->name : '',
             "weight" => $term->weight,
+            "tid" => $term->tid,
           ];
         }
-      }
-      else{
-        $options[] = array("id" => $localized_term->name, "text" => $localized_term->name, 'database_name' => $term->name);
       }
     }
   }
 
-  $options_standard_sorted = [];
   //Sort terms alphabetically
-  foreach($options_standard as $option_unsorted_value){
-    $options_standard_sorted[$option_unsorted_value['text'] . rand()] = $option_unsorted_value;
+  foreach($options_standard as &$option_unsorted_group){
+    ksort($option_unsorted_group["children"]);
   }
-  ksort($options_standard_sorted);
 
   //Sort terms alphabetically
   $options_sorted = array();
@@ -1344,13 +1381,12 @@ function gofast_xeditable_vocabulary_to_select_items($vid, $node = null) {
   }
   ksort($options_sorted);
 
+  $options = array_values($options_sorted);
   if($vid === GOFAST_VID_CATEGORY) {
-    unset($options);
-    $options[] = array('text' => t('Standard', array(), array('context' => 'gofast')) , 'children' => array_values($options_standard_sorted));
-    $options[] = array('text' => htmlspecialchars_decode(t("@site_name's categories", array('@site_name' => variable_get('site_name') ), array('context' => 'gofast'))) , 'children' => array_values($options_sorted));
-
+    $options = [...$options_standard, ['text' => htmlspecialchars_decode(t("@site_name's categories", array('@site_name' => variable_get('site_name') ), array('context' => 'gofast'))) , 'children' => $options]];;
   }
-  else if($vid === GOFAST_VID_CLASSIFICATION){
+
+  if($vid === GOFAST_VID_CLASSIFICATION){
     unset($options);
     $uniqueTypes = array();
     //Sort classification terms by weight
@@ -1368,9 +1404,6 @@ function gofast_xeditable_vocabulary_to_select_items($vid, $node = null) {
     foreach($uniqueTypes as $key => $ut){
       $options[] = array('text' => $key, 'children' => $ut['children']);
     }
-  }
-  else{
-    $options = array_values($options_sorted);
   }
 
   //If fields of user profile are emtpy, tags will be an array.
@@ -1465,11 +1498,8 @@ function gofast_xeditable_terms_get_from_array($vid, $list_terms, $create = TRUE
 
   $new_terms = array();
   foreach ($list_terms as $term) {
-     if($vid === GOFAST_VID_TAGS) {
-       $und_language_term = trim($term);
-     }else{
-       $und_language_term = trim(gofast_xeditable_translate_back($term, array(), 'en', 'taxonomy', $vid));
-     }
+    $und_language_term = trim($term);
+
     if (!in_array($und_language_term, $existing_terms_name, TRUE)) {
       if($term !== '' && $create) {
         $new_terms[] = gofast_taxonomy_vocabulary_add_term($vid, $term);
@@ -1586,12 +1616,26 @@ function gofast_xeditable_tag_autocomplete($print = true) {
   $exact_match = isset($_GET['exact_match']) ? trim($_GET['exact_match']) : '';
   $tags = isset($_GET['tags']) ? $_GET['tags'] : '';
   $vid = isset($_GET['vid']) ? $_GET['vid'] : GOFAST_VID_TAGS;
+  $filters = isset($_GET["filters"]) ? json_decode(base64_decode($_GET["filters"])) : [];
   $translate = isset($_GET['translate']) || isset($_POST['translate']);
 
   $query = db_select('taxonomy_term_data', 't')
           ->fields('t')
           ->condition('vid', $vid)
           ->range(0, 20);
+
+  if (!empty($filters)) {
+    foreach($filters as $i => $filter) {
+      $alias = "f$i";
+      $query->leftJoin("field_data_{$filter->field}", $alias, "$alias.entity_id = t.tid");
+      if ($filter->gid) {
+        $query->condition("{$alias}.{$filter->field}_value", $filter->gid, is_array($filter->gid) ? "IN" : "=");
+      }
+      if ($filter->bundle) {
+        $query->condition("{$alias}.{$filter->field}_value", $filter->bundle, is_array($filter->bundle) ? "IN" : "=");
+      }
+    }
+  }
 
   if ($translate) {
     global $user;

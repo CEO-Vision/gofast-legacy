@@ -55,9 +55,9 @@
       max-width: 100%;
     }
 
-    .mj-column-per-25 {
-      width: 25% !important;
-      max-width: 25%;
+    .mj-column-per-20 {
+      width: 20% !important;
+      max-width: 20%;
     }
 
     .mj-column-per-50 {
@@ -72,9 +72,9 @@
     max-width: 100%;
   }
 
-  .moz-text-html .mj-column-per-25 {
-    width: 25% !important;
-    max-width: 25%;
+  .moz-text-html .mj-column-per-20 {
+    width: 20% !important;
+    max-width: 20%;
   }
 
   .moz-text-html .mj-column-per-50 {
@@ -223,7 +223,7 @@
       <tr>
         <td style="direction:ltr;font-size:0px;padding:0;text-align:center;">
           <!--[if mso | IE]><table role="presentation" border="0" cellpadding="0" cellspacing="0"><tr><td class="" style="vertical-align:middle;width:248px;" ><![endif]-->
-          <div class="mj-column-per-25 mj-outlook-group-fix" style="font-size:0px;text-align:left;direction:ltr;display:inline-block;vertical-align:middle;width:100%;">
+          <div class="mj-column-per-20 mj-outlook-group-fix" style="font-size:0px;text-align:left;direction:ltr;display:inline-block;vertical-align:middle;width:20%;">
             <table border="0" cellpadding="0" cellspacing="0" role="presentation" style="vertical-align:middle;" width="100%">
               <tbody>
                 <tr>
@@ -253,7 +253,7 @@
             </table>
           </div>
           <!--[if mso | IE]></td><td class="" style="vertical-align:middle;width:248px;" ><![endif]-->
-          <div class="mj-column-per-25 mj-outlook-group-fix" style="font-size:0px;text-align:left;direction:ltr;display:inline-block;vertical-align:middle;width:100%;">
+          <div class="mj-column-per-20 mj-outlook-group-fix" style="font-size:0px;text-align:left;direction:ltr;display:inline-block;vertical-align:middle;width:20%;">
             <table border="0" cellpadding="0" cellspacing="0" role="presentation" style="vertical-align:middle;" width="100%">
               <tbody>
                 <tr>
@@ -283,7 +283,7 @@
             </table>
           </div>
           <!--[if mso | IE]></td><td class="" style="vertical-align:middle;width:248px;" ><![endif]-->
-          <div class="mj-column-per-25 mj-outlook-group-fix" style="font-size:0px;text-align:left;direction:ltr;display:inline-block;vertical-align:middle;width:100%;">
+          <div class="mj-column-per-20 mj-outlook-group-fix" style="font-size:0px;text-align:left;direction:ltr;display:inline-block;vertical-align:middle;width:20%;">
             <table border="0" cellpadding="0" cellspacing="0" role="presentation" style="vertical-align:middle;" width="100%">
               <tbody>
                 <tr>
@@ -313,7 +313,7 @@
             </table>
           </div>
           <!--[if mso | IE]></td><td style="vertical-align:middle;width:173px;" ><![endif]-->
-          <div class="mj-column-per-25 mj-outlook-group-fix" style="font-size:0px;text-align:left;direction:ltr;display:inline-block;vertical-align:middle;width:25%;">
+          <div class="mj-column-per-20 mj-outlook-group-fix" style="font-size:0px;text-align:left;direction:ltr;display:inline-block;vertical-align:middle;width:20%;">
             <table border="0" cellpadding="0" cellspacing="0" role="presentation" style="vertical-align:middle;" width="100%">
               <tbody>
                 <tr>
@@ -337,6 +337,36 @@
                 <tr>
                   <td align="center" style="font-size:0px;padding:3px;word-break:break-word;">
                     <div style="font-family:Poppins, Candara, Helvetica, Arial, sans-serif;font-size:14px;line-height:1;text-align:center;color:#666666;"><?= $conference_content["place"] ?: t("Online", array(), $l) ?></div>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <!--[if mso | IE]></td><td style="vertical-align:middle;width:173px;" ><![endif]-->
+          <div class="mj-column-per-20 mj-outlook-group-fix" style="font-size:0px;text-align:left;direction:ltr;display:inline-block;vertical-align:middle;width:20%;">
+            <table border="0" cellpadding="0" cellspacing="0" role="presentation" style="vertical-align:middle;" width="100%">
+              <tbody>
+                <tr>
+                  <td align="center" style="font-size:0px;padding:0;word-break:break-word;">
+                    <table border="0" cellpadding="0" cellspacing="0" role="presentation" style="border-collapse:collapse;border-spacing:0px;">
+                      <tbody>
+                        <tr>
+                          <td style="width:18px;">
+                            <img alt="<?= t("Repetition Icon", array(), $l) ?>" height="auto" src="<?= $base_url . '/' . drupal_get_path('module', 'gofast_mail_queue') . '/icon/' . 'repeat-solid-black.png' ?>" style="border:0;display:block;outline:none;text-decoration:none;height:auto;width:100%;font-size:13px;" width="18" />
+                          </td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </td>
+                </tr>
+                <tr>
+                  <td align="center" style="font-size:0px;padding:3px;word-break:break-word;">
+                    <div style="font-family:Poppins, Candara, Helvetica, Arial, sans-serif;font-size:14px;line-height:1;text-align:center;color:#000000;"><?= t("Repetition", [], $l) ?></div>
+                  </td>
+                </tr>
+                <tr>
+                  <td align="center" style="font-size:0px;padding:3px;word-break:break-word;">
+                    <div style="font-family:Poppins, Candara, Helvetica, Arial, sans-serif;font-size:14px;line-height:1;text-align:center;color:#666666;"><?= $conference_recurrence ? t('Repeats', [], $l): t('Never repeats', [], $l) ?></div>
                   </td>
                 </tr>
               </tbody>

@@ -105,7 +105,7 @@ $custom_logo = isset($custom_logo) ? file_create_url($custom_logo) . '?rand='. r
         <?php if ($article_homepage) : ?>
             // but we target the gid since it's the gid which is referred in the "book" element in the left menu
             Drupal.settings.gofast_selected_book = <?= $gid ?>;
-            Gofast.selectCurrentWikiArticle(false);
+            Gofast.sideFileBrowser.selectCurrentItem("book-browser", false);
         <?php endif; ?>
         // favorites block
         Gofast.og.getSpaceBookmarks("<?= $gid ?>");

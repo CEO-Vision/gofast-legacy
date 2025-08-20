@@ -1894,7 +1894,7 @@ fieldset[disabled] .datepicker table tr td span.active.disabled:hover.focus {
   margin-left: -5px;
   margin-right: -5px;
 }
-/*# sourceMappingURL=bootstrap-datepicker3.css.map */
+
 /*!
  * Timepicker Component for Twitter Bootstrap
  *
@@ -2912,7 +2912,7 @@ select.selectpicker {
   width: 100%;
   float: none;
 }
-/*# sourceMappingURL=bootstrap-select.css.map */
+
 /* ========================================================================
  * bootstrap-switch - v3.3.0
  * http://www.bootstrap-switch.org
@@ -15513,5 +15513,3 @@ readers do not read off random characters that represent icons */
 .tagify__dropdown__item:active {
   filter: brightness(105%);
 }
-
-/*# sourceMappingURL=plugins.bundle.css.map*/

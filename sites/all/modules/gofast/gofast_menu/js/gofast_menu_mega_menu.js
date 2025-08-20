@@ -1,22 +1,22 @@
-/* 
+/*
  * To change this license header, choose License Headers in Project Properties.
  * To change this template file, choose Tools | Templates
  * and open the template in the editor.
  */
 /**
  * Library JS to instanciate and manage special component for MENU.
- * 
+ *
  * This component required the following specific template to work
  * cf.
  * - gofast-menu-header-menu-item.tpl.php
  * - gofast_menu_menu_content.tpl.php
  * - gofast-menu-menu-item.tpl.php
- * 
+ *
  * ---------------------------------
  * see HOW TO USE in GOFAST-6891
- * 
+ *
  */
-var GFMegaMenu = function () {
+var GFMegaMenu = (function ($) {
 
     //Private propoerties
     var _menuElement;
@@ -83,13 +83,13 @@ var GFMegaMenu = function () {
 
         var elColumn = jQuery('div.gf-megamenu').find('li.menu-item:first');
         var columnWidth = parseInt(jQuery(elColumn).innerWidth());
-        
+
         if(! jQuery('#gf-megamenu-sidebar-left').hasClass('d-none')){
             currentWidth = currentWidth - 20 ;
         }
 
         if ((currentWidth + columnWidth) > maxWidth) {
-            
+
             //Get column to hide
             var columnToHide = jQuery('div.gf-megamenu').find('li:first').siblings(':visible:not(.gf-megamenu-sidebar):first');
             jQuery(columnToHide).hide();
@@ -101,7 +101,7 @@ var GFMegaMenu = function () {
              }, 400, function () {
              // Animation complete.
              });
-             
+
              var options = {
              'effect': 'slide',
              'easing': 'swing',
@@ -127,7 +127,7 @@ var GFMegaMenu = function () {
         var columnWidth = parseInt(jQuery(elColumn).innerWidth());
 
         if ((currentWidth - columnWidth) < maxWidth) {
-            
+
             //Get column to hide
             var firstVisibleColumn = jQuery('div.gf-megamenu').find('li:first').siblings(':visible:not(.gf-megamenu-sidebar):first');
             var columnToShow = jQuery(firstVisibleColumn).prev(':not(.gf-megamenu-sidebar)');
@@ -182,9 +182,9 @@ var GFMegaMenu = function () {
 
     var _showSideBar = function (side) {
         _log('_showSideBar END');
-        
+
         jQuery('#gf-megamenu-sidebar-' + side).removeClass('d-none');
-        
+
         _log('_showSideBar END');
     };
 
@@ -277,7 +277,7 @@ var GFMegaMenu = function () {
                 _loadSubMenu(item);
 
             } else {
-                _cleanSubMenus(submenu_container);  
+                _cleanSubMenus(submenu_container);
                 _hasSubMenu(item, function(item){
                     //has new submenu => load them
                     jQuery(item).addClass('menu-item-submenu');
@@ -295,7 +295,7 @@ var GFMegaMenu = function () {
     };
 
     var _hasSubMenu = function(item, callback){
-         
+
         //check if there is submenu
         var gid = jQuery(item).attr("data-gid");
         var params = {};
@@ -303,7 +303,7 @@ var GFMegaMenu = function () {
 
         _getSubMenus(url + '?gid=' + gid, params, function (data) {
             var frag = document.createRange().createContextualFragment(data);
-            if(jQuery(frag).find('span.menu-text').length > 0){                
+            if(jQuery(frag).find('span.menu-text').length > 0){
                 if(callback != null){
                     callback(item);
                 }
@@ -351,18 +351,18 @@ var GFMegaMenu = function () {
             _attachEvents(frag);
             jQuery(submenu_container).after(frag);
             jQuery('.gf-megamenu-empty').remove();
-            
+
             //load perfect scroll bar
-            jQuery('[data-scroll="true"]').each(function() { 
+            jQuery('[data-scroll="true"]').each(function() {
                 var el = jQuery(this);
-    
+
                 KTUtil.scrollInit(this, {
                     mobileNativeScroll: true,
                     handleWindowResize: true,
                     rememberPosition: (el.data('remember-position') == 'true' ? true : false)
                 });
             });
-            
+
         });
 
         _log('_loadSubMenu - END');
@@ -377,7 +377,7 @@ var GFMegaMenu = function () {
 
         $(menu_container).each(function () {
             this.addEventListener("mouseleave", _onMenuLeave, false);
-            
+
             //Required to by-pass Keen (KTMenu) default behaviours
             this.addEventListener("mouseout", _onMenuLeave, false);
         });
@@ -405,12 +405,12 @@ var GFMegaMenu = function () {
             $("#gf-topbar-menu .menu-submenu").on("mouseenter", () => {
                 var isSelectOpen = false;
                 // Don't close tab is select is still focused
-                $("#gofast_block_delta-gofast_workflows_light_dashboard-gofast_workflows select").each((i, el) => {
-                    if($(".gofast_wf_profil .gofastSelect2").eq(1).data("select2").isOpen()){
+                for(const selectElement of $(".gofast_wf_profil .gofastSelect2")) {
+                    if($(selectElement).data("select2")?.isOpen()){
                         isSelectOpen = true;
-                        return
+                        break;
                     }
-                })
+                }
                 if(!isSelectOpen){
                     window.GFTopbarMenu.pauseDropdownHoverTime = 0
                 }
@@ -466,7 +466,7 @@ var GFMegaMenu = function () {
 //        var sideBarRight = document.createElement("li");
 //        jQuery(sideBarRight).attr('id', 'gf-megamenu-sidebar-left');
 //        jQuery(sideBarRight).attr("class", "w-20px gf-megamenu-sidebar bg-secondary d-none");
-//        
+//
 //        var sideIconContainer = document.createElement("span");
 //        jQuery(sideIconContainer).attr("style", "align-items:center;");
 //        jQuery(sideIconContainer).attr("class", "h-100 d-inline-flex");
@@ -522,11 +522,11 @@ var GFMegaMenu = function () {
         },
         loadSubMenu: function(item){
             _loadSubMenu(item);
-            return _loadSubMenu;  
+            return _loadSubMenu;
         },
         cleanSubMenus: function(item){
             _cleanSubMenus(item.parent().parent());
-            return _cleanSubMenus;  
+            return _cleanSubMenus;
         },
         disableDebug: function () {
             _debug = false;
@@ -541,12 +541,7 @@ var GFMegaMenu = function () {
     };
 
 
-}();
-
-function test() {
-
-}
-
+})(jQuery);
 
 jQuery(document).ready(function () {
 

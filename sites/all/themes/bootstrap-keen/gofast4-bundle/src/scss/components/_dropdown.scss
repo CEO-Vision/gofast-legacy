@@ -38,7 +38,7 @@ overflow: scroll;
             top: inherit !important;
             bottom: -1.25rem;
             &.dropleft {
-                left: calc(-100% - .8rem);
+                left: -100%;
             }
         }
     }

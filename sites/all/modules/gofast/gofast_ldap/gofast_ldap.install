@@ -47,11 +47,6 @@ function gofast_ldap_fields(){
       'element' => 'text::textfield',
     ),
     array(
-      'field_name' => 'ldap_user_o',
-      'label' => t('Entity', array(), array('context' => 'gofast')),
-      'element' => 'text::textfield',
-    ),
-    array(
       'field_name' => 'ldap_user_telephonenumber',
       'label' => t('Phone number', array(), array('context' => 'gofast')),
       'element' => 'text::textfield',
@@ -260,6 +255,121 @@ function gofast_ldap_fields_create() {
   }
 
 function gofast_ldap_update_7401() {
+  module_load_include('inc', 'gofast_ldap', 'gofast_ldap.fields');
+  gofast_ldap_fields_set_default_values();
+}
+
+/** Migrate legacy plain text field ldap_user_o to taxonomy field field_entity */
+function gofast_ldap_update_7402() {
+  set_time_limit(0);
+  watchdog("gofast_ldap", "Running hook_update gofast_ldap_update_7402", [], WATCHDOG_INFO);
+  $user_entities = db_select("field_data_ldap_user_o", "o")
+    ->fields("o", ["ldap_user_o_value", "entity_id"])
+    ->execute()->fetchAll();
+  foreach ($user_entities as $user_entity) {
+    watchdog("gofast_ldap", "Migrating entity field for user " . $user_entity->entity_id, [], WATCHDOG_INFO);
+    $account = user_load($user_entity->entity_id);
+    if (!$account) {
+      watchdog("gofast_ldap", "User " . $user_entity->entity_id . " doesn't exist anymore: will skip", [], WATCHDOG_WARNING);
+      continue;
+    }
+    // Don't take the risk to add an enttiy before being sure the attached user actually exists
+    $entity = gofast_taxonomy_get_or_add_term(GOFAST_VID_ENTITY, $user_entity->ldap_user_o_value);
+    $account->field_entity[LANGUAGE_NONE][0]["tid"] = $entity->tid;
+    user_save($account);
+  }
+}
+
+/**
+ * Update Drupal/LDAP mappings for field_entity.
+ */
+function gofast_ldap_update_7403() {
+  $ldap_user_conf = variable_get("ldap_user_conf");
+  $ldap_user_conf["ldapUserSynchMappings"][2]["[o]"] = [
+    'ldap_attr' => '[o]',
+    'user_attr' => '[taxonomy.field_entity]',
+    'convert' => 0,
+    'direction' => '2',
+    'user_tokens' => '',
+    'config_module' => 'ldap_user',
+    'prov_module' => 'ldap_user',
+    'enabled' => 1,
+    'prov_events' => [
+      0 => 4,
+      1 => 3,
+    ],
+  ];
+  variable_set("ldap_user_conf", $ldap_user_conf);
+}
+
+/**
+ * Add the GROUPMANAGER permission control group to ldap and to matching Alfresco spaces as well.
+ */
+function gofast_ldap_update_7404() {
+  set_time_limit(0);
+  ini_set("memory_limit", -1);
+  // This permission exists in group, extranet and organisation spaces
+  // We also get all needed information upfront to avoid costly node loads
+  $query = db_select("node", "n")
+    ->fields("n", ["nid"])
+    ->fields("dn", ["field_ldap_group_dn_value"])
+    ->fields("ref", ["field_folder_reference_value"]);
+  $query->innerJoin("field_data_field_ldap_group_dn", "dn", "dn.entity_id=n.nid");
+  $query->innerJoin("field_data_field_folder_reference", "ref", "ref.entity_id=n.nid");
+  $query->condition("n.type", ["group", "organisation", "extranet"], "IN");
+  $target_nodes = $query->execute()->fetchAll();
+
+  $root_spaces_gids = [GOFAST_CMIS_LOCATIONS_FIELD_GROUPS_GID, GOFAST_CMIS_LOCATIONS_FIELD_ORGANISATIONS_GID, GOFAST_CMIS_LOCATIONS_FIELD_EXTRANET_GID];
+  $LdapServer = gofast_ldap_server_load(GOFAST_LDAP_INT_SERVER);
+  $role_suffix = "GROUPMANAGER";
+  foreach($target_nodes as $node) {
+    // Set the correct value for common name and domain name
+    $cn = "_#{$node->nid}";
+    $space_role_dn = "cn={$cn}_{$role_suffix},{$node->field_ldap_group_dn_value}";
+    $attributes['ou'] = "ROLE_{$role_suffix}";
+    // Create the LDAP group
+    $LdapServer->groupAddGroup($space_role_dn, $attributes);
+    // Call our webservice to add alfresco_side
+    $space_type = in_array($node->nid, $root_spaces_gids) ? "root_space" : "";
+    $ch = curl_init();
+    curl_setopt($ch, CURLOPT_HEADER, 0);
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, 1);
+    curl_setopt($ch, CURLOPT_USERPWD, 'admin:' . gofast_get_admin_pwd());
+    $url = "http://localhost:8080/alfresco/service/set/subfolder/permission/?nodeRef=" .  $node->field_folder_reference_value . "&unique_name=" . rawurlencode($cn) . "&node_type=" . $space_type;
+    curl_setopt($ch, CURLOPT_URL, $url);
+    curl_setopt($ch, CURLOPT_TIMEOUT, 5);
+  
+    $buffer = curl_exec($ch);
+    $buf = strip_tags($buffer);
+    $result = json_decode($buf);
+    // Log if permissions weren't succesfully added
+    if (!$result->permissions) {
+      watchdog("gofast_ldap", "Could not create the GROUPMANAGER permission control group for space with nid {$node->nid} and alfresco reference {$node->field_folder_reference_value}", [], WATCHDOG_ERROR);
+    }
+  }
+}
+
+/**
+ * Make sure searchPageSize is set to 10000 in LDAP servers configuration.
+ */
+function gofast_ldap_update_7405() {
+  $sids = [GOFAST_LDAP_INT_SERVER, GOFAST_LDAP_EXT_SERVER];
+  foreach($sids as $sid) {
+    $exists = !empty(db_select("ldap_servers", "l")->fields("l", ["sid"])->condition("sid", $sid)->execute()->fetchCol());
+    if (!$exists) {
+      continue;
+    }
+    db_update("ldap_servers")
+      ->fields(["search_page_size" => 10000])
+      ->condition("sid", $sid)
+      ->execute();
+  }
+}
+
+/**
+ * Set again ldap fields default values to make sure they are not null.
+ */
+function gofast_ldap_update_7406() {
   module_load_include('inc', 'gofast_ldap', 'gofast_ldap.fields');
   gofast_ldap_fields_set_default_values();
 }

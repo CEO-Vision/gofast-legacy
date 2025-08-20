@@ -391,6 +391,9 @@ a[id^="file_browser_full_tree_element_"].curSelectedNode{
   color:#20c997 !important;
 }
 
+.ztreeFa.webform{
+  color: brown !important;
+}
 
 .ztree li span.button.center_close::before, .ztree li span.button.bottom_close::before{
   content: "\f054";

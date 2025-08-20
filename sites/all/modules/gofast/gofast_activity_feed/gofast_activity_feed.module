@@ -740,37 +740,29 @@ function gofast_activity_feed_fill_fields($items = array()){
         $spaces_list_popup = '';
         $count = 1;
         $count_more = 0;
-        foreach($node->og_group_content_ref[LANGUAGE_NONE] as $group){
-          $gid = $group['target_id'];
+        $gids = array_map(function($group) {
+          return $group["target_id"];
+        }, $node->og_group_content_ref[LANGUAGE_NONE]);
+
+        $display_count = 2;
+        foreach($gids as $index => $gid){
+          if($index >= $display_count){
+            continue;
+          }
           $space_node = node_load($gid);
           $space_path = str_replace("/Sites", "",gofast_cmis_space_get_webdav_path($gid));
-          $space_has_parent = gofast_og_get_parent($space_node);
           $group_node_title = gofast_get_node_title($gid);
+          $space_has_parent = gofast_og_get_parent($space_node);
           if($space_has_parent){
             $group_node_title = ".../{$group_node_title}";
           }
-          $group_icon = gofast_taxonomy_icon_filename($space_node->field_format[LANGUAGE_NONE][0]['tid']);
-
-          $node_access = (og_get_membership('node', $gid, 'user', $user->uid) != FALSE) || gofast_userlist_og_is_user_member_of_space($gid) ||$user->uid === 1;
-          if($count < 3){
-            //Access is bypassed for user 1/Admin
-            if($node_access){
-                $count ++;
-                $spaces_list .= "<a href=/node/" . $gid . " title='" . $space_path . "' >" . $group_node_title . "</a><br>";
-                $spaces_list_popup .= "<li class='navi-item'><a href=/node/" . $gid . " title='" . $space_path . "' class='navi-link'><span class='navi-icon'><i class='fas " . $group_icon . "'></i></span><span class='navi-text'>" . $group_node_title . "</span></a></li>";
-            }
-          }else{
-            //Access is bypassed for user 1/Admin
-            if($node_access){
-                $count_more ++;
-                $spaces_list_popup .= "<li class='navi-item'><a href=/node/" . $gid . " title='" . $space_path . "' class='navi-link'><span class='navi-icon'><i class='fas " . $group_icon . "'></i></span><span class='navi-text'>" . $group_node_title . "</span></a></li>";
-            }
-          }
+          $spaces_list .= "<a href=/node/" . $gid . " title='" . $space_path . "' >" . $group_node_title . "</a><br>";
         }
 
-        if($count_more > 0){
-            $button_text = $count_more . " " . t("more", array(), array("context" => "gofast:gofast_activity_feed")) . "...";
-            $spaces_list .= theme('gofast_activity_table_more_spaces', array('popover_content' => $spaces_list_popup, 'button_text' => $button_text));
+        $_GET["gids"] = $gids;
+        $_GET["display_count"] = $display_count;
+        if(count($gids) > $display_count){
+          $spaces_list .= gofast_get_show_more_space_template($gids);
         }
         $items[$key]->spaces_list = $spaces_list;
       }

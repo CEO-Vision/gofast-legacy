@@ -897,7 +897,6 @@
   return Tooltip;
 
 })));
-//# sourceMappingURL=tooltip.js.map
 
 
 /***/ }),
@@ -1099,7 +1098,6 @@
   return Util;
 
 })));
-//# sourceMappingURL=util.js.map
 
 
 /***/ }),
@@ -12488,7 +12486,6 @@ Popper.placements = placements;
 Popper.Defaults = Defaults;
 
 /* harmony default export */ const __WEBPACK_DEFAULT_EXPORT__ = (Popper);
-//# sourceMappingURL=popper.js.map
 
 
 /***/ }),
@@ -12589,4 +12586,3 @@ __webpack_require__(/*! ./jstree.scss */ "./webpack/plugins/custom/jstree/jstree
 
 /******/ })()
 ;
-//# sourceMappingURL=jstree.bundle.js.map

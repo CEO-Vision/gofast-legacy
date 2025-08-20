@@ -1,23 +1,27 @@
 <?php
 $items_count = count($nodes_description);
 ?>
-
-
-<h3> <?= format_plural($items_count, t("Are you sure you want to compress the following item?", [], ["context" => "gofast:ajax_file_browser"]), t("Are you sure you want to compress the following items?", [], ["context" => "gofast:ajax_file_browser"]), [], ["context" => "gofast:ajax_file_browser"]) ?></h3>
-
-
-<?php foreach ($nodes_description as $index => $node_description) :
-    $locations_string = implode("", array_map(function($loc) {
-        return "<ul class='list-group'>" . str_replace("/Sites", "", $loc) . "</ul>";
-    }, $node_description->locations));
-    $is_templates = $node_description->title == "TEMPLATES";
-    ?>
-    <div style="width: max-content;" class="my-2" <?php if (count($node_description->locations) > 1) : ?>data-toggle="tooltip" data-html="true" data-trigger="hover" data-placement="bottom" title="<li class='border-0 list-group-item'><?= $locations_string ?></li>" <?php endif; ?> <?php if (!empty($node_description->children)) : ?> type="button" data-toggle="collapse" data-target="#removableContent<?=$index?>" <?php endif; ?>>
-        <div class="d-flex align-items-center">
-            <i class="fa-2x <?= $node_description->icon ?>" <?= $is_templates ? "style=\"color: #F0685A !important;\"" : "" ?>></i>
-            &nbsp;<span class="font-size-lg"><?= $node_description->title ?></span>
-            <?php if (count($node_description->locations) > 1) : ?>&nbsp;<i class="fa fa-question-circle"></i><?php endif;?>
-        </div>
+<div class="d-flex flex-column h-100">
+  <h3> <?= format_plural($items_count, "Are you sure you want to compress the following item ?", "Are you sure you want to compress the following items ?", array(), array("context" => "gofast:ajax_file_browser")) ?></h3>
+    <div class="d-flex flex-column flex-wrap flex-grow-1" style="height: 0%;">
+        <?php foreach ($nodes_description as $index => $node_description) : ?>
+          <?php
+            $locations_string = implode("", array_map(function($loc) {
+                return "<ul class='list-group'>" . str_replace("/Sites", "", $loc) . "</ul>";
+            }, $node_description->locations));
+            $is_templates = $node_description->title == "TEMPLATES";
+          ?>
+            <div class="my-2" 
+              <?php if (count($node_description->locations) > 1) : ?>
+                data-toggle="tooltip" data-html="true" data-trigger="hover" data-placement="bottom" title="<li class='border-0 list-group-item'><?= $locations_string ?></li>" 
+              <?php elseif (!empty($node_description->children)) : ?> 
+                type="button" data-toggle="collapse" data-target="#removableContent<?= $index ?>" 
+              <?php endif; ?>>
+                <div class="d-flex align-items-center">
+                    <i class="fa-2x <?= $node_description->icon ?>" <?= $is_templates ? 'style="color: #F0685A !important;"' : '' ?>></i>
+                    &nbsp;<span class="font-size-lg"><?= $node_description->title ?></span>
+                    <?php if (count($node_description->locations) > 1) : ?>&nbsp;<i class="fa fa-question-circle"></i><?php endif;?>
+                </div>
         <?php if (!empty($node_description->children)) : ?>
         <div class="collapse" id="removableContent<?=$index?>">
             <div class="font-weight-bold">
@@ -32,9 +36,15 @@ $items_count = count($nodes_description);
                 </div>
             <?php endforeach; ?>
         </div>
-        <?php endif; ?>
+                <?php endif; ?>
+            </div>
+        <?php endforeach; ?>
     </div>
-<?php endforeach; ?>
+  <div>
+    <span><?= t("Type here the name of the zip file :", array(), array("context" => "gofast:gofast_ajax_file_browser")) ?></span>
+    <input id="zip-target-folder-input" type="text" class="w-100 form-control" value="<?= $zip_file_name; ?>">
+  </div>
+</div>
 
 <script>
     jQuery(document).ready(function() {

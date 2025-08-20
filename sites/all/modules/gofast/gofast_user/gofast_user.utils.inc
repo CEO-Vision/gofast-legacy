@@ -54,14 +54,14 @@ function gofast_user_is_business_admin($account = NULL, $uid = NULL)
 }
 
 /**
- * Checks whether a user is a manager or not.
+ * Checks whether a user is a site manager or not.
  *
  * @param object|null $account (optional)
  *  A user account. Defaults to the current user.
  * @return boolean
  *  TRUE if the user is an administrator, FALSE otherwise.
  */
-function gofast_user_is_manager($account = NULL)
+function gofast_user_is_site_manager($account = NULL)
 {
   return gofast_user_has_role(GOFAST_ROLE_MANAGER, $account);
 }
@@ -249,18 +249,23 @@ function gofast_user_create($name, $role_name = GOFAST_ROLE_CONTRIBUTOR, array $
     'ldap_user_manager' => array(),
     'ldap_user_ou' => array(), // gid, won't replace GOFAST_OG_USER_MEMBERSHIP_FIELD
     'ldap_user_title' => array(),
-    'ldap_user_o' => array(),
+    'field_entity' => array(),
     'ldap_user_telephonenumber' => array(),
     'ldap_user_mobile' => array(),
     'ldap_user_departmentnumber' => array(),
     'ldap_user_description' => array(),
     'ldap_user_mobile' => array()
   );
+  $taxonomies = ["field_entity"];
 
   $options += $field_defaults;
   foreach ($field_defaults as $fieldname => $default) {
+    $column = "value";
+    if (in_array($fieldname, $taxonomies)) {
+      $column = "tid";
+    }
     !empty($options[$fieldname]) && is_scalar($options[$fieldname])
-      && ($options[$fieldname] = array(LANGUAGE_NONE => array(array('value' => $options[$fieldname]))));
+      && ($options[$fieldname] = array(LANGUAGE_NONE => array(array($column => $options[$fieldname]))));
   }
 
   // Register user in its ou if needed.
@@ -479,7 +484,7 @@ function gofast_user_get_request_actions($account, $include_subscription = TRUE,
     }
     if (empty($user_between_account_relationships)) {
       $actions[] = theme('gofast_link_generic', array(
-        'icon_class' => "fas fa-users",
+        'icon_class' => "fas fa-people-arrows",
         'href' => "/modal/nojs/relationship/$account->uid/request",
         'link_class' => 'ctools-use-modal',
         'text' => t('New relationship', array(), array('context' => 'gofast'))
@@ -491,7 +496,7 @@ function gofast_user_get_request_actions($account, $include_subscription = TRUE,
       if ($requestee_id === $user->uid) {
         if (reset($user_between_account_relationships)->approved == 1) {
           $actions[] = theme('gofast_link_generic', array(
-            'icon_class' => "fas fa-users",
+            'icon_class' => "fas fa-people-arrows",
             'href' => "/modal/nojs/user/$requester_id/relationships/$rid/remove",
             'link_class' => 'ctools-use-modal',
             'text' => t('Remove relationship', array(), array('context' => 'gofast'))
@@ -1063,9 +1068,27 @@ function gofast_user_get_and_order_profile_options() {
   return $options;
 }
 
-function gofast_user_queue_get_active_users_count(){
-  $query = db_select("users", "u");
-  $query->condition("status", 1);
+function gofast_user_get_active_users_count($type="all"){
+  // get all active users
+  if ($type == "all"){
+    $query = db_select("users", "u");
+    $query->condition("status", 1);
+  // get all active and internal users
+  }elseif ($type == "internal"){
+    $query = db_select("users", "u");
+    $query->join("field_data_is_extranet", "f", "u.uid = f.entity_id");
+    $query->condition("u.status", 1, "=");
+    $query->condition("f.is_extranet_value", 0, "=");
+  // get all active and extranet users
+  }elseif ($type == "extranet"){
+    $query = db_select("users", "u");
+    $query->join("field_data_is_extranet", "f", "u.uid = f.entity_id");
+    $query->condition("u.status", 1, "=");
+    $query->condition("f.is_extranet_value", 1, "=");
+  }else{ 
+    return FALSE;
+  }
+  $query->condition("u.uid", 1, "<>"); // ensure we do not take 'admin' user
   $count = $query->countQuery()->execute()->fetchField();
   return $count;
 }

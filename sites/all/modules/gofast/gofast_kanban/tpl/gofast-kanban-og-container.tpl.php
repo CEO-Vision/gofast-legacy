@@ -4,10 +4,9 @@ if ($node->type != 'kanban'){
 }else{
   $kanban_id = $node->nid;
 }
-
- ?>
-<div class="mx-4 mb-4 mt-0">
-    <div  class="container">
+?>
+<div class="mb-4 mt-0">
+    <div  class="container-fluid px-4">
         <div class="row">
             <div class="col">
                 <div class="input-icon">
@@ -16,6 +15,16 @@ if ($node->type != 'kanban'){
                         <i class="fas fa-search text-muted"></i>
                     </span>
                 </div>
+            </div>
+            <div class="col d-flex">
+              <div id="gofastKanbanTagQuery" class="flex-grow-1" data-vid="<?= GOFAST_VID_TAGS ?>" data-filters="<?= base64_encode(json_encode([["field" => "field_tags_gid", "gid" => $node->nid]]))?>" data-mode="mix" >
+                </div>
+                <span title="<?= t("Activate to keep only cards with all selected tags", [], ["context" => "gofast:gofast_kanban"]) ?>" data-toggle="tooltip" data-placement="auto" class="switch switch-sm switch-icon gofast-switch-icon ml-2">
+                    <label>
+                        <input type="checkbox" name="gofast-kanban-tag-query-checkbox" />
+                        <span></span>
+                    </label>
+                </span>
             </div>
             <?php $detect = new Mobile_Detect;?>
             <?php if( ! $detect->isMobile()) : ?>
@@ -45,7 +54,7 @@ if ($node->type != 'kanban'){
 </div> 
 
 
-<div class="w-100 position-relative" id="gofastKanban" data-parent-tab="ogkanban" data-gid="<?php echo $node->nid ?>" data-kid="<?php echo $kanban_id ?>" style="height: 90% /*!important;*/">
+<div class="w-100 position-relative" id="gofastKanban" data-parent-tab="ogkanban" data-gid="<?php echo $node->nid ?>" data-kid="<?php echo $kanban_id ?>" data-vid="<?php echo GOFAST_VID_TAGS ?>" style="height: 90% /*!important;*/">
     <div class="spinner gofastSpinner spinner-primary spinner-lg position-absolute fade show " style="top: 50%; left: 50%;"></div>
     <div id="goKanban" class="gofastKanban__kanban fade overflow-auto h-100"></div>
 </div>

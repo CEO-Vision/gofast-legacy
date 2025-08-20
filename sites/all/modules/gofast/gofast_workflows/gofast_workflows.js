@@ -61,42 +61,8 @@ Drupal.gofast_workflows.hideWFDocs = function(elt){
    $(elt).parent().find('#wf_multiple_docs_'+nid).css('display', "none");
  }
 
-        /*
- *
- * FONCTION TASK WORKFLOW
- *
- */
 
- Drupal.gofast_workflows.ceo_vision_js_automatic_reload_dashboard = function(){
-
-        $(".ctools-close-modal:not(.processed)").click(function(){
-                   Drupal.gofast_workflows._ceo_vision_js_automatic_reload_dashboard()
-         }).addClass('processed');
-
-      //$("#modal-content").css("background-image", "url('/drupal/sites/default/files/user-wallpaper-1424637025.png')");
- }
-
-Drupal.gofast_workflows._ceo_vision_js_automatic_reload_dashboard = function(){
-   return;
-    if($("#gofast_block_delta-gofast_workflows_light_dashboard-gofast_workflows").size() != 0){
-                    $.ajax({
-                      url:"/workflow/rapiddashboard?async=true",
-                      type: "GET",
-                      dataType:'html',
-                      success:function(response){
-                              $("#gofast_block_delta-gofast_workflows_light_dashboard-gofast_workflows .gofast-block-outer").html(response);
-                              //gofast.workflow.workflow_bloc.needRefresh = true;
-                             // gofast.workflow.workflow_document_bloc.needRefresh = true;
-                              Drupal.attachBehaviors($(".gofast-block-outer"));
-                      }
-                    });
-    }
- }
-
-
-
-
- Drupal.gofast_workflows.ceo_vision_js_process_pageflow = function (processName, processVersion, processId, taskId){
+Drupal.gofast_workflows.ceo_vision_js_process_pageflow = function (processName, processVersion, processId, taskId){
      if(processName == "bdm"){
          var prefix_url = '/bonita/portal/resource/app/GoFAST/historyBdm/content/?persistenceId=';
          var iframe = '<iframe src="'+prefix_url+processId+'&locale='+ Gofast.get("user").language +'&app=GoFAST" id="bonita_form" style="width:100%;height:550px;border:none;"></iframe>';
@@ -113,23 +79,15 @@ Drupal.gofast_workflows._ceo_vision_js_automatic_reload_dashboard = function(){
             var prefix_url = '/bonita/portal/resource/processInstance/';
             var iframe = '<iframe src="'+prefix_url+processName+'/'+processVersion+'/content?id='+processId+'&locale='+ Gofast.get("user").language +'" id="bonita_form" style="width:100%;height:550px;border:none;"></iframe>';
       }
-        /* if(Drupal.settings.isEssential){
-             jQuery("#bonita_form_process").prop("src", $(iframe).attr("src"));
-             Gofast.removeLoading();
-            jQuery("#refresh-pagedashboard").removeClass("gofast_display_none");
-         }else{ */
-            Gofast.modal(iframe, Drupal.t("Process resume" , {}, {'context' : 'gofast:gofast_workflows'}));
-        // }
-        Drupal.gofast_workflows.ceo_vision_js_automatic_reload_dashboard();
-
- }
+        Gofast.modal(iframe, Drupal.t("Process resume" , {}, {'context' : 'gofast:gofast_workflows'}));
+}
 
 Drupal.gofast_workflows.ceo_vision_js_delete_task = function(TaskId){
     var sentence_confirmation = Drupal.t("Are you sure you want to remove this process?", {}, {'context' : 'gofast:gofast_workflows'});
     var html_content = sentence_confirmation+"<br /><br /><input class='btn btn-sm btn-success' type='button' onClick='Drupal.gofast_workflows.ceo_vision_js_delete_task_execute(\""+TaskId+"\");' value='"+Drupal.t('Validate', {}, {'context' : 'gofast:gofast_workflow'})+"'/>";
       //gofast_modal(html_content, Drupal.t("Delete the process", {}, {'context' : 'gofast:gofast_workflows'}));
       Gofast.modal(html_content, Drupal.t("Delete the process" , {}, {'context' : 'gofast:gofast_workflows'}));
- }
+}
 
 Drupal.gofast_workflows.ceo_vision_js_delete_task_execute = function(TaskId){
 
@@ -144,7 +102,7 @@ Drupal.gofast_workflows.ceo_vision_js_delete_task_execute = function(TaskId){
                    location.reload();
                }
              })
- }
+}
 
 
 Drupal.gofast_workflows.ceo_vision_js_comment_create = function(ProcessId){
@@ -160,28 +118,15 @@ Drupal.gofast_workflows.ceo_vision_js_comment_create = function(ProcessId){
                    Drupal.CTools.Modal.dismiss();
                }
              })
-
-
- }
-
-Drupal.behaviors.bonita  = {
-
-     attach: function(context) {
-        /*if(typeof Drupal.settings.gofast_workflows != "undefined"){
-            Drupal.gofast_workflows.ceo_vision_js_login(Drupal.settings.gofast_workflows.bonita_username, null);
-        }*/
-    }
-
 }
 
 Drupal.behaviors.changeWfButonHrefDocument = {
     attach: function (context) {
-        $('.GofastNode [id^=wf-process-]:not(.processed)').addClass("processed").change(function () {
+        $('.GofastNode .wf-process-select:not(.wf-processed)').addClass("wf-processed").change(function () {
             
-            var id_select = this.id;
-            var process_id = id_select.replace('wf-process-', '');
+            var process_id = $(this).attr("data-process-id");
             var profil_id = this.value;
-            var name_profil = $("#" + id_select +" option:selected").text();
+            var name_profil = $(this).find("option:selected").text();
             var onClickStr = $(".GofastNode .btn-process-startit-" + process_id).attr("onclick");
 
             var startIndexEdit = onClickStr.lastIndexOf(',', onClickStr.lastIndexOf(',') - 1); // start index
@@ -226,6 +171,10 @@ Drupal.behaviors.changeWfButonHrefDocument = {
             
             jQuery(".GofastNode .btn-process-editmodel-" + process_id).each(function () {
                 onClickStr = $(this).attr("onclick");
+                // Prevent js error on default model that don't have onclick event
+                if(onClickStr == undefined){
+                  return;
+                }
                 var startIndex = onClickStr.lastIndexOf(",") + 1;  // start index
                 var endIndex = onClickStr.lastIndexOf(")"); // end index
                 var preStr = onClickStr.substring(0, startIndex);
@@ -240,12 +189,11 @@ Drupal.behaviors.changeWfButonHrefDocument = {
 
 Drupal.behaviors.changeWfButonHref = {
     attach: function (context) {
-        $('[id^=wf-process-]:not(.processed)').addClass("processed").change(function () {
+        $('.wf-process-select:not(.wf-processed)').addClass("wf-processed").change(function () {
             
-            var id_select = this.id;
-            var process_id = id_select.replace('wf-process-', '');
+            var process_id = $(this).attr("data-process-id");
             var profil_id = this.value;
-            var name_profil = $("#" + id_select +" option:selected").text();
+            var name_profil = $(this).find("option:selected").text();
             var onClickStr = $(".btn-process-startit-" + process_id).attr("onclick");
 
             var startIndexEdit = onClickStr.lastIndexOf(',', onClickStr.lastIndexOf(',') - 1); // start index
@@ -291,6 +239,10 @@ Drupal.behaviors.changeWfButonHref = {
             
             jQuery(".btn-process-editmodel-" + process_id).each(function () {
                 onClickStr = $(this).attr("onclick");
+                // Prevent js error on default model that don't have onclick event
+                if(onClickStr == undefined){
+                  return;
+                }
                 var startIndex = onClickStr.lastIndexOf(",") + 1;  // start index
                 var endIndex = onClickStr.lastIndexOf(")"); // end index
                 var preStr = onClickStr.substring(0, startIndex);
@@ -374,9 +326,9 @@ Drupal.gofast_workflows.ceo_vision_js_check_login = function(callback){
                    }
                 }
         });
- }
+}
 
- Gofast.get_bonita_token = function () {
+Gofast.get_bonita_token = function () {
     var token;
     if(typeof Drupal.settings.gofast === "undefined"){ //GOFAST-3374
       return false;
@@ -394,8 +346,7 @@ Drupal.gofast_workflows.ceo_vision_js_check_login = function(callback){
                Gofast.bonita_token = content.replace(/ /g,'').replace(/\n/g, '');
             }
           });
-       //return password;
-  };
+};
 
 Drupal.gofast_workflows.ceo_vision_js_login = function(myusername, mypassword, callback){
         if(typeof Drupal.settings.pass_reset != "undefined" || typeof Drupal.settings.bonita_authentification_problem != "undefined"){
@@ -441,11 +392,9 @@ Drupal.gofast_workflows.ceo_vision_js_login = function(myusername, mypassword, c
 
              }, 500); // check every 500ms
             }
- }
+}
 
-
-
- Drupal.gofast_workflows.ceo_vision_js_task_doit = function(taskID, processName, userID, taskName, force_assign, modal = true){
+Drupal.gofast_workflows.ceo_vision_js_task_doit = function(taskID, processName, userID, taskName, force_assign, modal = true){
             if (typeof force_assign === 'undefined') {
                 force_assign = "false";
             }
@@ -558,9 +507,9 @@ Drupal.gofast_workflows.ceo_vision_js_login = function(myusername, mypassword, c
                 }
 
              }, 2000);
- }
+}
 
- Drupal.gofast_workflows.ceo_vision_js_task_delegate = function(caseId, taskId, processName, taskName){
+Drupal.gofast_workflows.ceo_vision_js_task_delegate = function(caseId, taskId, processName, taskName){
     Drupal.gofast_workflows.ceo_vision_js_check_login(function(){
         let iframeWidth = "100%"
         if(Gofast.isMobile()){
@@ -570,9 +519,9 @@ Drupal.gofast_workflows.ceo_vision_js_login = function(myusername, mypassword, c
         var iframe = '<div style="padding:0px;height:100%;"><iframe src="' + iframeUrl + '" id="bonita_form" style="width:'+iframeWidth+';height:100%;min-height:550px;border:none;float:left;"></iframe></div>';                     
         Gofast.modal(iframe, Drupal.t("Delegate the task @task", {'@task': taskName}, {'context' : 'gofast:gofast_workflows'}), { allowStretch: true });
     });
- }
+}
 
- Drupal.gofast_workflows.check_documents_tasks_after_async = function(){
+Drupal.gofast_workflows.check_documents_tasks_after_async = function(){
     var checkExistsDocumentTasksList = setInterval(function() {
         if (jQuery("#lightDashboardDocumentMy #bonita_form_process").contents().find(".gofast_workflows_title_task_doit .fa-play").length) {
            clearInterval(checkExistsDocumentTasksList);
@@ -587,28 +536,7 @@ Drupal.gofast_workflows.ceo_vision_js_login = function(myusername, mypassword, c
   }, 500);
 };
 
- /*Drupal.gofast_workflows.ceo_vision_js_process_pageflow = function(processName, processVersion, processId, taskId){
-        if(taskId == ""){
-            var task_parameter = '';
-            var recap = "&recap=true";
-        }else{
-            var task_parameter = '&task='+taskId;
-            var recap = "";
-        }
-        //si c'est safari l'url est legerement differente car sinon bug... :-(
-       if($.browser.safari){
-           var prefix_url = '/bonita/portal/homepage';
-       }else{
-           var prefix_url = '/bonita';
-       }
-        var iframe = '<div style="padding:20px;"><iframe src="'+prefix_url+'?ui=form&locale=fr#form='+processName+'--'+processVersion+'$recap&mode=form&instance='+processId+task_parameter+recap+'" id="bonita_form" style="width:550px;height:550px;border:none;"></iframe></div>';
-        gofastAddLoading();
-        gofast_modal(iframe, Drupal.t("Process resume"));
-        ceo_vision_js_automatic_reload_dashboard();
-
- }*/
-
- Drupal.gofast_workflows.ceo_vision_js_process_startit = function(processID, processName, reference, reference_liste,action_profil , profil_id){
+Drupal.gofast_workflows.ceo_vision_js_process_startit = function(processID, processName, reference, reference_liste,action_profil , profil_id){
      Gofast.addLoading();
 
      Drupal.gofast_workflows.ceo_vision_js_check_login(function(){
@@ -637,20 +565,19 @@ Drupal.gofast_workflows.ceo_vision_js_login = function(myusername, mypassword, c
 
         Gofast.modal(iframe, title_modal, { allowStretch: true });
 
-        Drupal.gofast_workflows.ceo_vision_js_automatic_reload_dashboard();
         $('#modalBackdrop').remove();
      });
- }
+}
 
-  Drupal.gofast_workflows.ceo_vision_js_process_viewit = function(processID, processName){
+Drupal.gofast_workflows.ceo_vision_js_process_viewit = function(processID, processName){
     $.ajax({
-               url:"/workflow/api/process/getgraph/"+processID+"/"+processName+"",
-               type: "GET",
-               dataType:'html',
-               success:function(response){
-                   Gofast.modal(response, Drupal.t("View the process", {}, {'context' : 'gofast:gofast_workflows'}), { allowStretch: true });
-               }
-             })
+        url:"/workflow/api/process/getgraph/"+processID+"/"+processName+"",
+        type: "GET",
+        dataType:'html',
+        success:function(response){
+            Gofast.modal(response, Drupal.t("View the process", {}, {'context' : 'gofast:gofast_workflows'}), { allowStretch: true });
+        }
+    })
  }
 
 
@@ -665,7 +592,6 @@ Drupal.gofast_workflows.ceo_vision_js_task_next = function(task_name, nid, task_
     dataType: 'html',
     success:function(data){
        gofastRemoveLoading();
-       //location.reload();
     }
   });
 }
@@ -707,7 +633,6 @@ Drupal.gofast_workflows.ceo_vision_js_task_validate_choose_validateur = function
     dataType:'json',
     success:function(data){
        gofastRemoveLoading();
-       //location.reload();
     }
   });
 }
@@ -734,9 +659,6 @@ Drupal.gofast_workflows.ceo_vision_js_task_validate_validate = function(task_id,
     }
   });
 }
-
-
-
 
 Drupal.gofast_workflows.ceo_vision_js_process_get_comments = function(processID){
    var myUrl = $(document)[0].URL.replace(location.hash,"").split('/'),
@@ -798,12 +720,8 @@ Drupal.gofast_workflows.ceo_vision_js_process_get_actives_tasklist = function(ca
 
 
 Drupal.gofast_workflows.ceo_vision_js_process_get_finished_tasklist = function(caseId, archived){
-   var myUrl = $(document)[0].URL.replace(location.hash,"").split('/');
-  // if(archived == "true"){
-       var URI = myUrl[0] + "//" + myUrl[2] + Drupal.settings.basePath + "workflow/api/process/finishedtasklist_archived/"+caseId;
-  // }else{
-   //     var URI = myUrl[0] + "//" + myUrl[2] + Drupal.settings.basePath + "workflow/api/process/finishedtasklist/"+caseId;
-  // }
+  var myUrl = $(document)[0].URL.replace(location.hash,"").split('/');
+  var URI = myUrl[0] + "//" + myUrl[2] + Drupal.settings.basePath + "workflow/api/process/finishedtasklist_archived/"+caseId;
 
   $.ajax({
     url:URI,
@@ -856,7 +774,6 @@ Drupal.gofast_workflows.ceo_vision_js_edit_deadline = function(taskId){
     dataType:'html',
     success:function(data){
        Gofast.modal(data, Drupal.t("Edit deadline", {}, {'context' : 'gofast:gofast_workflows'}), { allowStretch: true });
-       Drupal.gofast_workflows._ceo_vision_js_automatic_reload_dashboard();
     }
   });
 }
@@ -875,7 +792,6 @@ Drupal.gofast_workflows.ceo_vision_js_task_reassign = function(taskId){
     success:function(data){
         gofast_modal(data, Drupal.t("Reassign the task", {}, {'context' : 'gofast:gofast_workflows'}));
         $("#modal-content").addClass("modal-content-workflow");
-        ceo_vision_js_automatic_reload_dashboard();
     }
   });
 }
@@ -923,109 +839,12 @@ Drupal.gofast_workflows.ceo_vision_js_edit_deadline_validate = function(taskId, 
     dataType:'json',
     success:function(data){
         $(".ctools-close-modal").click();
-        Drupal.gofast_workflows._ceo_vision_js_automatic_reload_dashboard();
         Gofast.removeLoading();
     }
   });
 }
 
-
-Drupal.behaviors.dynatable = {
-
-     attach: function() {
-return;
-    var myuser = Gofast.get("user");
-    if(myuser.uid == 1){
-        return;
-    }
-
-  var dynatable = $("#actives_tasks_table, #actives_tasks_others_table,  #actives_cases_table, #available_process_table, #archived_cases_table").dynatable({
-                features: {
-                  pushState: false
-                },
-                table: {
-                    defaultColumnIdStyle: 'camelCase',
-                    columns: null,
-                    headRowSelector: 'thead tr', // or e.g. tr:first-child
-                    bodyRowSelector: 'tbody tr',
-                    headRowClass: null
-              },params :{
-                   records :  Drupal.t('tasks',{}, {'context' : 'gofast'}),
-              },inputs: {
-                    queries: null,
-                    sorts: null,
-                    multisort: ['ctrlKey', 'shiftKey', 'metaKey'],
-                    page: null,
-                    queryEvent: 'blur change',
-                    recordCountTarget: null,
-                    recordCountPlacement: 'after',
-                    paginationLinkTarget: null,
-                    paginationLinkPlacement: 'after',
-                    paginationClass: 'dynatable-pagination-links',
-                    paginationLinkClass: 'dynatable-page-link',
-                    paginationPrevClass: 'dynatable-page-prev',
-                    paginationNextClass: 'dynatable-page-next',
-                    paginationActiveClass: 'dynatable-active-page',
-                    paginationDisabledClass: 'dynatable-disabled-page',
-                    paginationPrev: Drupal.t('Previous',{}, {'context' : 'gofast'}),
-                    paginationNext: Drupal.t('Next',{}, {'context' : 'gofast'}),
-                    paginationGap: [1,2,2,1],
-                    searchTarget: null,
-                    searchPlacement: 'before',
-                    perPageTarget: null,
-                    perPagePlacement: 'before',
-                    perPageText: Drupal.t('Show :',{}, {'context' : 'gofast'}),
-                    recordCountText: Drupal.t('Show :',{}, {'context' : 'gofast'}),
-                    recordCountFilteredText : Drupal.t("(filtered from {recordCountTotal} total records)", {}, {'context' : 'gofast'}),
-                    recordCountShownText : Drupal.t("{recordCountShown} of ", {}, {'context' : 'gofast'}),
-                    recordCountBoundsText : Drupal.t(" {recordCountBoundStart} to {recordCountBoundEnd} of ", {}, {'context' : 'gofast'}),
-                    processingText: 'Processing...',
-                    searchText: Drupal.t('Search :',{}, {'context' : 'gofast'}),
-                    records: "Résultats"
-                },
-                 dataset: {
-                    perPageDefault: 20,
-                    //perPageOptions:[3, 6]
-                  }
-            }).bind('dynatable:afterProcess', Drupal.gofast_workflows.updateChart);
-
-   dynatable = $("#actives_tasks_table,#actives_tasks_others_table, #actives_cases_table, #available_process_table, #archived_cases_table").data('dynatable');
-     if(dynatable){
-          dynatable.paginationPerPage.set(10);
-            dynatable.process();
-     }
-
-
-    //si dans l'url il y a un parametre indiquant une tache en particulier, on higlight celle-ci
-        /*  var task_param = geturlparameter("task");
-          //je cherche la ligne du tableau correspondant a cette tache
-          var task_line = $("span[task_id='task_line_"+task_param+"']");
-
-          if(task_line.length > 0){
-              var line = task_line.parent().parent();
-              if(line){
-                  line.css("background-color", "#F78181");
-              }
-          }else{
-               if(dynatable){
-                    dynatable.queries.runSearch(task_param);
-                    dynatable.process();
-                    var task_line = $("span[task_id='task_line_"+task_param+"']");
-                    var line = task_line.parent().parent();
-                    if(line){
-                        line.css("background-color", "#F78181");
-                    }
-                }
-          }*/
-
-
-     }
-
- }
-
-// Drupal.behaviors.instanciate_rapide_dashboard = function(context){
 Drupal.behaviors.instanciate_rapide_dashboard  = {
-
      attach: function(context) {
         var myuser = Gofast.get("user");
         if(typeof myuser == "undefined"){
@@ -1046,27 +865,8 @@ Drupal.behaviors.instanciate_rapide_dashboard  = {
             jQuery('#modal-content #container_todoliste > div > ul.content').pager({pagerSelector : '#modal-content #container_todoliste > ul.pagination ', perPage: 5});
             jQuery('#container_todoliste_others > div > ul.content').pager({pagerSelector : '#container_todoliste_others > ul.pagination', perPage: 5});
         }
-/*
-            $("#container_todoliste", context).pajinate({
-                                              items_per_page : 5,
-                                              nav_label_first : "Prem.",
-                                              nav_label_last : "Dern.",
-                                              nav_label_prev : "Prec.",
-                                              nav_label_next : "Suiv."
-                                      });
-             $("#container_todoliste_others", context).pajinate({
-                                              items_per_page : 5,
-                                              nav_label_first : "Prem.",
-                                              nav_label_last : "Dern.",
-                                              nav_label_prev : "Prec.",
-                                              nav_label_next : "Suiv.",
-                                              nav_panel_id    : ".page_navigation2"
-                                      });
-*/
 
-             //$("#tabs_wf_rapid_tab:not(\".tabs_processed\"), #tabs_doc_wf:not(\".tabs_processed\")", context).addClass("tabs_processed").tab('show');
-
-             //the reason for the odd-looking selector is to listen for the click event
+            //the reason for the odd-looking selector is to listen for the click event
             // on links that don't even exist yet - i.e. are loaded from the server.
             $('#tabs_wf_rapid:not(.tabs_processed)').on('click','#tabs_wf_rapid_tab a',function (e) {
                 e.preventDefault();
@@ -1085,12 +885,7 @@ Drupal.behaviors.instanciate_rapide_dashboard  = {
 
                 $(this).addClass("tabs_processed");
             });
-
-    // });
-
-    Drupal.gofast_workflows.ceo_vision_js_automatic_reload_dashboard();
     }
-
 };
 
 
@@ -1221,7 +1016,7 @@ Gofast.gofast_workflow_search = function(e){
     }
 
     //Retrieve bonita user ids from user ids
-    $.get(location.origin + "/workflow/get_bonitaids_from_uids", {uids : data.users}, function(response){
+    $.get(location.origin + "/workflow/get_bonitaids_from_uids", {uids : data.users.length ? data.users : null}, function(response){
         response = Object.values(JSON.parse(response));
 
         //Retrieve again form data

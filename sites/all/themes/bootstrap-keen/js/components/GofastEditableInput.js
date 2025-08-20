@@ -130,6 +130,17 @@ window.GofastEditableInput = (element, initialData, type, props = {}) => {
             }
             return '<div class="text-muted">' + (props.placeholder ? Drupal.t(props.placeholder) : Drupal.t('Empty value')) + '</div>';
           },
+          tags: function(data) {
+            if (!data || !data.length) {
+                return Drupal.t('Empty value');
+            }
+            const tagIcon = props.tagIcon ? `<div>${props.tagIcon}</div>` : "";
+            let tags = "";
+            for(const tag of data) {
+              tags += "<tag class=\"tagify__tag tagify__tag--secondary\"><div>" + tagIcon + tag.name + "</div></tag>"; 
+            }
+            return "<tags class=\"tagify\">" + tags + "</tags>";
+          },
         },
         getData: () => false,
         setData: function(data){
@@ -145,7 +156,8 @@ window.GofastEditableInput = (element, initialData, type, props = {}) => {
         },
         setValueContent: function(data){
           if(this.DOM.valueContent) {
-            this.DOM.valueContent.innerHTML = this.templates.value(data)
+            const templateKey = this.templateKey || "value";
+            this.DOM.valueContent.innerHTML = this.templates[templateKey](data);
 
             let popupItems = this.DOM.valueContent.querySelectorAll('[data-toggle="popover"]')
 
@@ -192,17 +204,20 @@ window.GofastEditableInput = (element, initialData, type, props = {}) => {
             }
           },
           toogleInput: function(the, isEditing){
-            if(isEditing) {
-              
+            if(isEditing || the.forceEditing) {
               // Decode the data
               the.data = Gofast.htmlDecode(the.data)
               
               // abort poll
-              Gofast.incrementMetadataEditCounter();
-              the.DOM.element.removeChild(the.DOM.valueContent)
+              if (!the.forceEditing) {
+                Gofast.incrementMetadataEditCounter();
+              }
+              if (the.DOM.element.contains(the.DOM.valueContent)) {
+                the.DOM.element.removeChild(the.DOM.valueContent)
+              }
               the.DOM.element.appendChild(the.DOM.inputContent)
 
-              if(the.events.showInputCustom){
+              if(the.events.showInputCustom && isEditing){
                 the.events.showInputCustom()    
                 if(typeof props.showConfirmationButtons != "undefined" && props.showConfirmationButtons) {
                     // showConfirmationButtons may be a boolean or a selector which targets the confirmation buttons container
@@ -241,7 +256,7 @@ window.GofastEditableInput = (element, initialData, type, props = {}) => {
                     const buttonsContainerInterval = setInterval(function() {
                         let $buttonsContainer = [];
                         if (selector === true || selector === false) {
-                            $buttonsContainer = $(".EditableInput__input").parent().parent();
+                            $buttonsContainer = $(customIn.DOM.element).find(".EditableInput__input").parent().parent();
                         } else {
                             $buttonsContainer = $(selector);
                         }
@@ -252,13 +267,15 @@ window.GofastEditableInput = (element, initialData, type, props = {}) => {
                         $buttons.parent().addClass("hasConfirmationButtons");
                         $confirmButton.on("mousedown", (e) => {
                             customIn.saveData(customIn.getData() || customIn.DOM.input.value);
-                            $(".editableInputConfirmationButtons").remove();
+                            $confirmButton.parent('.editableInputConfirmationButtons').parent().removeClass('hasConfirmationButtons');
+                            $confirmButton.parent('.editableInputConfirmationButtons').remove();
                             customIn.events.toogleInput(customIn, false);
                             window.dispatchEvent(new Event("tagifyHookConfirm"));
                         });
                         $cancelButton.on("mousedown", (e) => {
                             // in a text input, buttons are displayed before any save event or promise callback has been triggered
-                            $(".editableInputConfirmationButtons").remove();
+                            $cancelButton.parent('.editableInputConfirmationButtons').parent().removeClass('hasConfirmationButtons');
+                            $cancelButton.parent('.editableInputConfirmationButtons').remove();
                             customIn.preventSave = true;
                             customIn.events.toogleInput(customIn, false);
                             window.dispatchEvent(new Event("tagifyHookCancel"));
@@ -414,12 +431,15 @@ window.GofastEditableInput = (element, initialData, type, props = {}) => {
 
                 let inputContent = document.createElement('div')
                 inputContent.classList.add('EditableInput__input')
+                if (this.inputClasses) {
+                    for (const inputClass of this.inputClasses) {
+                        inputContent.classList.add(inputClass);
+                    }
+                }
                 this.DOM.inputContent = inputContent
 
-
-
                 this.DOM.inputContent.innerHTML = this.templates.input()
-                let input = this.DOM.inputContent.querySelector('.input-control')
+                let input = this.DOM.inputContent.querySelector('.input-control, .editable-control')
                 this.DOM.input = input
 
                 let loader = document.createElement('div')
@@ -434,6 +454,9 @@ window.GofastEditableInput = (element, initialData, type, props = {}) => {
                 if (this.hooks.preSave != null) {
                     const saveCallback = this.save;
                     this.save = (params) => this.hooks.preSave(params).then((params) => saveCallback(params));
+                }
+                if (this.forceEditing) {
+                    this.events.toogleInput(this);
                 }
             }
 
@@ -543,7 +566,6 @@ window.GofastEditableInput = (element, initialData, type, props = {}) => {
             case 'date':
                 // datepicker l18n: we have to declare l18n here juste before it gets initialized since there are other datepickers around that would overwrite this setting
                 setDatepickerL18n();
-
                 customIn.rawData = customIn.data,
                 customIn.setData = function(data) {
                      if(data == null || data == 0){
@@ -937,7 +959,8 @@ window.GofastEditableInput = (element, initialData, type, props = {}) => {
 
                 customIn.initCustomInput = async function(){
                     try {
-                        let ckeditor = await ClassicEditor.create(customIn.DOM.input, Gofast.parseCKEditorProfile(Drupal.settings.ckeditor.profiles["ckeditor-classic"]));
+                        const profile = await Gofast.parseCKEditorProfile({...Drupal.settings.ckeditor.profiles["ckeditor-classic"]});
+                        let ckeditor = await ClassicEditor.create(customIn.DOM.input, profile);
                         customIn.getData = () => ckeditor.getData();
                         if(customIn.data && customIn.data.trim().length){
                             ckeditor.setData(customIn.data);
@@ -1000,7 +1023,8 @@ window.GofastEditableInput = (element, initialData, type, props = {}) => {
 
                 customIn.initCustomInput = async function(){
                     try {
-                        let ckeditor = await ClassicEditor.create(customIn.DOM.input, Gofast.parseCKEditorProfile(Drupal.settings.ckeditor.profiles["ckeditor-full"]));
+                        const profile = await Gofast.parseCKEditorProfile({...Drupal.settings.ckeditor.profiles["ckeditor-full"]});
+                        let ckeditor = await ClassicEditor.create(customIn.DOM.input, profile);
                         customIn.getData = () => ckeditor.getData();
                         if(customIn.data && customIn.data.trim().length){
                             ckeditor.setData(customIn.data);
@@ -1054,7 +1078,8 @@ window.GofastEditableInput = (element, initialData, type, props = {}) => {
 
                 customIn.initCustomInput = async function(){
                     try {
-                        let ckeditor = await ClassicEditor.create(customIn.DOM.input, Gofast.parseCKEditorProfile(Drupal.settings.ckeditor.profiles["ckeditor-classic-enrich"]));
+                        const profile = await Gofast.parseCKEditorProfile({...Drupal.settings.ckeditor.profiles["ckeditor-classic-enrich"]});
+                        let ckeditor = await ClassicEditor.create(customIn.DOM.input, profile);
                         if(customIn.data){
                             ckeditor.setData(customIn.data);
                         }
@@ -1077,7 +1102,8 @@ window.GofastEditableInput = (element, initialData, type, props = {}) => {
 
                 customIn.initCustomInput = async function(){
                     try {
-                        let ckeditor = await ClassicEditor.create(customIn.DOM.input, Gofast.parseCKEditorProfile(Drupal.settings.ckeditor.profiles["ckeditor-comment"]));
+                        const profile = await Gofast.parseCKEditorProfile(Drupal.settings.ckeditor.profiles["ckeditor-comment"]);
+                        let ckeditor = await ClassicEditor.create(customIn.DOM.input, profile);
                         if(customIn.data){
                             ckeditor.setData(customIn.data);
                         }
@@ -1295,11 +1321,10 @@ window.GofastEditableInput = (element, initialData, type, props = {}) => {
 
                 break;
             case 'tags':
+                customIn.templates.input = () => "<input type=\"text\" class=\"editable-control\"/>"; // no interferring classes on input
                 customIn.templates.value = function(data){
                     if (data && data.length > 0) {
-
                         let tagsEls = [];
-                        const dataLen = data.length;
                         tagsEls = data.map((tag, i) => {
                             if (tag.tid) {
                                 return "<div class=\"tagsList__item mr-2\"><span id=\"tagList__item_" + tag.tid + "\">" + tag.name + "</span></div>";
@@ -1316,35 +1341,33 @@ window.GofastEditableInput = (element, initialData, type, props = {}) => {
                 }
 
                 customIn.events.showInputCustom = () => {
-
                     $(customIn.DOM.customInput.DOM.input).trigger('focus');
-
                 }
 
-
-
                 customIn.initCustomInput = () => {
-
                     var tagify = new Tagify(customIn.DOM.input, {
                         delimiters : null,
-                        // tagTextProp: 'name', // very important since a custom template is used with this property as text. allows typing a "value" or a "name" to match input with whitelist
-                        enforceWhitelist: false,
+                        enforceWhitelist: true,
                         skipInvalid: true, // do not remporarily add invalid tags
+                        addTagOnBlur: false,
                         templates : {
                             tag : function(tagData){
                                 try{
-                                    return "<tag title='" + tagData.value + "' contenteditable='false' spellcheck=\"false\" class='tagify__tag " + (tagData.class ? tagData.class : "") + "' " +  this.getAttributes(tagData) + "><x title='remove tag' class='tagify__tag__removeBtn'></x><div> <span class='tagify__tag-text'>" + tagData.name + "</span></div></tag>";
+                                  const tagIcon = props.tagIcon ? `<div>${props.tagIcon}</div>` : "";
+                                  return "<tag title='" + tagData.value + "' contenteditable='false' spellcheck=\"false\" class='tagify__tag " + (tagData.class ? tagData.class : "") + "' " + this.getAttributes(tagData) + "><x title='remove tag' class='tagify__tag__removeBtn'></x><div>" + tagIcon + "<span class='tagify__tag-text'>" + tagData.name + "</span></div></tag>";
                                 }
                                 catch(err){
-                                    console.log(err.message)
+                                  console.log(err.message)
                                 }
                             },
                             dropdownItem : function(tagData){
+                                const existenceTemplate = tagData.exists === false ? "&nbsp;<span class='label label-inline label-rounded label-success ml-2'>" + Drupal.t("Add") + "</span>" : "";
                                 try{
-                                    return "<div class='tagify__dropdown__item " + (tagData.class ? tagData.class : "") + "' tagifySuggestionIdx=\"" + tagData.tagifySuggestionIdx + "\"><span>" + tagData.name + "</span></div>";
+                                  const tagDropdownIcon = props.tagDropdownIcon ? `<div class='tagify__tag__avatar-wrap'>${props.tagDropdownIcon}</div>` : "";
+                                  return "<div class='tagify__dropdown__item " + (tagData.class ? tagData.class : "") + "' tagifySuggestionIdx=\"" + tagData.tagifySuggestionIdx + "\">" + tagDropdownIcon + "<strong>" + tagData.name + existenceTemplate + "</strong></div>";
                                 }
                                 catch(err){
-                                    console.log(err.message)
+                                  console.log(err.message)
                                 }
                             }
                         },
@@ -1352,36 +1375,55 @@ window.GofastEditableInput = (element, initialData, type, props = {}) => {
                             enabled: 3, // suggest tags after a single character input
                             classname : 'tags-list', // custom class for the suggestions dropdown
                             closeOnSelect: true,
-                            searchKeys: ['name']  // very important to set by which keys to search for suggesttions when typing
+                            searchKeys: ['name'] , // very important to set by which keys to search for suggesttions when typing
                         }, // map tags' values to this property name, so this property will be the actual value and not the printed value on the screen
-                        whitelist : [],
+                        whitelist : customIn.data && customIn.data.length ? customIn.data : [],
+                        maxTags: customIn.DOM.element.hasAttribute("data-ac-max-tags") ? customIn.DOM.element.getAttribute("data-ac-max-tags") : Infinity,
                     })
+
+                    if (customIn.tagifyClasses) {
+                        for (const tagifyClass of customIn.tagifyClasses) {
+                            tagify.DOM.scope.classList.add(tagifyClass);
+                        }
+                    }
+                    if (customIn.tagifyIcon) {
+                        const icon = document.createElement("i");
+                        for(const iconClass of customIn.tagifyIcon.split(" ")) {
+                            icon.classList.add(iconClass)
+                        }
+                        tagify.DOM.scope.prepend(icon);
+                    }
 
                     if(customIn.data && customIn.data.length > 0){
                         tagify.addTags(customIn.data)
                     }
 
                     let onTagifyInput =  async function(e){
-
                         let search = e.detail.value
 
                         // clear current whitelist
                         tagify.settings.whitelist.length = 0; // reset current whitelist
 
                         if(search.length > 2) {
-
                             // show loader & hide suggestions dropdown (if opened)
                             tagify.loading(true).dropdown.hide.call(tagify)
 
                             let formData = new FormData()
-
                             formData.append('str', search)
                             formData.append('input_id', 'edit-list-tags')
                             formData.append('get_taxonomy_term', true)
-                            var dataVid = $(e.detail.inputElm).parents('.gutter-b').find('.text-uppercase').attr('data-vid');
-                            var dataEnforce = $(e.detail.inputElm).parents('.gutter-b').find('.text-uppercase').attr('data-enforce');
-                            formData.append('vid', dataVid);
-                            formData.append('enforce', dataEnforce);
+                            var dataVid = $(e.detail.inputElm).closest("[data-vid]").attr('data-vid');
+                            var dataEnforce = $(e.detail.inputElm).closest("[data-enforce]").attr('data-enforce');
+                            var dataFilters = $(e.detail.inputElm).closest("[data-filters]").attr('data-filters');
+                            if (dataVid) {
+                                formData.append('vid', dataVid);
+                            }
+                            if (dataEnforce) {
+                                formData.append('enforce', dataEnforce);
+                            }
+                            if (dataFilters) {
+                                formData.append('filters', dataFilters);
+                            }
 
                             let url = window.origin + "/gofast/gofast_ac_config";
 
@@ -1392,11 +1434,6 @@ window.GofastEditableInput = (element, initialData, type, props = {}) => {
 
                             const data = await res.json()
 
-                            // let newWhitelist = await data.map(user => {
-                            //     user.value = Number.parseInt(user.uid)
-                            //     return user
-                            // })
-
                             let newWhitelist = await data
 
                             // replace tagify "whitelist" array values with new values
@@ -1406,7 +1443,6 @@ window.GofastEditableInput = (element, initialData, type, props = {}) => {
                             // render the suggestions dropdown
                             tagify.loading(false).dropdown.show.call(tagify, e.detail.value);
                         }
-
                     }
 
                     // listen to any keystrokes which modify tagify's input
@@ -1425,16 +1461,67 @@ window.GofastEditableInput = (element, initialData, type, props = {}) => {
                     tagify.on('change', (e) => {
                         let newValues = []
                         try {
-                            newValues = JSON.parse(e.detail.value)
-
+                            newValues = e.detail.value ? JSON.parse(e.detail.value) : [];
+                            // prevent undefined tags
+                            newValues = newValues.filter(e => !!e.name)
                         } catch (error) {
                             console.log(error.message)
                         }
+                        tagify.DOM.input.focus()
                         customIn.saveData(newValues)
                     })
 
                     customIn.DOM.customInput = tagify
                 }
+                break;
+            case 'colorpicker':
+                customIn.templates.input = () => '<input type="color" class="input-control form-control m-0 p-0"/>';
+
+                customIn.events.showInputCustom = () => {
+                    customIn.DOM.input.value = customIn.data;
+                    customIn.DOM.input.focus();
+                    customIn.DOM.input.click();
+                }
+
+                customIn.templates.value = function(data){
+                    if(data && data.length > 0) {
+                        return `
+                                <div style="width: 30px;
+                                    height: 20px;
+                                    background-color: ${data};
+                                    border: 1px solid #ccc;
+                                    border-radius: 2px;
+                                    box-shadow: inset 0 1px 1px rgba(0, 0, 0, 0.075);">
+                                </div>
+                                `;
+                    } else {
+                        return `
+                                <div style="width: 30px;
+                                    height: 20px;
+                                    background-color: #fff;
+                                    border: 1px solid #ccc;
+                                    border-radius: 2px;
+                                    box-shadow: inset 0 1px 1px rgba(0, 0, 0, 0.075);">
+                                </div>
+                                `;
+                    }
+                }
+                customIn.initCustomInput = () => {
+
+                    customIn.DOM.input.onblur = (e) => {
+                        if(typeof props.showConfirmationButtons != "undefined" && props.showConfirmationButtons) {
+                            e.preventDefault();
+                            return;
+                        }
+                        customIn.events.toogleInput(customIn, false)
+                    }
+                    customIn.DOM.input.onchange = (e) => {
+                        if(!customIn.preventSave){
+                            customIn.saveData(e.target.value);
+                        }
+                        delete(customIn.preventSave);
+                    }
+                }    
                 break;
             default:
                 break;

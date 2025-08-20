@@ -152,3 +152,18 @@ function gofast_update_7332()
 {
     variable_set('gofast_admin_visibility', GOFAST_ADMIN_VISIBILITY_DEFAULT);
 }
+
+/** GOFAST-11596 - Update date format locales in db */
+function gofast_update_7333(){
+  gofast_set_default_date_formats();
+}
+
+/** GOFAST-12536 - Add indexes on tables 'recently_read' and 'userpoints_txn */
+function gofast_update_7334(){
+  if(!db_index_exists("recently_read", "gfindex_recently_read_1")){
+    db_add_index("recently_read", "gfindex_recently_read_1", array('type', 'entity_id'));
+  }
+  if(!db_index_exists("userpoints_txn", "gfindex_userpoints_txn_1")){
+    db_add_index("userpoints_txn", "gfindex_userpoints_txn_1", array('entity_id', 'entity_type', "operation"));
+  }
+}

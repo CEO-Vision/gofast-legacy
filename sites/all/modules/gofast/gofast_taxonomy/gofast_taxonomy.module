@@ -21,6 +21,11 @@ define('GOFAST_VID_STATE', variable_get('gofast_vocabulary_state', 0));
  */
 define('GOFAST_VID_CATEGORY', variable_get('gofast_vocabulary_category', 0));
 
+/**
+ * Define the vocabulary identifier that references 'entity' taxonomy terms.
+ */
+define('GOFAST_VID_ENTITY', variable_get('gofast_vocabulary_entity', 0));
+
 /** 
  * Define the vocabulary identifier that references 'classification' taxonomy terms.
  */
@@ -290,7 +295,8 @@ function gofast_taxonomy_get_default_term_format() {
 }
 
 function gofast_taxonomy_taxonomy_vocabulary_insert($vocabulary) {
-  if ($vocabulary->machine_name == 'skills' || $vocabulary->machine_name == 'hobbies' || $vocabulary->machine_name == 'interests' || $vocabulary->machine_name == 'category' || $vocabulary->machine_name == 'format' || $vocabulary->machine_name == 'tags' || $vocabulary->machine_name == 'state' || $vocabulary->machine_name == 'criticity' || $vocabulary->machine_name == 'classification') {
+  $valid_vocabularies = ["skills", "hobbies", "interests", "category", "entity", "format", "tags", "state", "criticity", "classification"];
+  if (in_array($vocabulary->machine_name, $valid_vocabularies)) {
     //on stock dans une variable l'id de ce vocabulaire (car cet id est susceptible de changer selon les environements)
     variable_set("gofast_vocabulary_" . $vocabulary->machine_name, $vocabulary->vid);
   }
@@ -399,6 +405,23 @@ function gofast_taxonomy_tag_edit($js = FALSE, $term = new stdClass()) {
 }
 
 /**
+ * Small helper to add term only if it doesn't exist yet
+ * @param type $vid
+ * @param type $name
+ * @return mixed $term
+ */
+function gofast_taxonomy_get_or_add_term($vid, $name) {
+  $vname = gofast_get_vocab_machine_name($vid);
+  // Check if entity exists in taxonomy
+  $term = reset(taxonomy_get_term_by_name($name, $vname));
+  // If not create it
+  if (!$term) {
+    $term = gofast_taxonomy_vocabulary_add_term($vid, $name);
+  }
+  return $term;
+}
+
+/**
  * Helper to programatically add a term to an existing vocabulary.
  * @param type $vid
  * @param type $name
@@ -406,7 +429,7 @@ function gofast_taxonomy_tag_edit($js = FALSE, $term = new stdClass()) {
 function gofast_taxonomy_vocabulary_add_term($vid, $name) {
   // IF TERM IS NOT FOUND : taxonomy_term_load_multiple(array(), array('name' => trim($name), 'vid' => $vid));
   $term = new stdClass();
-  $term->name = $name;
+  $term->name = gofast_xss_clean($name);
   $term->vid = $vid;
   taxonomy_term_save($term);
   return $term;
@@ -528,7 +551,7 @@ function gofast_taxonomy_manage_taxonomy_form($form, &$form_state) {
           $node = node_load($select->url);
           $nodes_cart[$node->nid] = $node;
           // We need only one location in order to have a 1:1 nid:path mapping
-          $path = gofast_og_get_first_available_space_location($node);
+          $path = gofast_cmis_get_first_available_location($node);
           array_push($nid_cart, $path.'/'.$node->title);
           array_push($title_cart, $node->title);
       }
@@ -671,6 +694,7 @@ function gofast_taxonomy_manage_taxonomy_form($form, &$form_state) {
 
   $form['first_row'] = array(
     '#type' => 'container',
+    '#weight' => -50,
     '#attributes' => array(
       'class' => array('row', 'row-cols-5'),
     ),
@@ -683,6 +707,7 @@ function gofast_taxonomy_manage_taxonomy_form($form, &$form_state) {
   
   $form['second_row'] = array(
     '#type' => 'container',
+    '#weight' => -40,
     '#attributes' => array(
       'class' => array('row'),
     ),
@@ -700,9 +725,14 @@ function gofast_taxonomy_manage_taxonomy_form($form, &$form_state) {
     $items_by_type[$selected_item_type->type][] = $selected_item_type->url;
   }
 
-  $form_state['selected_item_by_type'] = $items_by_type;
+  if($form_state["input"]["selected_item_by_type"]){
+    $form_state['selected_item_by_type'] = json_decode($form_state["input"]["selected_item_by_type"], true);
+  } else {
+    $form_state['selected_item_by_type'] = $items_by_type;
+  }
   $form['selected_item_by_type'] = array(
       '#type' => 'textfield',
+      '#weight' => -100,
       '#maxlength' => "99999",
       '#default_value' => json_encode($items_by_type),
     );
@@ -752,8 +782,13 @@ function gofast_taxonomy_manage_taxonomy_form_validate($form, &$form_state){
  */
 function gofast_taxonomy_manage_taxonomy_form_submit($form, &$form_state) {
   $updated_nids = array();
-  //Insert a general progress bar for mass taxonomy
+  //Insert a general progress bar for mass taxonom
   $html = "";
+  // If there is other form_submit, append progess bars to existing ones
+  if(isset($form_state["render_html"])){
+    $html = $form_state["render_html"];
+  }
+  
   foreach (json_decode($form_state["values"]['selected_item_by_type']) as $type => $items_by_type) {
     if ($type === 'Folder') {
       foreach ($items_by_type as $item_path) {
@@ -901,6 +936,7 @@ function gofast_taxonomy_manage_taxonomy_process(){
   $vid = $_POST['process_vid'];
   $field = $_POST['process_field'];
   $value = $_POST['process_value'];
+  $field_type = $_POST['field_type'];
   $node = node_load($nid);
 
   //Make the change
@@ -909,60 +945,38 @@ function gofast_taxonomy_manage_taxonomy_process(){
   $_POST["pk"] = $nid;
   $_POST["name"] = $field;
 
-  switch($field){
-    case 'language':
-      $_POST["value"] = $value;
-      gofast_update_node_field();
-      $node = node_load($nid, NULL, TRUE);
-      $return = $node->language;
-      break;
-    case 'field_tags':
-      $tags = explode(",", $value);
-      foreach($tags as $k => $tag){
-        $tags[$k] = taxonomy_term_load($tag)->name;
-      }
-      $_POST["value"] = $tags;
-      $_POST["vid"] = $vid;
-      gofast_update_node_field();
-      $node = node_load($nid, NULL, TRUE);
-      $return = json_encode($node->field_tags[LANGUAGE_NONE]);
-      break;
-    case 'field_state':
-      $_POST["value"] = taxonomy_term_load($value)->name;
-      $_POST["vid"] = $vid;
-      gofast_update_node_field();
-      $node = node_load($nid, NULL, TRUE);
-      $return = $node->field_state[LANGUAGE_NONE][0]['tid'];
-      break;
-    case 'field_category':
-      $_POST["value"] = taxonomy_term_load($value)->name;
-      $_POST["vid"] = $vid;
-      gofast_update_node_field();
-      $node = node_load($nid, NULL, TRUE);
-      $return = $node->field_category[LANGUAGE_NONE][0]['tid'];
-      break;
-    case 'field_classification':
-      $_POST["value"] = taxonomy_term_load($value)->name;
-      $_POST["vid"] = $vid;
-      gofast_update_node_field();
-      $node = node_load($nid, NULL, TRUE);
-      $return = $node->field_classification[LANGUAGE_NONE][0]['tid'];
-      break;
-    case 'field_criticity':
-      $_POST["value"] = taxonomy_term_load($value)->name;
-      $_POST["vid"] = $vid;
-      gofast_update_node_field();
-      $node = node_load($nid, NULL, TRUE);
-      $return = $node->field_criticity[LANGUAGE_NONE][0]['tid'];
-      break;
-    case 'field_date':
-      $_POST["value"] = $value;
-      gofast_update_node_field();
-      $node = node_load($nid, NULL, TRUE);
-      $return = $node->field_date[LANGUAGE_NONE][0]['value'];
-      break;
-  }
+  if($field == "field_tags" || $field_type == "tagify"){
+    $tags = json_decode($value, true);
+    foreach($tags as $k => $tag){
+      $tags[$k] = taxonomy_term_load($tag)->name;
+    }
+    $_POST["value"] = $tags;
+    $_POST["vid"] = $vid;
+    gofast_update_node_field();
+    
+    $node = node_load($nid, NULL, TRUE);
+    $return = json_encode($node->{$field}[LANGUAGE_NONE]);
 
+  } else if($field == "language"){
+    $_POST["value"] = $value;
+    gofast_update_node_field();
+    $node = node_load($nid, NULL, TRUE);
+    $return = $node->language;
+    
+  } else {
+    if(!empty($vid)){
+      $_POST["vid"] = $vid;
+      $value = taxonomy_term_load($value)->name;
+    }
+    $_POST["value"] = $value;
+    gofast_update_node_field();
+    $node = node_load($nid, NULL, TRUE);
+    if(!empty($vid)){
+      $return = $node->{$field}[LANGUAGE_NONE][0]["tid"];
+    } else {
+      $return = $node->{$field}[LANGUAGE_NONE][0]["value"];
+    }
+  }
 
   print($return);
   exit;
@@ -1824,6 +1838,63 @@ function gofast_taxonomy_manage_locations_process(){
             }else{
                 $locations_nid[] = $item_nid;
             }
+        }
+
+        // For webform we need to update the location of the potential submissions (WEBFORM & node title folder)
+        if ($node->type == "webform") {
+
+          // check if the webform has submissions
+          $submissions = webform_get_submissions($nid);
+
+          if (!empty($submissions)) {
+            // Store remove and add locations
+            $removed_locations = array();
+            $added_locations = array();
+
+            // Get all parents from the current node
+            $gids = array_keys(gofast_og_get_parents_gids($nid, TRUE));
+
+            // Get the $node title webform folder reference
+            $node_webform_folder_reference = gofast_webform_get_webform_node_folder_reference(end($gids), $nid, FALSE, TRUE);
+            if (!empty($node_webform_folder_reference)) {
+
+              // Transform all gid into path
+              $locations_paths = array_map('gofast_cmis_space_get_webdav_path', $gids);
+
+              // Get the folder main emplacement
+              $main_emplacement = str_replace('/' . GOFAST_WEBFORM_FOLDER_NAME . '/' . $node->title, '', gofast_cmis_item_get($node_webform_folder_reference)->properties['cmis:path']);
+
+              // Get the difference between the current locations and the new locations
+              $removed_locations = array_diff($locations_paths, $locations);
+
+              // Get the difference between the new locations and the current locations
+              $added_locations = array_diff($locations, $locations_paths);
+
+
+              // Add the webform folder to the added locations
+              foreach ($added_locations as $key => $added_location) {
+                $gid = gofast_og_get_group_id_from_title_2($added_location, TRUE, TRUE);
+                $webform_folder_reference = gofast_webform_get_webform_folder_reference($gid, TRUE, TRUE);
+                if ($webform_folder_reference) {
+                  gofast_cmis_webservice_multifile_folder($node_webform_folder_reference, $webform_folder_reference);
+                }
+              }
+
+              // Remove the webform folder from the removed locations
+              foreach ($removed_locations as $key => $removed_location) {
+                
+                // Dont remove the main location
+                if ($removed_location == $main_emplacement) {
+                  continue;
+                }
+                $gid = gofast_og_get_group_id_from_title_2($removed_location, TRUE, TRUE);
+                $webform_folder_reference = gofast_webform_get_webform_folder_reference($gid, FALSE, TRUE);
+                if ($webform_folder_reference) {
+                  gofast_cmis_webservice_remove_multifile_folder($node_webform_folder_reference, $webform_folder_reference);
+                }
+              }
+            }
+          }
         }
         #update location of the node
         unset($_POST);
@@ -2800,4 +2871,27 @@ function gofast_taxonomy_get_tid_by_vid_and_name($vid, $term_name = "", $multipl
     $result = $result[0] ?: FALSE;
   }
   return $result;
+}
+
+/**
+ * Get all vocabulary that can be enforced on user input (e.g. Tags)
+ */
+function gofast_taxonomy_can_enforce_vocabulary($vid){
+  foreach (module_implements("enforceable_vocabularies") as $module) {
+    $enforceable_vocabularies = call_user_func($module . "_enforceable_vocabularies");
+    if(in_array($vid, $enforceable_vocabularies)){
+      return TRUE;
+    }
+  }
+  return FALSE;
+}
+
+/**
+ * Implements hook_enforceable_vocabularies
+ */
+function gofast_taxonomy_enforceable_vocabularies(){
+  return array(
+    GOFAST_VID_TAGS,
+    GOFAST_VID_ENTITY,
+  );
 }

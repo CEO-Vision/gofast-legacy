@@ -32,7 +32,7 @@
       <?= t('Add to cart', array(), array('context' => 'gofast:gofast_search'));?>
     </button>
     <?php else: ?>
-      <?= "<p class='mt-2 h5 text-muted'>" . t("Selected documents are not documents neither wiki articles", array(), array("context" => "gofast:gofast_search")) . "</p>"; ?><br />
+      <?= "<p class='mt-2 h5 text-muted'>" . t("Selected elements are not documents neither wiki articles", array(), array("context" => "gofast:gofast_search")) . "</p>"; ?><br />
     <?php endif; ?>
     <button type="button" class="btn btn-secondary" onclick="Drupal.CTools.Modal.dismiss()">
       <?php print t('Cancel');?>

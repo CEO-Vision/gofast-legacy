@@ -3,8 +3,8 @@
     <span class="font-weight-bolder mb-4 pt-2"><?php echo t('Tags') ?>:</span>
     <div class="pl-4 w-100">
       <?php if (isset($node_infos['node_keywords_info']["node_keywords_pk"])): ?>
-        <div class="go-lien-listgroup bg-hover-light rounded"id="tags-list-ac">
-          <input class="js-tagify metadata-node border-0" placeholder="<?= t("Try to add tags from the list", array(), array("context" => "gofast;gofast_metadata")) ?>"  data-taxonomy_term="" data-enforce="" data-vid="<?php print $node_infos['node_keywords_info']['node_keywords_vid'] ?>" data-pk="<?php print $node_infos['node_keywords_info']['node_keywords_pk'] ?>" type="text" id="edit-field-keywords" data-name="field_tags" name="ac-list-tags-keywords"  size="60" maxlength="">
+        <div class="go-lien-listgroup bg-hover-light rounded" id="tags-list-ac">
+          <input class="js-tagify metadata-node border-0" placeholder="<?= t("Try to add tags from the list", array(), array("context" => "gofast;gofast_metadata")) ?>" data-taxonomy_term="" data-enforce="" data-vid="<?php print $node_infos['node_keywords_info']['node_keywords_vid'] ?>" data-pk="<?php print $node_infos['node_keywords_info']['node_keywords_pk'] ?>" data-filters="<?= base64_encode(json_encode([["field" => "field_tags_bundle", "bundle" => ["alfresco_item", "article", "forum", "webform"]]])) ?>" type="text" id="edit-field-keywords" data-name="field_tags" name="ac-list-tags-keywords"  size="60" maxlength="">
           <input class="gofast_display_none" type="text" id="edit-actagify-ac-list-tags-keywords" name="gofast_tagify_ac" value='<?php print str_replace("'", "`", $node_infos['node_keywords_info']['json_tags']) ?>' size="60" maxlength="128">
         </div>
       <?php else: ?>

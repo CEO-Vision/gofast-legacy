@@ -58,7 +58,7 @@ function gofast_ldap_server_defaults($sid = NULL, $param = NULL) {
         'grp_test_grp_dn' => '',
         'grp_test_grp_dn_writeable' => '',
         'search_pagination' => 1,
-        'search_page_size' => '1000',
+        'search_page_size' => '10000',
         'company_attr' => 'o',
         'title_attr' => 'title',
         'department_attr' => 'departmentnumber'
@@ -104,7 +104,7 @@ function gofast_ldap_server_defaults($sid = NULL, $param = NULL) {
         'grp_test_grp_dn' => '',
         'grp_test_grp_dn_writeable' => '',
         'search_pagination' => 1,
-        'search_page_size' => '1000',
+        'search_page_size' => '10000',
         'company_attr' => 'o',
         'title_attr' => 'title',
         'department_attr' => 'departmentnumber'        
@@ -151,7 +151,7 @@ function gofast_ldap_server_defaults($sid = NULL, $param = NULL) {
         'grp_test_grp_dn' => '',
         'grp_test_grp_dn_writeable' => '',
         'search_pagination' => 1,
-        'search_page_size' => '1000',
+        'search_page_size' => '10000',
         'company_attr' => '',
         'title_attr' => 'title',
         'department_attr' => ''
@@ -198,7 +198,7 @@ function gofast_ldap_server_defaults($sid = NULL, $param = NULL) {
         'grp_test_grp_dn' => '',
         'grp_test_grp_dn_writeable' => '',
         'search_pagination' => 1,
-        'search_page_size' => '1000',
+        'search_page_size' => '10000',
         'company_attr' => 'company',
         'title_attr' => 'title',
         'department_attr' => 'department'
@@ -243,7 +243,7 @@ function gofast_ldap_server_defaults($sid = NULL, $param = NULL) {
         'grp_test_grp_dn' => '',
         'grp_test_grp_dn_writeable' => '',
         'search_pagination' => 1,
-        'search_page_size' => '1000',
+        'search_page_size' => '10000',
         'company_attr' => 'company',
         'title_attr' => 'description', // intended (Botanic's AD misconfigured)
         'department_attr' => 'department'          
@@ -288,7 +288,7 @@ function gofast_ldap_server_defaults($sid = NULL, $param = NULL) {
         'grp_test_grp_dn' => '',
         'grp_test_grp_dn_writeable' => '',
         'search_pagination' => 1,
-        'search_page_size' => '1000',
+        'search_page_size' => '10000',
         'company_attr' => 'o',
         'title_attr' => 'title',
         'department_attr' => 'departmentnumber'

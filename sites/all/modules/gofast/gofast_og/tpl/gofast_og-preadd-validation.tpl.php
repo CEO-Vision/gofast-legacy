@@ -2,7 +2,11 @@
 
 <div class="panel panel-default preadd-validation-panel">
     <div class="panel-body">
-    <div style='margin-bottom:10px;'><b><?php echo t("Message", array(), array("context" => "gofast")). "</b> :    <span id='message'>".$message; ?></span> <span id='role_id'> <?php echo $rid; ?></span></div>
+    <div style='margin-bottom:10px;'>
+        <b><?= t("Message", array(), array("context" => "gofast")) ?></b>:&nbsp;
+        <span id='message'><?= $message ?></span>
+        <span id='role_id' class="d-none"><?php echo $rid; ?></span>
+    </div>
         <span id="nid" style="display:none;"><?php echo $nid; ?></span>
         <span id="type" style="display:none;"><?php echo $type; ?></span>
         <?php echo t('Pre-add members in ', array(), array('context' => 'gofast:taxonomy')); ?> <strong><?php echo $title; ?></strong> :

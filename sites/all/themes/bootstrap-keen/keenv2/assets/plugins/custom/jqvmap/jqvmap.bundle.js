@@ -16,4 +16,3 @@ var __webpack_exports__ = {};
 
 /******/ })()
 ;
-//# sourceMappingURL=jqvmap.bundle.js.map

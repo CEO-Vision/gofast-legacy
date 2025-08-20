@@ -1,5 +1,8 @@
 <?php
 
+// Make customisable constant to allow updating the max run date if needed
+define("GOFAST_STATS_CACHING_MAX_RUN_DATE", variable_get("gofast_stats_caching_max_run_date", "05:00"));
+
 function gofast_stats_menu() {
   $items = array();
   $items['gofast_stats/list_docs'] = array(
@@ -49,7 +52,7 @@ function gofast_stats_menu() {
     'page callback' => 'gofast_stats_retrieve_file',
     'type' => MENU_CALLBACK,
     'page arguments' => array(2),
-    'access arguments' => array('administer site configuration'),
+    'access arguments' => array('access content'),
     'access callback' => 'user_access',
   );
 
@@ -60,11 +63,11 @@ function gofast_stats_menu() {
     'access callback' => 'user_access',
   );
 
-   $items['gofast_stats/space_document_stats_export'] = array(
+   $items['gofast_stats/space_document_stats_export/%'] = array(
     'page callback' => 'gofast_stats_space_document_stats_genere_file',
     'type' => MENU_CALLBACK,
-    'access arguments' => array('access content'),
-    'access callback' => 'user_access',
+    'access arguments' => array(2),
+    'access callback' => 'gofast_stats_download_access',
   );
 
  return $items;
@@ -184,6 +187,12 @@ function gofast_stats_set_spaces_activity_cache($available_periods, $available_m
 }
 
 function gofast_stats_cache() {
+  $stop_date = new DateTime(GOFAST_STATS_CACHING_MAX_RUN_DATE);
+  $current_date = new DateTime();
+  if($current_date >= $stop_date){
+    watchdog("gofast_stats", "Stats caching cron tried to run after " . GOFAST_STATS_CACHING_MAX_RUN_DATE . " - Prevent caching stats.", [], WATCHDOG_INFO);
+    return;
+  }
   watchdog("gofast_stats", "Run cron for GoFAST stats caching", [], WATCHDOG_INFO);
   $available_periods = ["1week", "1month", "1year", "2year", "3year"];
   $available_modes = ["evolution", "periodic"];
@@ -777,7 +786,7 @@ function gofast_stats_user_stats_genere_file(){
     $objPHPExcel->getActiveSheet()->SetCellValue('G' . ($position+1), $uaccess);
     $objPHPExcel->getActiveSheet()->SetCellValue('H' . ($position+1), $user->status);
     $objPHPExcel->getActiveSheet()->SetCellValue('I' . ($position+1), gofast_user_is_adm($user));
-    $objPHPExcel->getActiveSheet()->SetCellValue('J' . ($position+1), gofast_user_is_manager($user));
+    $objPHPExcel->getActiveSheet()->SetCellValue('J' . ($position+1), gofast_user_is_site_manager($user));
     $objPHPExcel->getActiveSheet()->SetCellValue('K' . ($position+1), gofast_user_is_broadcaster($user));
     $objPHPExcel->getActiveSheet()->SetCellValue('L' . ($position+1), gofast_user_is_extranet($user));
     $objPHPExcel->getActiveSheet()->SetCellValue('M' . ($position+1), gofast_user_is_business_admin($user));
@@ -2124,11 +2133,12 @@ function gofast_stats_get_active_users_values($times, $step, $gid = NULL, $gids 
     if(empty($gids)) {
       $cid = "gofast_stats_get_active_users_values_{$time}";
       $data = cache_get($cid, "cache_gofast_stats")->data ?? FALSE;
+      if($data !== FALSE) {
+        $return[] = $data;
+        continue;
+      }
     }
-    if($data !== FALSE) {
-      $return[] = $data;
-      continue;
-    }
+    
     $to = gofast_stats_get_end_time_by_start_time($step, $time);
     $count_attr = "COUNT(DISTINCT(uid))";
     $return[] = db_query("select COUNT(DISTINCT(uid)) from ceo_vision_audit where event_type='login' AND timestamp <=" . $to . " AND timestamp >=" . $time . " " . $sql_filter_uids)->fetch()->$count_attr;
@@ -2219,4 +2229,18 @@ function gofast_stats_space_document_stats_genere_file() {
   $filters["date"] = $date;
   $_GET['xid'] = base64_encode(json_encode($filters));
   gofast_stats_global_doc_stats_genere_file();
+}
+
+/**
+ * Custom access function to allow some users downloading space statistics
+ */
+function gofast_stats_download_access($gid) {
+  $access = FALSE;
+  // Allow download only if user is business admin or if it's its private space
+  if(user_access("administer site configuration") || gofast_og_get_user_private_space(null, false) == $gid){
+    $access = TRUE;
+  } else {
+    $access = FALSE;
+  }
+  return $access;
 }

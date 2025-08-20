@@ -134,10 +134,25 @@ msgctxt "term:042649a3-4c0f-4af7-b7dc-69f9394157b2:name"
 msgid "SVG"
 msgstr "SVG"
 
+#: taxonomy:term:0f6ae3bf-bafb-4080-8dc6-a79e3f4bf121:name
+msgctxt "term:0f6ae3bf-bafb-4080-8dc6-a79e3f4bf121:name"
+msgid "Planning"
+msgstr "Planning"
+
+#: taxonomy:term:11cadc0c-d823-4d10-965a-4d2c4b023549:name
+msgctxt "term:11cadc0c-d823-4d10-965a-4d2c4b023549:name"
+msgid "Budget"
+msgstr "Budget"
+
 #: taxonomy:term:1227c5ab-598b-46c7-8873-d3caa9e40847:name
 msgctxt "term:1227c5ab-598b-46c7-8873-d3caa9e40847:name"
 msgid "Signed"
 msgstr "Signé"
+
+#: taxonomy:term:13dee0a7-0ba6-4ca1-98bc-0058a95ba639:name
+msgctxt "term:13dee0a7-0ba6-4ca1-98bc-0058a95ba639:name"
+msgid "Order"
+msgstr "Arreté"
 
 #: taxonomy:term:16af8a92-6b88-47d2-b2c1-8855c0869555:name
 msgctxt "term:16af8a92-6b88-47d2-b2c1-8855c0869555:name"
@@ -159,6 +174,11 @@ msgctxt "term:1ce68f6c-068b-4242-bd46-904bbf7eaecc:name"
 msgid "To Validate"
 msgstr "En attente de validation"
 
+#: taxonomy:term:1dfb455c-5089-42e7-8be3-56436264c25a:name
+msgctxt "term:1dfb455c-5089-42e7-8be3-56436264c25a:name"
+msgid "Technical"
+msgstr "Technique"
+
 msgctxt "term:1e3c4721-a787-46bd-8bf6-03929e32ba33:name"
 msgid "Pending change"
 msgstr "Modification en attente"
@@ -172,6 +192,11 @@ msgstr "En attente de signature"
 msgctxt "term:1edf6b08-b366-4323-915d-63840ccd74a9:name"
 msgid "Contract"
 msgstr "Contrat"
+
+#: taxonomy:term:1f0074c9-9404-4a0c-91db-0827ffdaba7c:name
+msgctxt "term:1f0074c9-9404-4a0c-91db-0827ffdaba7c:name"
+msgid "Blueprint"
+msgstr "Plan"
 
 #: taxonomy:term:22d82937-802c-4ad3-86f4-b8fb705dd66b:name
 msgctxt "term:22d82937-802c-4ad3-86f4-b8fb705dd66b:name"
@@ -333,6 +358,16 @@ msgctxt "term:592d5a53-1bbe-428c-bfee-67e5111c947b:name"
 msgid "Obsolete"
 msgstr "Obsolète"
 
+#: taxonomy:term:5d033d5c-4a17-42e1-a2be-0858377a562a:name
+msgctxt "term:5d033d5c-4a17-42e1-a2be-0858377a562a:name"
+msgid "Expense report"
+msgstr "Note de Frais"
+
+#: taxonomy:term:5ed7d14b-9e32-47d2-a129-75460723336e:name
+msgctxt "term:5ed7d14b-9e32-47d2-a129-75460723336e:name"
+msgid "Agenda"
+msgstr "Ordre du jour"
+
 #: taxonomy:term:5f342b8e-f115-4771-8609-c986d9da98f9:description
 msgctxt "term:5f342b8e-f115-4771-8609-c986d9da98f9:description"
 msgid "Audio file"
@@ -398,15 +433,45 @@ msgctxt "term:6c4054f5-4aef-4994-98d9-2b4b4bc75e8f:name"
 msgid "Wiki article"
 msgstr "Article wiki"
 
+#: taxonomy:term:6d19cc4d-dba2-4e4b-bb17-4f621ff59934:name
+msgctxt "term:6d19cc4d-dba2-4e4b-bb17-4f621ff59934:name"
+msgid "Email"
+msgstr "Email"
+
+#: taxonomy:term:6f2daed0-3d2c-48bf-af89-666f463e5d8b:name
+msgctxt "term:6f2daed0-3d2c-48bf-af89-666f463e5d8b:name"
+msgid "Legal"
+msgstr "Juridique"
+
+#: taxonomy:term:6fc1eaf9-5353-4cae-b533-f156232021a7:name
+msgctxt "term:6fc1eaf9-5353-4cae-b533-f156232021a7:name"
+msgid "Project Management"
+msgstr "Gestion de Projet"
+
 #: taxonomy:term:7028233c-9977-4236-b9cb-247e63a034aa:name
 msgctxt "term:7028233c-9977-4236-b9cb-247e63a034aa:name"
 msgid "Invoice"
 msgstr "Facture"
 
+#: taxonomy:term:7111eeac-24f0-4113-965c-b48b844365c7:name
+msgctxt "term:7111eeac-24f0-4113-965c-b48b844365c7:name"
+msgid "Article"
+msgstr "Article"
+
+#: taxonomy:term:7347b787-d370-4a56-b715-4774be5bab12:name
+msgctxt "term:7347b787-d370-4a56-b715-4774be5bab12:name"
+msgid "Purchase order"
+msgstr "Bon de Commande"
+
 #: taxonomy:term:737898a7-3a84-44ba-9b32-0c3cf2734bb0:name
 msgctxt "term:737898a7-3a84-44ba-9b32-0c3cf2734bb0:name"
 msgid "Management"
 msgstr "Management"
+
+#: taxonomy:term:75750f23-0f30-4138-92f7-e045001696cb:name
+msgctxt "term:75750f23-0f30-4138-92f7-e045001696cb:name"
+msgid "Minutes"
+msgstr "Compte-Rendu"
 
 #: taxonomy:term:7796ea2b-8393-41dc-9fa6-245312411ae8:description
 msgctxt "term:7796ea2b-8393-41dc-9fa6-245312411ae8:description"
@@ -463,6 +528,11 @@ msgctxt "term:8261336c-8340-4b96-bce2-705206bf998b:name"
 msgid "Application"
 msgstr "Candidature"
 
+#: taxonomy:term:84cee35f-2c43-4b53-830a-118dd54bfcef:name
+msgctxt "term:84cee35f-2c43-4b53-830a-118dd54bfcef:name"
+msgid "Court decision"
+msgstr "Décision de justice"
+
 #: taxonomy:term:856899f7-6792-40c3-84d1-4d10e5fd4a2b:name
 msgctxt "term:856899f7-6792-40c3-84d1-4d10e5fd4a2b:name"
 msgid "Pre-Archived"
@@ -482,6 +552,21 @@ msgstr "Présentation"
 msgctxt "term:892a2640-8d27-495f-a665-5ceaa8e60d59:name"
 msgid "PDF Image"
 msgstr "PDF Image"
+
+#: taxonomy:term:8a8db3b5-8bdb-495f-b2e7-9a33215807a2:name
+msgctxt "term:8a8db3b5-8bdb-495f-b2e7-9a33215807a2:name"
+msgid "Statement"
+msgstr "Relevé"
+
+#: taxonomy:term:8b1f24b1-c165-45d1-bc88-006223d1512b:name
+msgctxt "term:8b1f24b1-c165-45d1-bc88-006223d1512b:name"
+msgid "Service note"
+msgstr "Note de service"
+
+#: taxonomy:term:8be7117a-89c5-4ed2-ace3-8fd2b8d77a09:name
+msgctxt "term:8be7117a-89c5-4ed2-ace3-8fd2b8d77a09:name"
+msgid "Work stoppage"
+msgstr "Arrêt de travail"
 
 #: taxonomy:term:8e7cf030-eab9-4538-b940-2565b3352109:name
 msgctxt "term:8e7cf030-eab9-4538-b940-2565b3352109:name"
@@ -538,10 +623,25 @@ msgctxt "term:93de18c0-3ddd-4317-8c84-7caa9964dc14:name"
 msgid "Forum"
 msgstr "Forum"
 
+#: taxonomy:term:94e01de0-02bd-4dfb-9546-7c7cb10121fa:name
+msgctxt "term:94e01de0-02bd-4dfb-9546-7c7cb10121fa:name"
+msgid "Commitment"
+msgstr "Engagement"
+
 #: taxonomy:term:983506cb-76c1-48d7-9518-4f31b28fa6a4:name
 msgctxt "term:983506cb-76c1-48d7-9518-4f31b28fa6a4:name"
 msgid "toto_en"
 msgstr "toto_fr"
+
+#: taxonomy:term:986a3326-766d-4e7d-b453-96b675f851c3:name
+msgctxt "term:986a3326-766d-4e7d-b453-96b675f851c3:name"
+msgid "Operational"
+msgstr "Opérationnel"
+
+#: taxonomy:term:99abf669-3e34-475f-8dfa-59854e86b85b:name
+msgctxt "term:99abf669-3e34-475f-8dfa-59854e86b85b:name"
+msgid "Report"
+msgstr "Rapport"
 
 #: taxonomy:term:a0b45431-7cc6-4a03-997a-f0bb16598749:name
 msgctxt "term:a0b45431-7cc6-4a03-997a-f0bb16598749:name"
@@ -562,6 +662,11 @@ msgstr "Raclette3"
 msgctxt "term:a83481af-ef75-484f-930c-f9448abda9a8:name"
 msgid "Internal memo"
 msgstr "Note interne"
+
+#: taxonomy:term:a88f8616-c232-489d-934c-d9f49d3301e2:name
+msgctxt "term:a88f8616-c232-489d-934c-d9f49d3301e2:name"
+msgid "Financial"
+msgstr "Financier"
 
 #: taxonomy:term:b00aaef7-4f57-4b2a-be63-f3fc1e54afde:name
 msgctxt "term:b00aaef7-4f57-4b2a-be63-f3fc1e54afde:name"
@@ -638,15 +743,30 @@ msgctxt "term:bd095ec9-988d-43ac-b272-4e63dd6c3d2f:name"
 msgid "Form"
 msgstr "Formulaire"
 
+#: taxonomy:term:bdb53909-4bee-4c3d-9af4-98791b01a0e6:name
+msgctxt "term:bdb53909-4bee-4c3d-9af4-98791b01a0e6:name"
+msgid "Organizational Chart"
+msgstr "Organigramme"
+
+#: taxonomy:term:c35719bf-dd0c-402f-a53f-8e2455f62fe5:name
+msgctxt "term:c35719bf-dd0c-402f-a53f-8e2455f62fe5:name"
+msgid "Quote"
+msgstr "Devis"
+
 #: taxonomy:term:c39d5846-6789-4f4d-b66a-029791a0ea03:name
 msgctxt "term:c39d5846-6789-4f4d-b66a-029791a0ea03:name"
 msgid "Inbound (e)mail"
 msgstr "Courrier entrant"
 
+#: taxonomy:term:c4ff25d5-6724-4343-97b4-9cfbd878c2ed:name
+msgctxt "term:c4ff25d5-6724-4343-97b4-9cfbd878c2ed:name"
+msgid "Legal Text"
+msgstr "Texte de loi"
+
 #: taxonomy:term:c65ca575-8c89-48c4-a3a8-c41ccd211314:name
 msgctxt "term:c65ca575-8c89-48c4-a3a8-c41ccd211314:name"
 msgid "Specification"
-msgstr "Spécification"
+msgstr "Cahier des charges"
 
 #: taxonomy:term:c8d39b32-61d6-4263-a2b7-da695b46e133:description
 msgctxt "term:c8d39b32-61d6-4263-a2b7-da695b46e133:description"
@@ -667,6 +787,21 @@ msgstr "Groupe"
 msgctxt "term:cbc9b096-b075-4a14-95a0-6dc4a5987b2b:name"
 msgid "Low"
 msgstr "Basse"
+
+#: taxonomy:term:cc05e639-3e86-41d6-ab39-bb513a3ad719:name
+msgctxt "term:cc05e639-3e86-41d6-ab39-bb513a3ad719:name"
+msgid "Agreement"
+msgstr "Accord"
+
+#: taxonomy:term:d05f32ca-810f-42e5-8ddc-ad48cc3d3521:name
+msgctxt "term:d05f32ca-810f-42e5-8ddc-ad48cc3d3521:name"
+msgid "Announcement"
+msgstr "Communiqué"
+
+#: taxonomy:term:d120a734-c840-45d4-8490-8ee4298b2571:name
+msgctxt "term:d120a734-c840-45d4-8490-8ee4298b2571:name"
+msgid "Call for tenders"
+msgstr "Appel d'offres"
 
 msgctxt "term:d1771148-d81a-4099-824b-a6ce932486c6:name"
 msgid "Signed"
@@ -701,6 +836,11 @@ msgctxt "term:d3c55831-8f05-4379-b845-ad213d699654:name"
 msgid "Profil"
 msgstr "Profil"
 
+#: taxonomy:term:d60eb4aa-67f1-4a71-98b6-b8435081c44c:name
+msgctxt "term:d60eb4aa-67f1-4a71-98b6-b8435081c44c:name"
+msgid "Employment Records"
+msgstr "Dossier de salarié"
+
 #: taxonomy:term:d654af50-1c14-484c-993a-b523827572fe:name
 msgctxt "term:d654af50-1c14-484c-993a-b523827572fe:name"
 msgid "Information"
@@ -720,6 +860,11 @@ msgstr "Fichier de type Visio"
 msgctxt "term:d68c8b68-45c5-4ff1-afd9-cd6db2f6c4f7:name"
 msgid "Visio"
 msgstr "Visio"
+
+#: taxonomy:term:dc45a58c-0a76-4ac9-950e-55a43ef27bd0:name
+msgctxt "term:dc45a58c-0a76-4ac9-950e-55a43ef27bd0:name"
+msgid "Administrative"
+msgstr "Administratif"
 
 #: taxonomy:term:dc7440e1-3260-429d-826d-6dc7d8554866:name
 msgctxt "term:dc7440e1-3260-429d-826d-6dc7d8554866:name"
@@ -741,10 +886,20 @@ msgctxt "term:dd5e25f3-494c-46a9-b046-5f4c886f2c5a:name"
 msgid "Video"
 msgstr "Vidéo"
 
+#: taxonomy:term:dd7f07c9-de08-4aef-b832-5082cbf44358:name
+msgctxt "term:dd7f07c9-de08-4aef-b832-5082cbf44358:name"
+msgid "Deed"
+msgstr "Acte"
+
 #: taxonomy:term:e35313b5-c593-4fe9-9992-7aae53335e29:name
 msgctxt "term:e35313b5-c593-4fe9-9992-7aae53335e29:name"
 msgid "To Do"
 msgstr "A traiter en priorité"
+
+#: taxonomy:term:eac44a0c-a86f-426b-a36b-c45602e7a9e1:name
+msgctxt "term:eac44a0c-a86f-426b-a36b-c45602e7a9e1:name"
+msgid "Study"
+msgstr "Étude"
 
 #: taxonomy:term:ebfb4e0e-6b40-469c-ab3b-3a572b9bedbc:name
 msgctxt "term:ebfb4e0e-6b40-469c-ab3b-3a572b9bedbc:name"
@@ -761,6 +916,11 @@ msgctxt "term:ef688234-1cc1-46ee-b8c9-15901fa81aed:name"
 msgid "Bruuuh"
 msgstr "Oui"
 
+#: taxonomy:term:ef788c9b-1b61-4a48-b604-23ed13953889:name
+msgctxt "term:ef788c9b-1b61-4a48-b604-23ed13953889:name"
+msgid "Marketing and Sales"
+msgstr "Marketing et Vente"
+
 #: taxonomy:term:f0e01087-7832-4239-ac45-415b81730d8b:description
 msgctxt "term:f0e01087-7832-4239-ac45-415b81730d8b:description"
 msgid "An HTML document"
@@ -775,6 +935,11 @@ msgstr "HTML"
 msgctxt "term:f14d8d08-8a03-408f-bb74-371ca6376946:name"
 msgid "Fwondhue"
 msgstr "Fondue"
+
+#: taxonomy:term:f1941382-f754-47b2-b7e7-55347d874c87:name
+msgctxt "term:f1941382-f754-47b2-b7e7-55347d874c87:name"
+msgid "Financial report"
+msgstr "Rapport financier"
 
 #: taxonomy:term:f2fcb5a9-451e-47ec-bbe4-0b86ad86867b:description
 msgctxt "term:f2fcb5a9-451e-47ec-bbe4-0b86ad86867b:description"
@@ -805,6 +970,16 @@ msgstr "Document texte comme Word ou LibreOffice"
 msgctxt "term:f3ab0e3a-939a-4018-8c03-c792cc305cb4:name"
 msgid "Text Document"
 msgstr "Document texte"
+
+#: taxonomy:term:f714c6c9-dfd4-4eef-81d9-b58c89a2fee8:name
+msgctxt "term:f714c6c9-dfd4-4eef-81d9-b58c89a2fee8:name"
+msgid "Pay slip"
+msgstr "Bulletin de paie"
+
+#: taxonomy:term:f78beb28-2624-4a99-b347-bbe9f10fc1c7:name
+msgctxt "term:f78beb28-2624-4a99-b347-bbe9f10fc1c7:name"
+msgid "Human Resources"
+msgstr "Ressources Humaines"
 
 #: taxonomy:term:f9adc91d-c63b-4506-8e29-2c4f568f6b98:name
 msgctxt "term:f9adc91d-c63b-4506-8e29-2c4f568f6b98:name"
@@ -1063,3 +1238,13 @@ msgstr "Secret UE"
 msgctxt "term:bd3fdb50-6389-4842-b7dd-ce3cef6baa33:name"
 msgid "EU Top Secret"
 msgstr "Très Secret UE"
+
+#: taxonomy:term:01ac7b05-d726-4520-ac5a-3986cc8d6464:name
+msgctxt "term:01ac7b05-d726-4520-ac5a-3986cc8d6464:name"
+msgid "Delivery note"
+msgstr "Bon de Livraison"
+
+#: taxonomy:term:ac8298ec-32c5-4e9f-b209-e0edddf66fb9:name
+msgctxt "term:ac8298ec-32c5-4e9f-b209-e0edddf66fb9:name"
+msgid "Miscellaneous"
+msgstr "Divers"

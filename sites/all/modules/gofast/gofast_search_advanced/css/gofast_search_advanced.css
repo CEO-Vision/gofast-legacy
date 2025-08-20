@@ -9,31 +9,9 @@
     height: calc(1.35em + 1.1rem + 2px);
 }
 
-.GofastForm__Field .form-item-ac-list-tags-list-spaces tags{
-    height: calc(1.35em + 1.1rem + 2px);
-}
-
 .GofastForm__Field .form-field-operator .select2-selection .select2-selection__placeholder,
 .GofastForm__Field .form-field-operator .select2-selection .select2-selection__rendered{
     margin-left:10px;
-}
-
-.GofastForm__Field .grid-container {
-    display: grid;
-    grid-template-columns: 25% 75%;
-}
-
-#form-group-spaces-category{
-    display: grid;
-    grid-template-columns: 50% 50%;
-}
-
-#form-group-spaces-category .GofastForm__Field{
-    width: 90%;
-}
-
-#form-search-label .GofastForm__Field{
-    width: 95%;
 }
 
 .badge-light-success {
@@ -49,4 +27,16 @@
 .badge-light-danger {
     background-color: #f8d7da;
     color: #721c24;
+}
+
+#gofastAdvancedSearchResults td[data-field^='ds_'], #gofastAdvancedSearchHistory td[data-field='date'] {
+    font-family: 'Segoe UI';
+}
+
+#search-form-body .form-field-operator > span.select2-container {
+    flex-grow: 1;
+}
+
+#gofastAdvancedSearchHistory td[data-field='filters'], #gofastAdvancedSearchHistory td[data-field='query'] {
+    display: none !important;
 }

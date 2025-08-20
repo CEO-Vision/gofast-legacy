@@ -30,7 +30,7 @@ function gofast_userlist_og_form_og_ui_add_users_alter(&$form, &$form_state, $fo
 
   $space_type = gofast_get_node_type($gid, TRUE);
   $extranet_users_form = true;
-  $spaces_config = variable_get("spaces_defaults");
+  $spaces_config = gofast_admin_get_space_defaults();
   if($space_type === 'group'){
     if ($spaces_config['group_add_external_user'] == '0') {
       drupal_set_message(t('Adding external users to groups is enabled !'));
@@ -71,6 +71,7 @@ function gofast_userlist_og_form_og_ui_add_users_alter(&$form, &$form_state, $fo
  * Implements hook_form_FORM_ID_alter()
  */
 function gofast_userlist_og_form_og_ui_edit_membership_alter(&$form, &$form_state) {
+  global $user;
   if (!isset($form['membership_fields']['#entity'])) {
     return;
   }
@@ -103,7 +104,7 @@ function gofast_userlist_og_form_og_ui_edit_membership_alter(&$form, &$form_stat
 
     if (count($form['og_user']['roles']["#options"]) > 0) {
       foreach ($form['og_user']['roles']["#options"] as $rid => $role_string) {
-        $form['og_user']['roles']["#options"][$rid] = t($role_string, array(), array("context" => "gofast"));
+        $form['og_user']['roles']["#options"][$rid] = $user->language == "en" ? ucfirst($role_string) : t($role_string, array(), array("context" => "gofast"));
       }
     }
 

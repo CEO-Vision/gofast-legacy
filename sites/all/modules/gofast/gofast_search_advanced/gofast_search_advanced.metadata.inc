@@ -1,7 +1,7 @@
 <?php
 
 function gofast_search_advanced_declare_standard_metadatas(){
-  $metadatas_name = t("Standard metadatas", array(), array('context' => 'gofast:gofast_search_advanced'));
+  $metadatas_name = t("Standard metadata", array(), array('context' => 'gofast:gofast_search_advanced'));
   
   $metadata = array();
   $metadata['nid'] = array(
@@ -9,6 +9,11 @@ function gofast_search_advanced_declare_standard_metadatas(){
     'title' => t('Node ID'),
     'type' => 'input',
     'fieldset' => "default"
+  );
+  $metadata['entity_type'] = array(
+    'solr_field' => 'entity_type',
+    'filter_hidden' => true,
+    'search_column_hidden' => true,
   );
   $metadata['im_field_format'] = array(
     'solr_field' => 'im_field_format',
@@ -56,14 +61,35 @@ function gofast_search_advanced_declare_standard_metadatas(){
     'type' => 'select',
     'fields' => gofast_advanced_search_get_taxonomy('field_classification'),
   );
-  $metadata['sm_unr_author'] = array(
-    'solr_field' => 'sm_unr_author',
+  $metadata['tos_unr_author'] = array(
+    'solr_field' => 'tos_unr_author',
     'title' => t('Author'),
-    'type' => 'auth',
+    'type' => 'user_ac',
+  );
+  $metadata['tos_name'] = array(
+    'solr_field' => 'tos_name',
+    'title' => t("Creator"),
+    'type' => 'only_user_ac',
   );
   $metadata['is_uid'] = array(
+    'solr_field' => 'is_uid',
     'filter_hidden' => true,
     'search_column_hidden' => true,
+  );
+  $metadata['is_mod_uid'] = array(
+    'solr_field' => 'is_mod_uid',
+    'filter_hidden' => true,
+    'search_column_hidden' => true,
+  );
+  $metadata['tos_mod_name'] = array(
+    'solr_field' => 'tos_mod_name',
+    'title' => t("Last modifier"),
+    'type' => 'only_user_ac',
+  );
+  $metadata['ds_custom_date'] = array(
+    'solr_field' => 'ds_custom_date',
+    'title' => GOFAST_METADATA_CUSTOM_DATE_LABEL,
+    'type' => 'date' ,
   );
   $metadata['ds_created'] = array(
     'solr_field' => 'ds_created',
@@ -97,8 +123,15 @@ function gofast_search_advanced_declare_standard_metadatas(){
     'filter_hidden' => true,
   );
   $metadata['bs_status'] = array(
+    'solr_field' => 'bs_status',
     'title' => t('Status', array(), array('context' => 'gofast:gofast_search_advanced')),
-    'filter_hidden' => true,
+    'type' => 'select',
+    'fields' => array(
+      1 => t('Not deleted'),
+      0 => t('Deleted'),
+    ),
+    'filter_hidden' => false,
+    'search_column_hidden' => true,
   );
 
   return array(

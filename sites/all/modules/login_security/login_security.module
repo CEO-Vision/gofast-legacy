@@ -230,8 +230,14 @@ function login_security_validate($form, &$form_state)
   // Check for host login attempts: Hard.
   if ($variables['@hard_block_attempts'] >= 1) {
     if ($variables['@ip_current_count'] >= $variables['@hard_block_attempts']) {
-      // Block the host ip_address().
-      login_user_block_ip($variables);
+      /*  CEO-Vision Patch */
+      // Prevent blocking gofast-comm domain when too much failed attempt from the Element app
+      global $conf;
+      if($variables["@ip"] != gethostbyname($conf['gofast-comm_domain'])){
+      /*  CEO-Vision Patch */
+        // Block the host ip_address().
+        login_user_block_ip($variables);
+      }
     }
   }
 

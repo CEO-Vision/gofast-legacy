@@ -13,11 +13,11 @@ node.setInheritsPermissions(false);
             group = group_array[1];
             try{
                 //replace all classic RO permission by DUA_Archived permission               
-		if(group_array[1].substr(-6) == "_ADMIN" || group_array[1].substr(-9) == "_STANDARD"){
-                   //This is a space not RO permission, removes it
-		   node.removePermission(group_array[2],group);  
-		 node.setPermission("DUA_Archived",group);
-		}else if(group_array[2] == "Coordinator"){
+                if(group_array[1].substr(-6) == "_ADMIN" || group_array[1].substr(-13) == "_GROUPMANAGER" || group_array[1].substr(-9) == "_STANDARD"){
+                    //This is a space not RO permission, removes it
+                    node.removePermission(group_array[2],group);  
+                    node.setPermission("DUA_Archived",group);
+                }else if(group_array[2] == "Coordinator"){
                     //This is a private space, set it to RO
                     node.removePermission(group_array[2],group);
                     node.setPermission("DUA_Archived",group);   

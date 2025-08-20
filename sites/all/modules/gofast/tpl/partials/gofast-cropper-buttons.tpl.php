@@ -20,5 +20,5 @@
         <label for="inputImage" class="btn btn-sm btn-primary btn-upload crop-buttons" id="btnInputImgAvatar" data-toggle="" title="<?php print t('Import image with Blob URLs', array(), array('context' => 'gofast')); ?>"><i class="fa fa-upload"></i><?php print t('Upload', array(), array('context' => 'gofast')); ?></label>
         <input type="file" class="sr-only" id="inputImage" name="file" accept="image/*">
     </div>
-    <button type="button" class="btn btn-sm btn-success crop-buttons" <?= $id_attribute ?> id="save"><?php print t('Save', array(), array('context' => 'gofast')); ?></button>
+    <button type="button" class="btn btn-sm btn-success crop-buttons" id="save"><?php print t('Save', array(), array('context' => 'gofast')); ?></button>
 </div><!-- /.docs-buttons -->

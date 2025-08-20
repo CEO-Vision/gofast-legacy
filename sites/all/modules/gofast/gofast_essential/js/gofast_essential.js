@@ -69,7 +69,7 @@
         }
         fullPageNode.remove()
         backgroundContent.find("[id=document__infotab_disabled]").attr("id", "document__infotab")
-        backgroundContent.removeClass("d-none").addClass("d-flex")
+        backgroundContent.removeClass("d-none")
         Gofast.ITHit.reset_full_browser_size()
         // Highlight and scroll to the node in the file browser
         let nodeItem = $(`.item-nid:contains('${nid}')`).parent();
@@ -135,6 +135,8 @@
                       if(result != ""){
                         nid = result
                         history.pushState({}, "", "/node/"+nid+"?path="+urlParam+"#ogdocuments")
+                        // Set the currentPath to the destination, preventing reloading on actual path
+                        Gofast.ITHit.currentPath = urlParam
                         Gofast.Essential.goToNode(nid, "folder", false, urlParam);
                         isFolder = true;
                       }
@@ -431,7 +433,7 @@
         $("#nav_mobile_file_browser_wiki_container").click();
 
         Drupal.settings.gofast_selected_book = Gofast.get("node").id;
-        Gofast.selectCurrentWikiArticle();
+        Gofast.sideFileBrowser.selectCurrentItem("book-browser");
       })
     },
     showForumLayer: function(nid){
@@ -585,11 +587,31 @@
         });
 
         // Observe class changes in the file browser layer("#fileBrowserLayer")
-        observer.observe(document.getElementById("fileBrowserLayer"), {
-          attributes: true,
-          attributeFilter: ["class"],
-          attributeOldValue: true
-        });
+        let attempt = 0;
+        const maxAttempts = 100;
+        const retryTimeout = 100; /* ms */
+        // IIFE to try to configure observer on the target element, it is called
+        // again after a short delay if element did not exist.
+        (function setupObserver() {
+          ++attempt;
+          const element = document.getElementById("fileBrowserLayer");
+          if (element == null) {
+            // retry later in case element is not loaded yet.
+            if (attempt < maxAttempts) {
+              setTimeout(setupObserver, retryTimeout);
+            } else {
+              // max attempts reached, warn user in console.
+              throw new Error("gofast_essential: Failed to setup class observer for essential browser layer");
+            }
+            return;
+          }
+
+          observer.observe(element, {
+            attributes: true,
+            attributeFilter: ["class"],
+            attributeOldValue: true,
+          });
+        })();
       });
     },
     setNodeObject: async function (nid, forceSet = false) {
@@ -632,11 +654,13 @@
         requestParam = "all"+requestParam
       }
       $.get('/essential/get_node_content_part/search/'+requestParam).done((content)=>{
+        var commands = content["commands"]
+        Drupal.ajax.prototype.handleAjaxCommands(commands);
         if($('#searchPageLayer').length == 0){
           Gofast.Essential.removeAllNodeLayers(true);
-          $('.GofastNodeOg__container > .card-body').clone().appendTo($('.GofastNodeOg__container > .card-body').parent()).html(content).attr('id','searchPageLayer')
+          $('.GofastNodeOg__container > .card-body').clone().appendTo($('.GofastNodeOg__container > .card-body').parent()).html(content["content"]).attr('id','searchPageLayer')
         } else {
-          $("#searchPageLayer").html(content)
+          $("#searchPageLayer").html(content["content"])
         }
         Gofast.removeLoading();
         // document.title = Drupal.settings.site_name || "GoFAST";
@@ -786,14 +810,14 @@
                     if (!$('#fileBrowserLayer').hasClass('processed') && !$('.fileBrowserLayerContainer').length) {
                       Gofast.Essential.getFileBrowserContent().then((fileBrowserContent) => {
                       $("#gofastContainer").prepend(fileBrowserContent)
-                      $(".essentialFileBrowser").removeClass("d-flex").addClass("d-none")
+                      $("#ogContainer").addClass("d-none")
                       })
                     }
                   })
               } else {
                 Gofast.Essential.getFileBrowserContent().then((fileBrowserContent)=>{
                   $("#gofastContainer").prepend(fileBrowserContent)
-                  $(".essentialFileBrowser").removeClass("d-flex").addClass("d-none")
+                  $("#ogContainer").addClass("d-none")
                 })
               }
             }

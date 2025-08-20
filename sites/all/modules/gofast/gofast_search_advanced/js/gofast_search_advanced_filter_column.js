@@ -6,6 +6,11 @@
             // Click event on the advanced search filter column
             $('#advanced-search-filter-column').once().click(function () {
                 
+                // if gofastAdvancedSearchResults have no thead, we can't get the columns
+                if ($('#gofastAdvancedSearchResults thead').length == 0) {
+                    Gofast.toast(Drupal.t('You must perform a search before filtering the columns.', {}, {context: "gofast:gofast_search_advanced"}), 'warning');
+                    return;
+                }
                 Gofast.addLoading();
                 let columns = getFiltersColumnsFromCookies();
                 // Get the template with a ajax call and giving the columns filters
@@ -43,7 +48,7 @@
                 Gofast.closeModal();
 
                 // Relaunch the search
-                $('#submit-advanced-search').trigger('click');
+                Gofast.searchAdvanced.triggerSearch(false)
             });
 
                 // Check all columns checkbox

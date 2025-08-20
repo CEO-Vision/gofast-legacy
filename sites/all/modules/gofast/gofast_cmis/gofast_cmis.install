@@ -677,6 +677,15 @@ function gofast_cmis_update_7716() {
   }
 }
 
+/** Set onlyoffice read only preview to enabled for everyone if form defaults is already set */
+function gofast_cmis_update_7717(){
+  $documents_form_defaults = variable_get("documents_form_defaults");
+  if(isset($documents_form_defaults)){
+    $documents_form_defaults["gofast_onlyoffice_ro_preview"] = TRUE;
+    variable_set("documents_form_defaults", $documents_form_defaults);
+  }
+}
+
 /**
  * Implements hook_install().
  */

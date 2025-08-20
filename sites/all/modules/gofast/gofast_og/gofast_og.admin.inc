@@ -230,16 +230,23 @@ function gofast_og_ui_instant_edit_membership_validate($form, &$form_state) {
 }
 
 function gofast_og_ui_instant_edit_membership_submit($form, &$form_state) {
-  foreach(array_keys($form_state["og_roles"]) as $rid) {
-    if ($rid != $form_state['role_id']) {
-      $form_state["userlist"]
-        ? gofast_userlist_og_role_revoke_userlist($form_state["group_type"], $form_state["gid"], $form_state["userlist"]->ulid, $rid)
-        : og_role_revoke($form_state["group_type"], $form_state["gid"], $form_state["uid"], $rid);
+  $rids = array_keys($form_state["og_roles"]);
+
+  $removed_rids = array_filter($rids, function($rid) use ($form_state){
+    return $rid != $form_state["role_id"];
+  });
+  // Remove all roles before granting new one to prevent user having two roles on hook role_grant
+  foreach($removed_rids as $removed_rid){
+    if($form_state["userlist"]){
+      gofast_userlist_og_role_revoke_userlist($form_state["group_type"], $form_state["gid"], $form_state["userlist"]->ulid, $removed_rid);
     } else {
-      $form_state["userlist"]
-      ? gofast_userlist_og_role_grant_userlist($form_state["group_type"], $form_state["gid"], $form_state["userlist"]->ulid, $rid)
-      : og_role_grant($form_state["group_type"], $form_state["gid"], $form_state["uid"], $rid);
+      og_role_revoke($form_state["group_type"], $form_state["gid"], $form_state["uid"], $removed_rid);
     }
+  }
+  if($form_state["userlist"]){
+    gofast_userlist_og_role_grant_userlist($form_state["group_type"], $form_state["gid"], $form_state["userlist"]->ulid, $form_state["role_id"]);
+  } else {
+    og_role_grant($form_state["group_type"], $form_state["gid"], $form_state["uid"], $form_state["role_id"]);
   }
 }
 
@@ -306,31 +313,25 @@ function gofast_og_ui_delete_membership($form, &$form_state, $group_type, $gid, 
       $check = true;
     }
   }
-  
+
   if($check == true){
+    global $user;
+    $role_string = "";
     //Get the higher roles
-    if(array_search('administrator member', $rids) !== FALSE){
-      $final_rids = 0;
-    }else if(array_search('group contributor', $rids) !== FALSE){
-      $final_rids = 1;
-    }else if (array_search('read only member', $rids) !== FALSE){
-      $final_rids = 2;
-  }
-    
-    $role_string = '';
-    
-    switch ($final_rids){
-      case 0:
-        $role_string = t('administrator member', array(), array('context'=>'gofast_og'));
-        break;
-      case 1:
-        $role_string = t('group contributor', array(), array('context'=>'gofast_og'));
-        break;
-      case 2:
-        $role_string = t('read only member', array(), array('context'=>'gofast_og'));
-        break;
+    if(array_search(GOFAST_OG_ROLE_ADMIN, $rids) !== FALSE){
+      $role_string = GOFAST_OG_ROLE_ADMIN;
+    }else if(array_search(GOFAST_OG_ROLE_MANAGER, $rids) !== FALSE){
+      $role_string = GOFAST_OG_ROLE_MANAGER;
+    }else if(array_search(GOFAST_OG_ROLE_STANDARD, $rids) !== FALSE){
+      $role_string = GOFAST_OG_ROLE_STANDARD;
+    }else if (array_search(GOFAST_OG_ROLE_READ_ONLY, $rids) !== FALSE){
+      $role_string = GOFAST_OG_ROLE_READ_ONLY;
+    }
+    if (strlen($role_string)) {
+      $role_string = $user->language == "en" ? ucfirst($role_string) : t($role_string, array(), array("context" => "gofast"));
     }
   }
+
   // Add group membership form. We still don't have the user or state.
   $form_state['og_membership'] = $og_membership;
   $form['#validate'][] = "gofast_og_ui_delete_membership_validate";
@@ -415,6 +416,480 @@ function gofast_og_ui_delete_membership_validate($form, &$form_state) {
 
 }
 
+
+/**
+ * Callback from spaces/%ctools_js/%/%/admin/bulk-instant-edit-membership/%/%'
+ */
+function gofast_og_change_role_bulk_membership($js, $group_type, $gid, $rid, $uids){
+  ctools_include('og_ui/og_ui.admin', 'og', '');
+
+  $args = func_get_args();
+  array_shift($args);
+
+  ctools_include('modal');
+  ctools_include('ajax');
+
+  $group = entity_load_single($group_type, $gid);
+  $label = entity_label($group_type, $group);
+
+  $form_state = array(
+    'ajax' => TRUE,
+    'title' => t('Change memberships in group @group', array('@group' => $label)),
+    'build_info' => array(
+      'args' => $args
+    )
+  );
+
+  $commands = ctools_modal_form_wrapper('gofast_og_ui_change_role_bulk_membership', $form_state, $group_type, $gid, $rid, $uids);
+  if($form_state['last_admin']){
+    $commands = array(
+      ctools_modal_command_dismiss(),
+      gofast_command_toast_message(t("A space must have at least two administrators", array(), array('context' => "gofast:gofast_og")), "error")
+    );
+  }else if ($form_state['submitted']) {
+    $commands = array(
+      ctools_modal_command_dismiss(),
+      gofast_command_processAjax("/node/{$gid}" . "#gofastSpaceMembers")
+    );
+  }
+
+  print ajax_render($commands);
+  
+}
+
+
+
+
+/**
+ * Form to change the role of multiple users in a group.
+ */
+function gofast_og_ui_change_role_bulk_membership($form, &$form_state, $group_type, $gid, $rid, $uids) {
+
+  $uids = explode('-', $uids);
+  $form_state['gid'] = $gid;
+  $form_state['uids'] = $uids;
+  $form_state['rid'] = $rid;
+  
+  $form['#validate'] = array("gofast_og_ui_change_role_bulk_membership_validate");
+  $form['#submit'] =  array("gofast_og_ui_change_role_bulk_membership_submit");
+
+  $summaries = array();
+  $summary_message = "";
+  foreach ($summaries as $summary) {
+    $summary_message .= $summary["picture"]."<br />";
+  }
+  
+  $confirm_form = confirm_form(
+    $form,
+    "",
+    "/node/{$gid}#gofastSpaceMembers",
+     $summary_message,
+  );
+  // Create the list of users to be displayed in the confirmation form
+  $titles = "<div>";
+  foreach ($uids as $uid) {
+    $uid = explode(':', $uid);
+    $entity_uid = $uid[1];
+    $entity_type = $uid[0];
+    if($entity_type == "user"){
+      $account = user_load($entity_uid);
+      if (isset($account->uid)) {
+        $title = $account->ldap_user_givenname[LANGUAGE_NONE][0]['value'] . " " . $account->ldap_user_sn[LANGUAGE_NONE][0]['value'];
+        $picture =  theme('user_picture', array('account' => $account, 'dimensions' => 40));
+        $titles .= '<div class="d-flex align-items-center">' . $picture . '<span class="ml-3 text-dark font-size-h6">' . $title  . '</span></div>';
+      }
+    }else{
+      $userlist = entity_load_single("userlist", $entity_uid);
+      if (isset($userlist->ulid)) {
+        $title = $userlist->name;
+        $picture =  theme('user_picture', array('account' => $userlist, 'dimensions' => 40));
+        $titles .= '<div class="d-flex align-items-center">' . $picture . '<span class="ml-3 text-dark font-size-h6">' . $title  . '</span></div>';
+      }
+    }
+  }
+  $titles .= "</div>";
+  $confirm_form["selected_uids_titles"] = array(
+    '#type' => 'fieldset',
+    '#title' => $titles,
+  );
+
+  // Actions buttons
+  $confirm_form['actions']['cancel']['#type'] = "submit";
+  $confirm_form['actions']['cancel']['#value'] = t('Cancel');
+  $confirm_form['actions']['cancel']['#attributes'] = array(
+    'id' => 'edit-cancel',
+    'class' => array('btn', 'btn-secondary')
+  );
+
+  return $confirm_form;
+}
+
+
+/**
+ * Implements hook_validate().
+ */
+function gofast_og_ui_change_role_bulk_membership_validate($form, &$form_state) {
+  
+  // Get all parameters
+  $uids = $form_state['uids'];
+  $rid = $form_state['rid'];
+  $role_name = og_role_load($rid)->name;
+  $gid = $form_state['gid'];
+  
+  // Get all remaining administrators to check if we already have at least two
+  $remaining_admins = gofast_userlist_og_get_node_members_by_role($form_state['gid'], array(OG_STATE_ACTIVE), "administrator member");
+  
+  foreach ($uids as $uid) {
+    $uid = explode(':', $uid);
+    $member_uid = $uid[1];
+    $member_entity_type = $uid[0];
+    //Check if we are impacting an administrator membership
+    if($member_entity_type== "user"){
+      $roles = gofast_og_get_user_roles($gid, $member_uid);
+    }else if($member_entity_type == "userlist"){
+      $roles = gofast_userlist_og_get_userlist_roles("node", $gid, $member_uid);
+    }
+    
+    if(in_array("administrator member", $roles, TRUE)){
+      
+      //remove this entity from remaining space administrators
+      if(array_search($member_uid, array_column($remaining_admins, 'etid')) !== false && strpos($role_name, "administrator member") === FALSE){
+        unset($remaining_admins[array_search($member_uid, array_column($remaining_admins, 'etid'))]);
+        // Reset the array keys
+        $remaining_admins = array_values($remaining_admins);
+      }
+      //Check count of administrators in this space without entities we will remove from this space
+      if(count($remaining_admins) < 2){
+        $form_state['last_admin'] = TRUE;
+        form_set_error("last_admin", t("A space must have at least two administrators", array(), array('context' => "gofast:gofast_og")));
+      }
+    }
+  }
+}
+
+/**
+ * hook_form_submit() implementation.
+ */
+function gofast_og_ui_change_role_bulk_membership_submit($form, &$form_state) {
+
+  $uids = $form_state['uids'];
+  $gid = $form_state['gid'];
+  $rid = $form_state['rid'];
+  $role_name = og_role_load($rid)->name;
+  foreach ($uids as $uid) {
+    $uid = explode(':', $uid);
+    $member_uid = $uid[1];
+    $member_type = $uid[0];
+
+    // Update membership
+    if($member_type == "user"){ // User
+      gofast_og_space_admin_update_membership($gid, $member_uid, $role_name);
+    }else if ($member_type == "userlist"){ // Userlist
+      gofast_userlist_og_update_membership($gid, $member_uid, $role_name);
+    }
+  }
+}
+
+
+
+
+/**
+ * Delete  OG memberships - modal callback.
+ */
+function gofast_og_delete_bulk_membership($js, $group_type, $gid, $og_membership_ids) {
+  ctools_include('og_ui/og_ui.admin', 'og', '');
+
+  $args = func_get_args();
+  array_shift($args);
+
+  ctools_include('modal');
+  ctools_include('ajax');
+
+  $group = entity_load_single($group_type, $gid);
+  $label = entity_label($group_type, $group);
+
+  $form_state = array(
+    'ajax' => TRUE,
+    'title' => t('Remove memberships in group @group', array('@group' => $label)),
+    'build_info' => array(
+      'args' => $args
+    )
+  );
+  $commands = ctools_modal_form_wrapper('gofast_og_ui_delete_bulk_membership', $form_state, $group_type, $gid, $og_membership_ids);
+  if($form_state['last_admin']){
+    $commands = array(
+      ctools_modal_command_dismiss(),
+      gofast_command_toast_message(t("A space must have at least two administrators", array(), array('context' => "gofast:gofast_og")), "error")
+    );
+  }else if ($form_state['submitted']) {
+    $commands = array(
+      ctools_modal_command_dismiss(),
+      gofast_command_processAjax("/node/{$gid}" . "#gofastSpaceMembers")
+    );
+  }
+
+  print ajax_render($commands);
+}
+/**
+ * Delete multiple membership from group.
+ */
+function gofast_og_ui_delete_bulk_membership($form, &$form_state, $group_type, $gid, $uids) {
+  $remaining_userlists = gofast_userlist_og_get_node_members($gid, array('userlist'));
+  
+  $form_state['gid'] = $gid;
+  // Membership_id to og_membership
+  if (strpos($uids, '-') !== false) { 
+    $uids = explode('-', $uids); 
+  }
+  
+  
+  $og_memberships = []; // Create a new array to store loaded memberships
+  foreach ($uids as $uid) {
+    $uid = explode(':', $uid);
+    $entity_type = $uid[0];
+    $etid = $uid[1];
+    $membership = og_get_membership('node', $gid, $entity_type, $etid);
+    $og_memberships[] = $membership;
+  }
+  $form_state['og_memberships'] = $og_memberships;
+  
+  $at_least_one_userlist = false;
+  //build an array containing all warnings to display
+  $warnings = array();
+  $summaries = array();
+  
+  //first, iterate into userlist memberships
+  foreach ($og_memberships as $og_membership) {
+    if ($og_membership->entity_type == "userlist"){
+      $form_state['og_memberships'][] = $og_membership;
+      $at_least_one_userlist = true;
+    
+      $ul = entity_load_single('userlist', $og_membership->etid);
+      $summaries[$og_membership->etid] = array('picture' => $ul->name);
+     
+      //remove this userlist from space remaining userlists
+      if(array_search($og_membership->etid, array_column($remaining_userlists, 'etid')) !== false){
+        unset($remaining_userlists[array_search($og_membership->etid, array_column($remaining_userlists, 'etid'))]);
+      }
+    }
+  }
+  
+
+   //then, iterate into user memberships, to be sure to have a correct remaining userlists list
+   foreach ($og_memberships as $og_membership) {
+    if ($og_membership->entity_type == "user"){
+      $form_state['og_memberships'][] = $og_membership;
+      $check = false; 
+      $rids = array();
+      $account = user_load($og_membership->etid);
+      
+    
+      $summaries[$og_membership->etid] = array('picture' => theme('user_picture', array('account' => $account, 'dimensions' => 40)));
+
+      // Check if the user is in a userlist remaining in the space
+      foreach ($remaining_userlists as $userlist) {
+        if (gofast_userlist_is_member_of($userlist->etid, $account->uid)) {
+          $rids = array_merge($rids, gofast_userlist_og_get_userlist_roles($group_type, $gid, $userlist->etid));
+          $check = true;         
+        }
+        
+        // Determine the highest role
+        if ($check) {
+          if (in_array('administrator member', $rids)) {
+            $final_rids = 0;
+          } elseif (in_array('group contributor', $rids)) {
+            $final_rids = 1;
+          } elseif (in_array('read only member', $rids)) {
+            $final_rids = 2;
+          }
+
+          switch ($final_rids) {
+            case 0:
+              $role_string = t('administrator member', array(), array('context' => 'gofast_og'));
+              break;
+            case 1:
+              $role_string = t('group contributor', array(), array('context' => 'gofast_og'));
+              break;
+            case 2:
+              $role_string = t('read only member', array(), array('context' => 'gofast_og'));
+              break;
+          }
+          
+          $warning = array("user" => theme('user_picture', array('account' => $account, 'dimensions' => 40)),
+                           "text" => t('This user will still be able to access this space because they are still a member of one or more user lists in this space. Their new role will be: @role.',
+                           ['@role' => $role_string], 
+                           ['context' => 'gofast_og'])
+                          );
+          $warnings[$og_membership->etid] = $warning;
+                           
+        }  
+      } 
+    } 
+   }
+   
+   //if at least one userlist removed, display warning message
+   if($at_least_one_userlist){
+    $warning = array("user" => "",
+                    "text" => t('If you delete a userlist from the space, users in this list will also be removed from their child spaces',
+                              array(), 
+                              ['context' => 'gofast_og'])
+              );
+    $warnings[] = $warning;
+   }
+   
+  // print_r($warnings);exit;
+  
+  $form['#validate'] = array("gofast_og_ui_delete_bulk_membership_validate");
+  $form['#submit'] =  array("gofast_og_ui_delete_bulk_membership_submit");
+
+  $warning_message = "";
+  foreach($warnings as $warning){
+    $warning_message .=  (
+      '<div class="alert alert-block alert-dismissible alert-warning messages warning d-flex align-items-center">'
+      . '<i class="fa fa-exclamation-triangle pr-5 text-white" style="font-size:1.5em"> </i><div>'
+      . $warning['user'] . $warning['text'] . '</div></div></br>'
+      );
+  }
+  
+  $confirm_form = confirm_form(
+    $form,
+    "",
+    "/node/{$gid}#gofastSpaceMembers",
+    $warning_message."<br />",
+  );
+
+  // Create the list of users to be displayed in the confirmation form
+  $titles = "<div>";
+  foreach ($uids as $uid) {
+    $uid = explode(':', $uid);
+    $entity_uid = $uid[1];
+    $entity_type = $uid[0];
+    if ($entity_type == "user") {
+      $account = user_load($entity_uid);
+      if (isset($account->uid)) {
+        $title = $account->ldap_user_givenname[LANGUAGE_NONE][0]['value'] . " " . $account->ldap_user_sn[LANGUAGE_NONE][0]['value'];
+        $picture =  theme('user_picture', array('account' => $account, 'dimensions' => 40));
+        $titles .= '<div class="d-flex align-items-center">' . $picture . '<span class="ml-3 text-dark font-size-h6">' . $title  . '</span></div>';
+      }
+    } else {
+      $userlist = entity_load_single("userlist", $entity_uid);
+      if (isset($userlist->ulid)) {
+        $title = $userlist->name;
+        $picture =  theme('user_picture', array('account' => $userlist, 'dimensions' => 40));
+        $titles .= '<div class="d-flex align-items-center">' . $picture . '<span class="ml-3 text-dark font-size-h6">' . $title  . '</span></div>';
+      }
+    }
+  }
+  $titles .= "</div>";
+  $confirm_form["selected_uids_titles"] = array(
+    '#type' => 'fieldset',
+    '#title' => $titles,
+  );
+
+  $confirm_form['actions']['cancel']['#type'] = "submit";
+  $confirm_form['actions']['cancel']['#value'] = t('Cancel');
+  $confirm_form['actions']['cancel']['#attributes'] = array(
+    'id' => 'edit-cancel',
+    'class' => array('btn', 'btn-secondary')
+  );
+
+  return $confirm_form;
+}
+
+/**
+ * Implements validation of memberships deletion form
+ */
+function gofast_og_ui_delete_bulk_membership_validate($form, &$form_state) {
+  $og_memberships = $form_state['og_memberships'];
+  $remaining_admins = gofast_userlist_og_get_node_members_by_role($form_state['gid'], array(OG_STATE_ACTIVE), "administrator member");
+
+  foreach ($og_memberships as $membership) {
+    $member_uid = $membership->etid;
+    $node = node_load($membership->gid);
+    //Check if we are impacting an administrator membership
+    if($membership->entity_type == "user"){
+      $roles = og_get_user_roles("node", $node->nid, $member_uid);
+    }else if($membership->entity_type == "userlist"){
+      $roles = gofast_userlist_og_get_userlist_roles("node", $node->nid, $member_uid);
+    }
+   
+    if(in_array("administrator member", $roles, TRUE)){
+      
+      //remove this entity from remaining space administrators
+      if(array_search($membership->etid, array_column($remaining_admins, 'etid')) !== false){
+        unset($remaining_admins[array_search($membership->etid, array_column($remaining_admins, 'etid'))]);
+      }
+      
+      //Check count of administrators in this space without entities we will remove from this space
+      if(count($remaining_admins) < 2){
+        $form_state['last_admin'] = TRUE;
+        form_set_error("last_admin", t("A space must have at least two administrators", array(), array('context' => "gofast:gofast_og")));
+      }
+    }
+  }
+  
+}
+
+/**
+ * Submit handler;Delete memberships.
+ */
+function gofast_og_ui_delete_bulk_membership_submit($form, &$form_state) {
+
+  $memberships = $form_state['og_memberships'];
+
+  foreach ($memberships as $membership) {
+    if($membership->entity_type == "user"){ // User
+      $member_uid = $membership->etid;
+      $node = node_load($membership->gid);
+      $account = user_load( $member_uid );
+    
+      $membership->delete();
+    
+      //Check if this User is member by userlist in current space
+      $check = gofast_og_check_spaces_user($membership->entity_type, $account, $membership->gid);
+      if( $check == FALSE ){
+        gofast_og_sendmail_delete_membership_user(user_load($member_uid), array($node), NULL);
+          if($membership->entity_type == 'user'){
+            $membership_data = array(
+              'membership_action' => 'DMEM', // Remove Member
+              'membership_type' => 'user',
+              'membership_id' => $member_uid,
+              'membership_name' => gofast_user_get_display_name_sql($member_uid)
+            );
+            gofast_message_ext_create_og_membership_entity($node, $membership_data);
+          }
+          //Log into audit
+          gofast_audit_delete_members($node, $membership_data);
+      }
+    }else if ($membership->entity_type == "userlist"){ // Userlist
+      $userlist = entity_load_single('userlist', $membership->etid);
+      $node = node_load($membership->gid);
+      $membership->delete();
+
+      // Get all members of the remove userlist
+      $userlist_members = gofast_userlist_get_members($userlist->ulid);
+      foreach($userlist_members as $uid => $theme_user){
+        $user_removed = user_load($uid);
+        $check = gofast_og_check_spaces_user($membership->entity_type, $user_removed, $membership->gid);
+        if ($check == FALSE) {
+          gofast_og_sendmail_delete_membership_user($user_removed, array($node), NULL);
+        }
+      }
+
+      $membership_data = array(
+        'membership_action' => 'DMEM', // Delete Member
+        'membership_type' => 'userlist',
+        'membership_id' => $membership->etid,
+        'membership_name' => $userlist->name
+      );
+      gofast_message_ext_create_og_membership_entity($node, $membership_data);
+
+      //Log into audit
+      gofast_userlist_audit_membership($node, $membership_data);
+    }
+  }
+  drupal_set_message(t('The memberships were deleted.'));
+}
 
 function gofast_og_check_remove_last_admin_children($member_uid, $node, $membership){
     //load all node children
@@ -577,6 +1052,7 @@ function gofast_og_deny_membership($js, $group_type, $gid, $og_membership) {
  * Grant membership to a space.
  */
 function gofast_og_ui_grant_membership($form, &$form_state, $group_type, $gid, $og_membership) {
+  global $user;
   og_set_breadcrumb($group_type, $gid, array(l(t('Group'), "$group_type/$gid/group")));
 
   $entity = entity_load_single($og_membership->entity_type, $og_membership->etid);
@@ -587,7 +1063,7 @@ function gofast_og_ui_grant_membership($form, &$form_state, $group_type, $gid, $
   $og_default_roles = og_get_default_roles(FALSE);
   $og_default_role_trad = array();
   foreach($og_default_roles as $key => $role_string){
-    $og_default_role_trad[$role_string] = t($role_string);
+    $og_default_role_trad[$role_string] = $user->language == "en" ? ucfirst($role_string) : t($role_string, array(), array("context" => "gofast"));
   }
   $role = null;
   if($og_membership->entity_type == "user"){

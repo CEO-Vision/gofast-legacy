@@ -14,6 +14,10 @@ function gofast_essential_is_essential()
 
   $is_essential = FALSE;
 
+  if(gofast_mobile_is_phone()){
+    return FALSE;
+  }
+  
   if($account->field_version[LANGUAGE_NONE][0]['value'] == "Essential" || $detect->isTablet()){
     $is_essential = TRUE;
 

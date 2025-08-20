@@ -173,3 +173,8 @@ body .tagify__dropdown {
 .gofast-ac-drag-input tag {
     cursor: move;
 }
+
+/* Leave room to drop on input edges */
+.gofast-ac-drag-input tags {
+    padding-inline: .5rem !important;
+}

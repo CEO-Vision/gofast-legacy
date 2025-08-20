@@ -216,6 +216,22 @@
       }
 
       $tagifyDOMScope.on("dragenter", (e) => e.preventDefault());
+      // Auto-scroll on dragover
+      $tagifyDOMScope.on("dragover", function (e) {
+        e.preventDefault();
+        let scrollContainer = tagify.DOM.scope;
+        if (!scrollContainer) return;
+        let { clientX } = e;
+        let { left, width } = scrollContainer.getBoundingClientRect();
+        let scrollSpeed = 5;
+        // Scroll right if cursor is near the right edge
+        if (clientX > left + width - 20) {
+          scrollContainer.scrollLeft += scrollSpeed;
+        } else if (clientX < left + 20) {
+          scrollContainer.scrollLeft -= scrollSpeed;
+        }
+      });
+
       $tagifyDOMScope.on("drop", (e) =>
         Gofast.dragInput.eventCallbacks.drop(e, tagify, $inputElm, $tagifyDOMScope)
       );

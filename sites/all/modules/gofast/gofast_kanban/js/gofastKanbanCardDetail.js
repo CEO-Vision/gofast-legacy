@@ -219,6 +219,16 @@
             window.ktKanbanItem.reload();
             return await res
         }
+
+        const _handleCopyCard = async function(){
+
+            let url = window.origin + "/kanban/task/" +_task.nid + "/copy";
+            const res = await fetch(url, {
+                method: 'POST'
+            })
+            window.ktKanbanItem.reload();
+            return await res
+        }
         
         var _handleDeleteComment = async function(commentId){
             
@@ -249,6 +259,7 @@
             _task = initialData
             _callback = callback
             
+            _initEventHandlers();
 
             // Set Title
             let titleEl =  document.querySelector('.KanbanCard__title > div')
@@ -312,11 +323,31 @@
             });
 
 
-            
+            // set Logo
+            let logoImg = document.querySelector('#gofastKanbanTaskLogo');
+            let logoSrc = _task.logo || "/sites/all/themes/bootstrap-keen/logo.png";
+            logoSrc += "?rand=" + Math.ceil(Math.random()*1000);
+            const logoTemplate = _task.canEdit
+                ? '<div class="mr-2 image-input image-input-empty" id="gofastKanbanTaskLogo" style="background-image: url(\'' + logoSrc + '\'); background-position: center; background-size: contain;"><div class="image-input-wrapper" style="width: 150px; height: 150px;"></div><a id="gofastKanbanTaskLogoLink" href="/modal/nojs/og/edit-space-logo/0" class="ctools-use-modal"><label id="gofastKanbanLogoButton" class="btn btn-xs btn-icon btn-circle btn-white" data-action="change"><i class="fas fa-edit icon-sm text-muted"></i><input type="file" name="profile_avatar" accept=".png, .jpg, .jpeg, .webp" /><input type="hidden" name="profile_avatar_remove" /></label></a></div>'
+                : '<div class="symbol symbol-150"><img typeof="foaf:Image" src="' + logoSrc + '"></div>';
+            logoImg.outerHTML = logoTemplate;
+
+            if(_task.canEdit) {
+                let logoEl = document.querySelector('#gofastKanbanTaskLogoLink');
+                let logoSearchParams = new URLSearchParams();
+                logoSearchParams.set("nid", _task.nid),
+                logoSearchParams.set("theme", "gofast_kanban_logo_crop");
+                logoSearchParams.set("message", btoa(Drupal.t("Cropping card cover", {}, {context: 'gofast_kanban'})));
+                logoEl.href = logoEl.href.replace("/0", "/" + _task.space_nid + "?" + logoSearchParams.toString());
+                logoEl.classList.remove("ctools-use-modal-processed");
+                logoElClone = logoEl.cloneNode(true); // we use a clone to remove all events on element
+                logoEl.replaceWith(logoElClone);
+                Drupal.behaviors.ZZCToolsModal.attach();
+            }
 
             // set Description
-            let descriptionEl =  document.querySelector('.KanbanCard__description > div')
-            description = GofastEditableInput(descriptionEl, _task.description, 'ckeditor-classic-enrich', {
+            let descriptionEl = document.querySelector('.KanbanCard__description > div')
+            description = GofastEditableInput(descriptionEl, _task.description, 'ckeditor-full', {
                 isEditable : _task.canEdit,
                 save: (newData) => {
                     let jsondata = JSON.stringify(newData)
@@ -437,6 +468,23 @@
               
             })
 
+            let colorEl =  document.querySelector('.KanbanCard__color > div')
+            color = GofastEditableInput(colorEl, _task.task_color, 'colorpicker', {
+                isEditable : _task.canEdit,
+                save: (newColor) => {
+                    _handleSaveData('color', newColor);
+                },
+            });
+
+            // Set Tags
+            let tagsEl =  document.querySelector('.KanbanCard__tags > div')
+            tags = GofastEditableInput(tagsEl, _task.tags, 'tags', {
+                tagIcon: "<i class='flaticon2-tag icon-nm text-info'></i>",
+                tagDropdownIcon: "<i class='flaticon2-tag icon-2x text-info'></i>",
+                isEditable : _task.canEdit, // allowed to contributors
+                save: (newData) => _handleSaveData('tags', JSON.stringify(newData)),
+                templateKey: "tags",
+            })
 
             // Set Documents
             let formatedDocuments = _task.documents.map(doc => {
@@ -501,7 +549,8 @@
                 },
                 initCustomInput : async function(){
                     try {
-                        let ckeditor = await ClassicEditor.create(this.DOM.input, Gofast.parseCKEditorProfile(Drupal.settings.ckeditor.profiles["ckeditor-comment"]));
+                        const profile = await Gofast.parseCKEditorProfile({...Drupal.settings.ckeditor.profiles["ckeditor-comment"]});
+                        let ckeditor = await ClassicEditor.create(this.DOM.input, profile);
                         console.log(ckeditor)
                         this.DOM.customInput = ckeditor;
                     } catch (error) {
@@ -573,7 +622,6 @@
             let commentContainers = containerEl.querySelectorAll('div.timeline-item');           
             commentContainers.forEach(function(container){
                 
-                container.querySelector('li.comment-reply').remove();
                 container.querySelector('li.comment-permalink').remove();
                 container.querySelector('div.timeline-content__header').remove();
                 
@@ -759,12 +807,60 @@
             $(confirmModal).modal('show')    
 
         }
+        var _copy = function(el, callback){
+            mainContainer = el
+            _callback = callback
+            //Confirmation modale
+            let confirmModal = document.createElement('div')
+            confirmModal.classList = "modal fade"
+            confirmModal.innerHTML = _getConfirmModalContent();
+                
+            confirmModalTitle = confirmModal.querySelector('.modal-title')
+            confirmModalTitle.innerText = Drupal.t('Copy card @title', {'@title': _task.title}, {'context': 'gofast_kanban'});
+            
+            confirmModalBody = confirmModal.querySelector('.modal-body')
+            confirmModalBody.innerHTML = ' <p>'+Drupal.t('Are you sure you want to copy this card ?', {}, {'context': 'gofast_kanban'})+'</p>'
+            
+            confirmModalFooter = confirmModal.querySelector('.modal-footer')
+            let cancelBtn =  document.createElement('button')
+            cancelBtn.type = 'button'
+            cancelBtn.classList = 'btn btn-light'
+            cancelBtn.innerText = Drupal.t('Cancel', {}, {'context': 'gofast_kanban'})
+            cancelBtn.onclick = function(e){
+                 e.preventDefault()                              
+                 $(confirmModal).modal('hide');
+            }
+            confirmModalFooter.appendChild(cancelBtn);
+            
+            let confirmBtn =  document.createElement('button')
+            confirmBtn.type = 'button'
+            confirmBtn.classList = 'btn btn-sm btn-danger'
+            confirmBtn.innerText = Drupal.t('Confirm', {}, {'context': 'gofast_kanban'})
+            confirmBtn.onclick = function(e){
+                 e.preventDefault(); 
+                 _handleCopyCard();
+                 $(confirmModal).modal('hide');
+                 window.ktKanbanItem.hideCardModal();
+            }
+            confirmModalFooter.appendChild(confirmBtn);
+            
+            $(confirmModal).modal('show')    
+
+
+        }
 
         var _submit = function(data){
             console.log(data)
             return new Promise(resolve => setTimeout(resolve, 1000));
         }
-        
+
+        var _initEventHandlers = function(){
+          $(document).on("reloadTaskComments", (e, args) => {
+            if(args.cardId == _task.nid){
+              _commentsReload();
+            }
+          })
+        }
 
         return {
             init(el, initialData, callback){
@@ -772,6 +868,9 @@
             },
             delete(el, callback){
                 _delete(el, callback)
+            },
+            copy(el, callback){
+                _copy(el, callback)
             },
             getCardStatus(cardId){
                 _getCardStatus(cardId);

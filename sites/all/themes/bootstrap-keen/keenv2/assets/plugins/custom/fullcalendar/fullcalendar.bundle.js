@@ -25073,4 +25073,3 @@ __webpack_require__(/*! ./fullcalendar.scss */ "./webpack/plugins/custom/fullcal
 
 /******/ })()
 ;
-//# sourceMappingURL=fullcalendar.bundle.js.map

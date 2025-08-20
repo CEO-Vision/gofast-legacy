@@ -265,8 +265,6 @@
                 }
                 
                 $("#gofast-bookmarks-node-actions .navi-link").one("click", (e) => {
-                    e.preventDefault()
-                    e.stopImmediatePropagation()
                     Gofast.Bookmark_Collection.removeContextualMenu()
                 })
             }

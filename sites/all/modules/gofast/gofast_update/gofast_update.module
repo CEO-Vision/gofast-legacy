@@ -3,12 +3,12 @@
 /*
  * GoFAST Repository server
  */
-define('GOFAST_REPOSITORY_SERVER', variable_get('gofast_repository_server', 'http://repo-gofast.ceo-vision.com/'));
+define('GOFAST_REPOSITORY_SERVER', variable_get('gofast_repository_server', 'https://repository.ceo-vision.com/'));
 
 /*
  * Path to the release manifest file in the repository server
  */
-define('GOFAST_RELEASE_MANIFEST_PATH', '');
+define('GOFAST_RELEASE_MANIFEST_PATH', 'sources/gofast-standard/');
 
 /*
  * Release manifest file name
@@ -65,9 +65,9 @@ function gofast_update_display(){
  */
 function gofast_update_get_infos($manifest){
   if(module_exists("gofast_community")){
-      $repository_path = $manifest->server->communityRepoPath;
+      $repository_path = json_encode($manifest->server->communityRepoPath);
   }else{
-      $repository_path = $manifest->server->repoPath;
+      $repository_path = json_encode($manifest->server->repoPath);
   }
   return array(
     'gofast_version'              => gofast_update_get_gofast_version($manifest, FALSE),
@@ -75,7 +75,7 @@ function gofast_update_get_infos($manifest){
     'gofast_hotfix_version'       => gofast_update_get_gofast_hotfix_version($manifest),
     'available_hotfix_version'    => gofast_update_get_available_hotfix_version($manifest),
     'repository_server'           => GOFAST_REPOSITORY_SERVER,
-    'repository_path'             => $repository_path,
+    'repository_path'             => json_decode($repository_path, true)[0],
     'manifest_path'               => GOFAST_RELEASE_MANIFEST_PATH,
     'manifest_file'               => GOFAST_RELEASE_MANIFEST_FILE,
     'updating'                    => gofast_update_is_updating(),
@@ -256,18 +256,20 @@ function gofast_update_perform_update(){
   $manifest = gofast_update_get_release_manifest();
   $infos = gofast_update_get_infos($manifest);
   
-  //Build update script download path
-  $update_script_path = $infos['repository_server'] . $infos['repository_path'] . $infos['available_version']['files']['root'] . $infos['available_version']['files']['updateScript'];
-  $options = array();
+  $update = array(
+    "server" => $infos['available_version']['files']['server'],
+    "path" => $infos['repository_path'],
+    "version" => $infos['available_version']['infos']['versionNumber'],
+    "archive_name" => $infos['available_version']['files']['archiveMain'],
+    "archive_hash" => $infos['available_version']['files']['archiveMainHash'],
+  );
   
-  if(!module_exists("gofast_community")){
-    //Enterprise : Get user and password to authenticate against the repo
-    $crendentials = base64_encode(gofast_update_get_enterprise_user() . ":" . gofast_update_get_enterprise_password());
-    $options['headers']['Authorization'] = "Basic " . $crendentials;
-  }
+  $update=json_encode($update, JSON_UNESCAPED_SLASHES);
+
+  file_put_contents("/var/www/d7/sites/default/files/gofast_update", $update);
   
-  file_put_contents("/var/www/d7/sites/default/files/update_gofast.sh", drupal_http_request($update_script_path, $options)->data);
   return theme('gofast_update_main', array('done' => 1));
+  
 }
 
 /*
@@ -278,18 +280,20 @@ function gofast_update_perform_hotfix(){
   $infos = gofast_update_get_infos($manifest);
   $hotfix_version = variable_set('gofast_hotfix_' . $infos['gofast_version']['infos']['versionNumber'], $infos['available_hotfix_version']['infos']['versionNumber']);
   
-  //Build update script download path
-  $update_script_path = $infos['repository_server'] . $infos['repository_path'] . $infos['available_hotfix_version']['files']['root'] . $infos['available_hotfix_version']['files']['updateScript'];
-  $options = array();
+  $update = array(
+    "server" => $infos['available_hotfix_version']['files']['server'],
+    "path" => $infos['repository_path'],
+    "version" => $infos['available_hotfix_version']['infos']['versionNumber'],
+    "archive_name" => $infos['available_hotfix_version']['files']['archiveMain'],
+    "archive_hash" => $infos['available_hotfix_version']['files']['archiveMainHash'],
+  );
   
-  if(!module_exists("gofast_community")){
-    //Enterprise : Get user and password to authenticate against the repo
-    $crendentials = base64_encode(gofast_update_get_enterprise_user() . ":" . gofast_update_get_enterprise_password());
-    $options['headers']['Authorization'] = "Basic " . $crendentials;
-  }
+  $update=json_encode($update, JSON_UNESCAPED_SLASHES);
+
+  file_put_contents("/var/www/d7/sites/default/files/gofast_update", $update);
   
-  file_put_contents("/var/www/d7/sites/default/files/update_gofast.sh", drupal_http_request($update_script_path, $options)->data);
   return theme('gofast_update_main', array('done' => 1));
+  
 }
 
 /*
@@ -463,6 +467,19 @@ function gofast_update_cron() {
     $data = json_encode($data);
     
     $curl = curl_init($url);
+
+    //Proxy configuration
+    global $conf;
+    if(!empty($conf['proxy_server'])){
+      $proxy = $conf['proxy_server'] . ":" . $conf['proxy_port'];
+      curl_setopt($curl, CURLOPT_PROXY, $proxy);
+      
+      if(!empty($conf['proxy_username'])){
+        $proxyauth = $conf['proxy_username'] . ":" . $conf['proxy_password'];
+        curl_setopt($curl, CURLOPT_PROXYUSERPWD, $proxyauth);
+      }
+    }    
+
     curl_setopt($curl, CURLOPT_HEADER, 0);
     curl_setopt($curl, CURLOPT_RETURNTRANSFER, 1);
     curl_setopt($curl, CURLOPT_HTTPHEADER,
@@ -486,7 +503,7 @@ function gofast_update_cron() {
  * @return true/false
  */
 function gofast_update_is_updating(){
-  if(file_exists("/var/www/d7/sites/default/files/update_gofast.sh") || file_exists("/var/www/d7/sites/default/files/update_gofast_process.sh")){
+  if(file_exists("/var/www/d7/sites/default/files/gofast_update") || file_exists("/var/www/d7/sites/default/files/gofast_update_is_in_progress")){
     return TRUE;
   }else{
     return FALSE;
@@ -506,4 +523,68 @@ function gofast_update_get_enterprise_user(){
 function gofast_update_get_enterprise_password(){
     global $conf;
     return base64_encode(gethostname() . ":" . $conf['enterprise-key']);
+}
+
+function gofast_update_fetch_tag1_updates(){
+  include_once '/var/www/d7/modules/update/update.fetch.inc';
+  include_once '/var/www/d7/modules/update/update.compare.inc';
+
+  global $base_url;
+
+  $projects = update_get_projects();
+
+  foreach($projects as $project_name => $project){
+    $site_key = drupal_hmac_base64($base_url, drupal_get_private_key());
+    $url = _update_build_fetch_url($project, $site_key);
+
+    $xml = drupal_http_request($url);
+
+    if (isset($xml->error)) {
+      drush_log("Update fetch error for $project_name", "error");
+    }else if (isset($xml->data) && !empty(trim($xml->data))) {
+      $available = update_parse_xml($xml->data);
+      
+      if(empty($available)){
+        //drush_log("No project data for $project_name", "ok");
+        continue;
+      }
+      
+      //Let our code handle project status
+      unset($project['status']);
+      
+      update_calculate_project_update_status(null, $project, $available);
+      
+      if(isset($available["recommended_alternative"])){
+        drush_log("Tag1 recommand an alternative for $project_name", "warning");
+        echo $available["recommended_alternative"];
+        print_r($project['extra']);
+        echo "\n";
+      }
+      
+      if($project['status'] == UPDATE_NOT_SECURE){
+        if(isset($project['security updates'])){
+          foreach($project['security updates'] as $security_update){
+            if(strpos($security_update['download_link'], "tag1.com") !== FALSE){
+              drush_log("Available Tag1 Update for $project_name", "warning");
+              echo "Current version : " . $project['info']['project'] . " " ; $project['info']['version'];
+              echo "Target version : " . $security_update['name'] . " at " . $security_update['download_link'];
+              print_r($project['extra']);
+              echo "\n\n";
+            }else{
+              /*drush_log("Available Drupal Update for $project_name", "warning");
+              echo $security_update['name'] . " at " . $security_update['download_link'];
+              print_r($project['extra']);
+              echo "\n\n";*/
+            }
+          }
+        }else{
+          drush_log("Project $project_name tag as not secure, but no security update is available", "success");
+        }
+      }else{
+        //drush_log("No Update available for $project_name", "success");
+      }
+    }else{
+      //drush_log("No Update available for $project_name", "success");
+    }
+  }
 }

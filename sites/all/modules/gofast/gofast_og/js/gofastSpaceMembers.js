@@ -3,10 +3,11 @@
     'use strict';
     // 8 columns in main header means array length must be of 8
     const $tableElement = $('#gofastSpaceMembersTable');
-    const DirectoryUsersTableSubheaderElements = [
-        "",
-        "",
-        '<input type="text" name="sname" class="form-control GofastDirectoryUsersFilter__lastname" placeholder="' + Drupal.t("Enter lastname") + '"/>',
+    function getDirectoryUsersTableSubheaderElements(){
+      const directoryUsersTableSubheaderElements = [
+          "",
+          "",
+          '<input type="text" name="sname" class="form-control GofastDirectoryUsersFilter__lastname" placeholder="' + Drupal.t("Enter lastname") + '"/>',
         '<input type="text" name="gname" class="form-control GofastDirectoryUsersFilter__firstname" placeholder="' + Drupal.t("Enter firstname") + '"/>',
         '<input type="text" name="entity" class="form-control GofastDirectoryUsersFilter__entity" placeholder="' + Drupal.t("Enter entity") + '"/>',
         '<select name="profile" class="form-control selectpicker">' +
@@ -28,6 +29,8 @@
         Drupal.t("All") +
         '</option><option value="' +  $tableElement.attr("data-admin-rid") + '">' +
         Drupal.t("Administrator", {}, { context: "gofast:gofast_user" }) +
+        '</option><option value="' +  $tableElement.attr("data-group-manager-rid") + '">' +
+        Drupal.t("Group manager", {}, { context: "gofast:gofast_user" }) +
         '</option><option value="' +  $tableElement.attr("data-contributor-rid") + '">' +
         Drupal.t("Contributor", {}, { context: "gofast:gofast_user" }) +
         '</option><option value="' +  $tableElement.attr("data-readonly-rid") + '">' +
@@ -48,14 +51,22 @@
         '<div class="GofastDirectoryFilterButtons d-flex ml-auto mt-auto align-items-center" style="gap: .5rem; transform: translate(.5rem, -.5rem);"><button type="submit" class="btn btn-xs btn-primary btn-icon m-0">' +
         '<i class="fas fa-search" style="font-size: 12px !important;"></i>' +
         '</button><button type="reset" class="btn btn-xs btn-light btn-icon m-0">' +
-        '<i class="fas fa-undo" style="font-size: 12px !important;"></i>' +
-        '</button></div>',
-    ];
+          '<i class="fas fa-undo" style="font-size: 12px !important;"></i>' +
+          '</button></div>',
+      ];
+      const table = document.querySelector('#gofastSpaceMembersTable');
+      if(table.dataset["checkboxes"] == "0"){
+        directoryUsersTableSubheaderElements.shift();
+      }
+      return directoryUsersTableSubheaderElements;
+    } 
     // columns definition
-    const DirectoryUsersTableColumns = [
-        {
-            selector: {
-                class: 'kt-checkbox--solid'
+    function getDirectoryUsersTableColumns(){
+
+      const directoryUsersTableColumns = [
+          {
+              selector: {
+                  class: 'kt-checkbox--solid'
             },
             field: 'checkbox',
             title: '',
@@ -173,12 +184,14 @@
                         status.title = Drupal.t('Read only');
                         status.class = 'label-light-primary';
                         break;
-
                     case 'administrator member':
                         status.title = Drupal.t('Administrator', {}, {'context' : 'gofast:gofast_user'});
                         status.class = 'label-danger';
                         break;
-
+                    case 'group manager':
+                        status.title = Drupal.t('Group manager', {}, {'context' : 'gofast:gofast_user'});
+                        status.class = 'label-warning';
+                        break;
                     case 'group contributor':
                         status.title = Drupal.t('Contributor', {}, {'context' : 'gofast:gofast_user'});
                         status.class = 'label-primary';
@@ -275,9 +288,16 @@
             template: function(data) {
                 if (!data || data.length == 0) return "-";
                 return '<span style="display:none;" class="uid_span" value="'+ data.uid +'">' + data.uid + '</span>'
-            },
-        },
-    ];
+              },
+          }
+      ];
+
+      const table = document.querySelector('#gofastSpaceMembersTable');
+      if(table.dataset["checkboxes"] == "0"){
+        directoryUsersTableColumns.shift();
+      }
+      return directoryUsersTableColumns;
+    }
 
     const mapOGRidToImportance = function (rid) {
         if ([13, 16, 17, 20, 23, 26, 28].includes(rid)) {
@@ -306,7 +326,7 @@
                 });
             }
             $("#gofastSpaceMembersTable").on("datatable-on-layout-updated", function(){
-                GofastAddKDataTableSubheader("gofastSpaceMembersTable", "DirectoryUserFilterForm", DirectoryUsersTableSubheaderElements);
+                GofastAddKDataTableSubheader("gofastSpaceMembersTable", "DirectoryUserFilterForm", getDirectoryUsersTableSubheaderElements());
             });
             $("#gofastSpaceMembersTable").on("datatable-on-init", function(){
                 const pagerTitleInterval = setInterval(function(){
@@ -356,8 +376,6 @@
             }
             // remove checkboxes if current user is not a space administrator
             if(_tableEl.dataset["checkboxes"] == "0") {
-                DirectoryUsersTableColumns.shift();
-                DirectoryUsersTableSubheaderElements.shift();
                 _has_actions = false;
             }
             _selection = "";
@@ -437,25 +455,9 @@
                 },
 
                 // columns definition
-                columns: DirectoryUsersTableColumns,
+                columns: getDirectoryUsersTableColumns(),
                 rows: {
                     autoHide: false,
-                    afterTemplate: function(row, data, index) {
-                        if (!data || data.length == 0 || !_has_actions) return;
-                        if (data.uid == Gofast.get("user").uid) {
-                            const checkboxInterval = setInterval(function() {
-                                const targetCheckbox = row.find(".kt-checkbox--solid input[type='checkbox']");
-                                const targetCheckboxCell = row.find(".datatable-cell-check");
-                                if (!targetCheckbox.length) {
-                                    return;
-                                }
-                                targetCheckboxCell.attr("title", Drupal.t("You are not authorized to select yourself since you are not authorized to perform actions such as deleting your own account.", {}, {context: "gofast:gofast_user"}));
-                                targetCheckbox.attr("disabled", "");
-                                targetCheckbox.closest("label").css("cursor", "not-allowed");
-                                clearInterval(checkboxInterval);
-                            }, 100);
-                        }
-                    },
                 },
             });
             // the form being rendered ad hoc, we have to wait for it to be rendered before we can attach events to it
@@ -501,14 +503,22 @@
             }, 100);
 
             $("#gofastSpaceMembersTable").on("datatable-on-check", function(event,args){
+                
+                // Disable checkboxes for the current user 
+                // we need to remove .datatable-row-active class as well : see getSelectedRecords() function
                 $(".kt-checkbox--solid input[disabled]").prop("checked", false);
+                $(".kt-checkbox--solid input[disabled]").parents(".datatable-row").removeClass("datatable-row-active");
+                
                 var selected_records = _table.getSelectedRecords().filter(function(record){
                     return $(this).find(".kt-checkbox--solid input[disabled]").length == 0;
                 });
                 _selection = "";
                 selected_records.each(function( index ) {
+                    // Check if it's a user or a userlist
+                    var type = $(this).find("td[data-field='type']").attr("aria-label");
                    var uid = $(this).find(".uid_span").html();                
-                   _selection += uid+"-";  
+                   _selection += type+":"+uid+"-";  
+
                 });
                 _selection = _selection.slice(0, -1); // remove trailing "-";
                
@@ -523,23 +533,19 @@
                 });
 
                 GofastTriggerKDataTableMegaDropdown(selected_records,"gofastSpaceMembersTable");
-                if (selected_records.length) {
-                    // disable delete action if one among checked user(s) never logged in
-                    const selectedLoginValues = _table.getRecord(selected_records[0].dataset.row).getColumn("login").getValue();
-                    if (!selectedLoginValues.includes(Drupal.t("Never logged in"))) {
-                        $("#gofastDeleteUserAction").addClass("disabled");
-                    }
-                }
+
            });
                   
            $("#gofastSpaceMembersTable").on("datatable-on-uncheck", function(event,args){
                 var selected_records = _table.getSelectedRecords();
                 _selection = "";
                 selected_records.each(function( index ) {
-                   var uid = $(this).find(".uid_span").html();               
-                   _selection += uid+"-";  
+                    // Check if it's a user or a userlist
+                    var type = $(this).find("td[data-field='type']").attr("aria-label");
+                    var uid = $(this).find(".uid_span").html();                
+                    _selection += type+":"+uid+"-";  
                 });
-               
+                _selection = _selection.slice(0, -1); // remove trailing "-";
                 $("#container-selected-items .navi-item .ctools-use-modal").each(function(index){
                       var href = $(this).attr("href");
                       var array_href = href.split("/");
@@ -562,8 +568,11 @@
                 var selected_records = _table.getSelectedRecords();
                 _selection = "";
                 selected_records.each(function( index ) {
-                   var uid = $(this).find(".uid_span").html();
-                   _selection += uid+"-";  
+                    // Check if it's a user or a userlist
+                    var type = $(this).find("td[data-field='type']").attr("aria-label");
+                    var uid = $(this).find(".uid_span").html();                
+                    _selection += type+":"+uid+"-";  
+
                 });
 
                 if (_has_actions) {

@@ -390,6 +390,7 @@ function gofast_workflows_curl_delete_user_from_bonitagroup($bonita_uid, $bonita
     curl_setopt($ch2, CURLOPT_CUSTOMREQUEST, "DELETE");
     curl_setopt($ch2, CURLOPT_COOKIEFILE, 'sites/default/files/swf/'.$cookie_name);
     curl_setopt($ch2, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch2, CURLOPT_TIMEOUT, 5);
     $content = gofast_workflows_curl_exec($ch2);
     curl_close($ch2);
 
@@ -420,6 +421,7 @@ function gofast_workflows_curl_add_user_into_bonitagroup($bonita_uid, $bonita_gr
     curl_setopt($ch2, CURLOPT_POSTFIELDS, json_encode($data));
     curl_setopt($ch2, CURLOPT_COOKIEFILE, 'sites/default/files/swf/'.$cookie_name);
     curl_setopt($ch2, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch2, CURLOPT_TIMEOUT, 5);
     $content = gofast_workflows_curl_exec($ch2);
     curl_close($ch2);
 
@@ -1031,12 +1033,17 @@ function gofast_workflows_deploy_new_version_standard_process($old_name, $new_na
 
 
     //then disable the same process with previous version
-   //first, search the process with same name than the new one, but with the previous version
-    $ch2 = curl_init();
-
+    //first, search the process with same name than the new one, but with the previous version
+    
     $old_process_name = explode(('--'), $old_name)[0];
+    // Prevent disabling old subprocess as it's still useful on process started on older process version
+    if(str_contains($old_process_name, "subprocess")){
+      return;
+    }
+
     $old_process_version = str_replace(".bar", "", explode(('--'), $old_name)[1]);
 
+    $ch2 = curl_init();
     curl_setopt($ch2, CURLOPT_VERBOSE, true);
     curl_setopt($ch2, CURLOPT_URL, $baseURL.'API/bpm/process/?f=name%3d'.rawurlencode($old_process_name).'&f=version%3d'.$old_process_version);
     print_r("calling " . $baseURL.'API/bpm/process/?f=name%3d'.rawurlencode($old_process_name).'&f=version%3d'.$old_process_version);

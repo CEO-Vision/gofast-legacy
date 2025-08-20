@@ -1266,30 +1266,83 @@ function gofast_node_deadline_notify_accumulate_recipients(&$recpt, $subscribers
 }
 
 /**
+ * Implements hook_query_TAG_alter
+ * where TAG = filter_events_period
+ *
+ * Requires `DateTimeInterface` objects in the `event_period_start` and
+ * `event_period_end` keys of the query metadata to define the period.
+ *
+ * @param SelectQuery $query
+ * @return void
+ */
+function gofast_query_filter_events_period_alter($query) {
+  /** @var DateTimeInterface */
+  $period_start_datetime = $query->getMetaData('event_period_start');
+  $period_start = $period_start_datetime->format(MYSQL_DATETIME_FORMAT);
+
+  /** @var DateTimeInterface */
+  $period_end_datetime = $query->getMetaData('event_period_end');
+  $period_end = $period_end_datetime->format(MYSQL_DATETIME_FORMAT);
+
+  // join field tables
+  $query->join('field_data_field_date', 'fd', "node.nid = fd.entity_id AND fd.entity_type = 'node'");
+  $query->leftJoin('field_data_field_recurrence_end_date', 'fred', "node.nid = fred.entity_id AND fred.entity_type = 'node'");
+
+  // add conditions on joined tables to make sure we get the nodes with
+  $query->condition('fd.field_date_value', $period_end, '<');
+  $query->condition(
+    db_or()
+      ->condition('fd.field_date_value', $period_start, '>=')
+      ->condition(
+        db_and()
+          ->isNotNull('fred.field_recurrence_end_date_value')
+          ->condition('fred.field_recurrence_end_date_value', $period_start, ">=")
+      )
+  );
+}
+
+/**
  *
  * Once per day, retrieve all node with deadline = tomorrow, then send a email
  * to related users.
  */
 function gofast_node_deadline_notify(){
-  $tomorrow = new DateTime('tomorrow');
-  $tomorrow_str = $tomorrow->format('Y-m-d');
+  $tomorrow_start = new DateTimeImmutable('tomorrow');
+  $tomorrow_end = new DateTimeImmutable('tomorrow +1 day');
 
   $query = new EntityFieldQuery();
   // we also take the conferences and tasks node types
   $query->entityCondition('entity_type', 'node')
      ->entityCondition('bundle', array('webform'), 'NOT IN')
      ->propertyCondition('status', 1)
-     ->fieldCondition('field_date', 'value', $tomorrow_str.'%', 'like');
+     ->addTag('filter_events_period')
+     ->addMetaData('event_period_start', $tomorrow_start)
+     ->addMetaData('event_period_end', $tomorrow_end);
+
   $result = $query->execute();
   
   $recpt = array();
   $nids = array();
 
-  if (isset($result['node'])) {
+  if (isset($result['node']) && !empty($result['node'])) {
     $nids = array_unique(array_keys($result['node']));
     $nodes = node_load_multiple($nids);
 
     foreach ($nodes as $node) {
+      // filter recurrent event without an occurrence tomorrow
+      $node_recurrence = gofast_conference__node_get_recurrence_rule_object($node);
+      if ($node_recurrence !== null) {
+        $has_occurrence_tomorrow = 0 < count(
+          $node_recurrence->getOccurrencesBetween($tomorrow_start, $tomorrow_end, 1)
+        );
+
+        if (!$has_occurrence_tomorrow) {
+          continue;
+        }
+      }
+
+      // node has an occurrence tomorrow
+
       $subscribers = array();
       
       if($node->type == "kanban" || $node->type == "task"){ // do not notify all space members
@@ -1402,7 +1455,7 @@ function gofast_node_deadline_notify(){
       $l = array('langcode' =>  $RecipUser->language, 'context' => 'gofast');
 
       $short_without_hours_format = system_date_format_locale($RecipUser->language, "short_without_hours");
-      $subject = '['.variable_get('site_name').'] '.t('Your deadline on @date', array('@date' => format_date($tomorrow->getTimestamp() , 'custom', $short_without_hours_format, NULL, $l["langcode"])), $l);
+      $subject = '['.variable_get('site_name').'] '.t('Your deadline on @date', array('@date' => format_date($tomorrow_start->getTimestamp() , 'custom', $short_without_hours_format, NULL, $l["langcode"])), $l);
       $title = t('Deadline notification', array(), $l);
       $footer = t('Message sent from ', array(), $l) . " " . variable_get('site_name');
 
@@ -1410,7 +1463,7 @@ function gofast_node_deadline_notify(){
         'user' => $RecipUser,
         'user_name' => $userName,
         'nodes' => $mail_recpt[0]['nodes'],
-        'deadline' => format_date($tomorrow->getTimestamp() , 'custom', $short_without_hours_format, NULL, $l["langcode"]),
+        'deadline' => format_date($tomorrow_start->getTimestamp() , 'custom', $short_without_hours_format, NULL, $l["langcode"]),
         'l' => $l,
       ));
 

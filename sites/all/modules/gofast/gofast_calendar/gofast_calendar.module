@@ -169,6 +169,122 @@ function gofast_calendar_get_calendar(){
 }
 
 /**
+ * Generate a list of events within the range of start and end date
+ * @param object $node loaded node object of type conference
+ * @param mixed $user_formatted formatted user information
+ * @param string $start_date Start date string of search window for events.
+ * @param string $end_date End date string of search window for events.
+ * @return array An array containing all the events associated with the
+ *  conference node. This may be multiple or no events when the node has recurrence.
+ */
+function gofast_calendar_get_conference_events($node, $user_formatted, $start_date, $end_date) {
+  global $user;
+
+  $field_date = $node->field_date[LANGUAGE_NONE][0]['value'];
+  $field_date = format_date(strtotime(gofast_change_time_zone($field_date, 'UTC', $user->timezone)), 'custom', 'Y-m-d H:i:s', date_default_timezone_get());
+  $field_end_date = $node->field_end_date[LANGUAGE_NONE][0]['value'];
+  $field_end_date = format_date(strtotime(gofast_change_time_zone($field_end_date, 'UTC', $user->timezone)), 'custom', 'Y-m-d H:i:s', date_default_timezone_get());
+
+  // Get the event source
+  $ext_source_query = db_select('field_data_field_external_conference_source', 'f');
+  $ext_source_query->fields('f', array('field_external_conference_source_value'));
+  $ext_source_query->condition('f.entity_id', $node->nid);
+  $ext_source_result = $ext_source_query->execute()->fetchCol();
+  if (!empty($ext_source_result)) {
+    $ext_source_result = json_decode($ext_source_result[0]);
+  }
+  $external_conference_source = $ext_source_result;
+
+  // Get the event all day status
+  $all_day_query = db_select('field_data_field_conference_is_all_day', 'f');
+  $all_day_query->fields('f', array('field_conference_is_all_day_value'));
+  $all_day_query->condition('f.entity_id', $node->nid);
+  $all_day_result = $all_day_query->execute()->fetchCol();
+
+  if (!empty($all_day_result)) {
+    $is_all_day = $all_day_result[0] == 1 ? true : false;
+  }
+
+  $hasCustomIcon = false;
+  $color = "#fff";
+  if (!empty($external_conference_source)) {
+    $hasCustomIcon = true;
+    $icon = $external_conference_source->icon;
+    $color = $external_conference_source->color;
+  } else {
+    $icon = "fas fa-calendar-alt";
+  }
+
+  $create_conference_event = fn ($start, $end, $options = []) => [
+    'title' => $node->title,
+    'nid' => $node->nid,
+    'start' => $start,
+    'end' => $end,
+    'user' => $user_formatted,
+    'description' =>  $node->body,
+    'type' => $node->type,
+    'icon' => isset($icon) ? $icon : TRUE,
+    'className' => "",
+    'allDay' => $is_all_day,
+    'hasCustomIcon' => $hasCustomIcon,
+    'color' => $color,
+    'isRecurrent' => $options['is_recurrent'] ?? false,
+    'humanReadableRecurrence' => $options['human_readable_recurrence'],
+  ];
+
+  // conference is not recurrent (trivial case)
+  if (!isset($node->field_recurrence[LANGUAGE_NONE][0]['value'])) {
+    return [$create_conference_event($field_date, $field_end_date)];
+  }
+
+  $events = [];
+  // conference is recurrent
+  // define useful time zones
+  $server_time_zone = new \DateTimeZone(date_default_timezone_get());
+  $user_time_zone = new \DateTimeZone($user->timezone);
+
+  // parse field data
+  $start_datetime = DateTimeImmutable::createFromFormat(
+    MYSQL_DATETIME_FORMAT,
+    $field_date,
+    $server_time_zone,
+  );
+  // field_end_date is eagerly cast to server time zone
+  $end_datetime = DateTimeImmutable::createFromFormat(
+    MYSQL_DATETIME_FORMAT,
+    $field_end_date,
+    $server_time_zone,
+  );
+
+  $duration = $start_datetime->diff($end_datetime);
+
+  gofast_conference__require_rrule_autoload();
+  $recurrence_string = $node->field_recurrence[LANGUAGE_NONE][0]['value'];
+  $recurrence = new \RRule\RRule($recurrence_string, $start_datetime);
+
+  $human_readable_recurrence = gofast_conference__get_human_readable_recurrence($recurrence);
+
+  /** @var \DateTime[] */
+  $occurrences = $recurrence->getOccurrencesBetween($start_date, $end_date);
+
+  foreach ($occurrences as $occurrence_start) {
+    $occurrence_start->setTimezone($user_time_zone);
+
+    // $occurrence_start is a mutable datetime object, beware of order of operations
+    $events[] = $create_conference_event(
+      $occurrence_start->format(MYSQL_DATETIME_FORMAT),
+      $occurrence_start->add($duration)->format(MYSQL_DATETIME_FORMAT),
+      [
+        'is_recurrent' => true,
+        'human_readable_recurrence' => $human_readable_recurrence,
+      ],
+    );
+  }
+
+  return $events;
+}
+
+/**
  * Separate handler to get conferences and tasks query e. g. for calendar.
  */
 function gofast_calendar_get_conferences_and_tasks_query($nid, $start_date, $end_date, $is_private, $available_gids = [], $filters = []) {
@@ -177,19 +293,29 @@ function gofast_calendar_get_conferences_and_tasks_query($nid, $start_date, $end
 
   // Alfresco_item / Kanban task request
   $og_membership_subquery = new EntityFieldQuery();
+  $og_membership_subquery = db_select('og_membership', 'og_m');
+  $og_membership_subquery->fields('og_m', array('etid'));
   if ($is_private) {
-    $og_membership_subquery = db_select('og_membership', 'og_m')
-    ->fields('og_m', array('etid'))
-    ->condition('gid', $available_gids, 'IN');
+    $og_membership_subquery->condition('gid', $available_gids, 'IN');
   } else {
-    $og_membership_subquery = db_select('og_membership', 'og_m')
-    ->fields('og_m', array('etid'))
-    ->condition('gid', $nid, '=');
+    $og_membership_subquery->condition('gid', $nid, '=');
   }
 
   $og_membership_subquery->join('node', 'n', 'og_m.etid = n.nid');
+  $og_membership_subquery->join('field_data_field_date', 'fd', 'og_m.etid = fd.entity_id');
+  $og_membership_subquery->leftJoin('field_data_field_recurrence_end_date', 'fred', 'og_m.etid = fred.entity_id');
 
-  $og_membership_subquery->condition('fd.field_date_value', $start_date, ">");
+  $og_membership_subquery->condition(
+    db_or()
+    ->condition('fd.field_date_value', $start_date, ">")
+    // include recurring events that end after the start of the lookup range
+    ->condition(
+      db_and()
+      ->isNotNull('fred.field_recurrence_end_date_value')
+      ->condition('fred.field_recurrence_end_date_value', $start_date, '>')
+    )
+  );
+
   $og_membership_subquery->condition('fd.field_date_value', $end_date, "<");
   $og_membership_subquery->condition('n.status', 1);
   if (!empty($filters)) {
@@ -197,9 +323,7 @@ function gofast_calendar_get_conferences_and_tasks_query($nid, $start_date, $end
       $og_membership_subquery->condition($filter["field"], $filter["value"]);
     }
   }
-  $og_membership_subquery->join('field_data_field_date', 'fd', 'og_m.etid = fd.entity_id');
   $result = $og_membership_subquery->execute()->fetchCol();
-
 
   if (!empty($result)) {
     $nodes = node_load_multiple($result);
@@ -217,52 +341,8 @@ function gofast_calendar_get_conferences_and_tasks_query($nid, $start_date, $end
       $node->body[LANGUAGE_NONE][0]["value"] = substr(strip_tags($node->body[LANGUAGE_NONE][0]["value"]), 0, 250);
 
       if($node->type == 'conference'){
-        $field_end_date = $node->field_end_date[LANGUAGE_NONE][0]['value'];
-        $field_end_date = format_date(strtotime(gofast_change_time_zone($field_end_date, 'UTC', $user->timezone)) , 'custom', 'Y-m-d H:i:s', date_default_timezone_get());       
-
-        // Get the event source
-        $ext_source_query = db_select('field_data_field_external_conference_source', 'f');
-        $ext_source_query->fields('f', array('field_external_conference_source_value'));
-        $ext_source_query->condition('f.entity_id', $node->nid);
-        $ext_source_result = $ext_source_query->execute()->fetchCol();
-        if(!empty($ext_source_result)){
-          $ext_source_result = json_decode($ext_source_result[0]);
-        }
-        $external_conference_source = $ext_source_result;
-
-        // Get the event all day status
-        $all_day_query = db_select('field_data_field_conference_is_all_day', 'f');
-        $all_day_query->fields('f', array('field_conference_is_all_day_value'));
-        $all_day_query->condition('f.entity_id', $node->nid);
-        $all_day_result = $all_day_query->execute()->fetchCol();
-
-        if(!empty($all_day_result)){
-          $is_all_day = $all_day_result[0] == 1 ? true : false;
-        }  
-
-        $hasCustomIcon = false;
-        $color = "#fff";
-        if(!empty($external_conference_source)){
-          $hasCustomIcon = true;
-          $icon = $external_conference_source->icon;
-          $color = $external_conference_source->color;
-        }else{
-          $icon = "fas fa-calendar-alt";
-        }
-        $events[] = array(
-          'title' => $node->title,
-          'nid' => $node->nid,
-          'start' => $field_date,
-          'end' => $field_end_date,
-          'user' => $userFormatted,
-          'description' =>  $node->body,
-          'type' => $node->type,
-          'icon' =>isset($icon) ? $icon : TRUE,
-          'className' => "",
-          'allDay' => $is_all_day,
-          'hasCustomIcon' => $hasCustomIcon,
-          'color' => $color,
-        );  
+        $node_events = gofast_calendar_get_conference_events($node, $userFormatted, $start_date, $end_date);
+        $events = [...$events, ...$node_events];
       } else {
         $icon = gofast_node_get_icon($node);
         $event = array(

@@ -1,0 +1,14 @@
+.signature-box {
+  background-color: #ffffffaa;
+  border: 1px solid #3f4254;
+}
+
+.placer-element-root .element-toolbar {
+  top: 0;
+  right: 0;
+  transform: translateY(calc(-100% - 0.5rem));
+}
+
+.placer-wrapper {
+  background-color: #eaf1f7;
+}

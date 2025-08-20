@@ -111,8 +111,10 @@ class UserListEntityController extends EntityAPIController {
       $userlist_dn = 'cn=' . 'UserList_' . $entity->ulid . ',' . $ldap_userlist_basedn;
       $members = array();
       foreach ($entity->field_userlist_members[LANGUAGE_NONE] as $member) {
-        $user = user_load($member['value']);
-        $members[$user->uid] = gofast_ldap_user_dn($user);
+        $account = new stdClass();
+        $account->name = gofast_user_get_login($member["value"]);
+        // $user = user_load($member['value']);
+        $members[$member['value']] = gofast_ldap_user_dn($account);
       }
       $this->updateUserListMembers($entity, $userlist_dn, $members);
 

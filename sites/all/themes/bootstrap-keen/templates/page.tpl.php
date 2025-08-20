@@ -80,12 +80,13 @@ $is_mobile = ($detect->isMobile() || $detect->isTablet() || $detect->is('iPad') 
 $is_mobile_device = ($detect->isMobile() && !$detect->isTablet());
 global $user;
 $gofast_url_doc = "https://gofast-docs.readthedocs.io/" . $user->language . "/4.0/docs-gofast-users/doc-gofast-guide-utilisateurs.html";
+if($page["content"]["user_login"]){
+  $page["content"]["user_login"]["messages"] = $messages;
+}
 ?>
 
 <?php
 global $base_url;
-$http_bind_url = 'https://' . $conf['gofast-comm_domain'] . '/http-bind';
-$poll_url = $base_url . "/gofast/poll";
 // weirdness of strpos() forces us to make a !false check, happily when we'll upgrade to PHP8 we'll have str_contains()
 if (!strpos($_SERVER['REQUEST_URI'], 'search/solr') === FALSE) {
   // one part of the urlencode (but not the entirety of it) messes up with the apachesolr request when the facetapi query string is present
@@ -163,42 +164,10 @@ if ($enable == 1 && $logoPath !== null && $logoPath !== '') {
         <?php endif; ?>
         <!--end::Aside-->
         <!--begin::Content-->
-        <div class="login-content flex-row-fluid d-flex flex-column justify-content-center position-relative overflow-hidden p-7 mx-auto">
-        <div class="flex-column <?php echo ($position == 2) ? ' ' . $containerClass : ' d-none'; ?>" >
-          <img class="h-70px mb-8" src="<?php print $imageUrl; ?>" alt="Plateform logo" >
-          <h3 class="font-weight-bolder text-center font-size-h4 font-size-h1-lg text-black" ><?php print variable_get('site_name', ''); ?></h3>
-        </div>
-          <!--begin::Content body-->
-          <div class="d-flex flex-column-fluid flex-center">
-            <!--begin::Signin-->
-            <div class="d-flex h-100 w-100 justify-content-center" id="content-main-container">
-              <div class="my-20" style=" width: 100%;">
-                <div id="ajax_content">
-                  <div class="d-flex h-100 w-100 justify-content-center" id="content-main-container">
-                    <div class="flex-column mb-15 <?php echo ($position == 1) ? ' ' . $containerClass : ' d-none'; ?>" >
-                      <img class="h-70px mb-8" src="<?php print $imageUrl; ?>" alt="Plateform logo" >
-                      <h3 class="font-weight-bolder text-center font-size-h4 font-size-h1-lg text-black" ><?php print variable_get('site_name', ''); ?></h3>
-                    </div>
-                  </div>
-                  
-                  <div id="block-user-login-messages">
-                    <?php print $messages; ?>
-                  </div>
-                  <?php print render($page['content']); ?>
-                </div>
-              </div>
-            </div>
-            <!--end::Signin-->
-            <!--begin::Signup-->
-            <!--end::Signup-->
-            <!--begin::Forgot-->
-            <!--end::Forgot-->
-          </div>
+        <div class="login-content flex-row-fluid d-flex flex-column position-relative overflow-scroll p-7 mx-auto">
+ 
+          <?php print render($page['content']); ?>
           <!--end::Content body-->
-          <div class="login-footer__container d-flex justify-content-center align-items-end py-7 py-lg-0">
-           <span class="login-footer font-weight-bolder font-size-h6 mr-1 "><i class="fas fa-2x fa-comments mr-2 align-middle" aria-hidden="true"></i><a href="https://community.ceo-vision.com" target="#blank" class="text-primary font-weight-bolder font-size-h5"><?php print t('Any question?'); ?></a></span>
-           <span class="login-footer font-weight-bolder font-size-h6 ml-10 mr-2"> <i class="fas fa-2x fa-book mr-2 align-middle" aria-hidden="true"></i><a href="https://gofast-docs.readthedocs.io/<?= substr($_SERVER['HTTP_ACCEPT_LANGUAGE'], 0, 2);?>/latest/docs-gofast-users/doc-gofast-guide-utilisateurs.html" target="#blank" class="text-primary font-weight-bolder font-size-h5"><?php print t('Documentation') ?></a></span>
-          </div>
         </div>
         <!--end::Content-->
       </div>
@@ -250,15 +219,34 @@ if ($enable == 1 && $logoPath !== null && $logoPath !== '') {
 
                     <div class="explorer-main-container">
                       <!-- Nav tabs -->
-                      <ul class="nav nav-tabs" role="tablist">
-                        <li class="nav-item active">
-                          <a class="nav-link py-6" id="explorer-file-browser" data-toggle="tab" href="#file-browser" role="tab" aria-controls="file-browser" aria-selected="true">Explorer</a>
+                      <ul class="nav nav-tabs nav-fill mx-1" role="tablist">
+                        <li class="nav-item active" data-title="<?= t('Collaborative Spaces') ?>" data-animation="true" data-trigger="hover" data-placement="bottom" data-boundary="window">
+                          <a class="nav-link py-6 px-0 justify-content-center" id="explorer-file-browser" data-toggle="tab" href="#file-browser" role="tab" aria-controls="file-browser" aria-selected="true">
+                            <div class="nav-icon">
+                              <i class="fas fa-sitemap n-color"
+                              ></i>
+                            </div></a>
                         </li>
-                        <li class="nav-item">
-                          <a class="nav-link py-6" id="explorer-wiki" data-toggle="tab" href="#wiki" role="tab" aria-controls="wiki" aria-selected="false">Wikis</a>
+                        <li class="nav-item" data-title="<?= t('Wikis') ?>" data-animation="true" data-trigger="hover" data-placement="bottom" data-boundary="window">
+                          <a class="nav-link py-6 px-0 justify-content-center cursor-pointer" id="explorer-wiki" data-toggle="tab" data-target="#book-browser" role="tab" aria-controls="wiki" aria-selected="false">
+                            <div class="nav-icon">
+                              <i class="fad fa-book"></i>
+                            </div>
+                          </a>
                         </li>
-                        <li class="nav-item">
-                          <a class="nav-link py-6 cursor-pointer" id="explorer-forum" data-toggle="tab" data-target="#expl-forum" role="tab" aria-controls="forum" aria-selected="false">Forums</a>
+                        <li class="nav-item" data-title="<?= t('Forums') ?>" data-animation="true" data-trigger="hover" data-placement="bottom" data-boundary="window">
+                          <a class="nav-link py-6 px-0 justify-content-center cursor-pointer" id="explorer-forum" data-toggle="tab" data-target="#expl-forum" role="tab" aria-controls="forum" aria-selected="false">
+                            <div class="nav-icon">
+                              <i class="fad fa-comments"></i>
+                            </div>
+                          </a>
+                        </li>
+                        <li class="nav-item" data-title="<?= t('Webforms') ?>" data-animation="true" data-trigger="hover" data-placement="bottom" data-boundary="window">
+                          <a class="nav-link py-6 px-0 justify-content-center cursor-pointer" id="explorer-webform" data-toggle="tab" data-target="#webform-browser" role="tab" aria-controls="webform" aria-selected="false">
+                            <div class="nav-icon">
+                              <i class="fad fa-file-signature"></i>
+                            </div>
+                          </a>
                         </li>
                       </ul>
                       <?php $explorer = render($page['explorer']); ?>
@@ -269,7 +257,7 @@ if ($enable == 1 && $logoPath !== null && $logoPath !== '') {
                           <?php print $explorer; ?>
                           <!-- END explorer region -->
                         </div>
-                        <div class="tab-pane" id="wiki" role="tabpanel" aria-labelledby="explorer-wiki">
+                        <div class="tab-pane" id="book-browser" role="tabpanel" aria-labelledby="explorer-wiki">
                           <!-- START explorer region -->
                           <div class="spinner spinner-track spinner-primary d-inline-flex gofast-spinner-xxl position-absolute" style="top: calc(50% - 6em); left: calc(50% - 4em);"></div>
                           <!-- END explorer region -->
@@ -280,6 +268,9 @@ if ($enable == 1 && $logoPath !== null && $logoPath !== '') {
                           // print gofast_forum_get_forums_view();
                           ?>
                           <!-- END explorer region -->
+                        </div>
+                        <div class="tab-pane" id="webform-browser" role="tabpanel" aria-labelledby="explorer-webform">
+                          <div class="spinner spinner-track spinner-primary d-inline-flex gofast-spinner-xxl position-absolute" style="top: calc(50% - 6em); left: calc(50% - 4em);"></div>
                         </div>
                         <!-- <div class="tab-pane" id="settings" role="tabpanel" aria-labelledby="settings-tab">...</div> -->
                       </div>
@@ -321,7 +312,7 @@ if ($enable == 1 && $logoPath !== null && $logoPath !== '') {
   <div class="atatus-banner d-none">
     <div class="atatus-banner">
       <span class="atatus-message mb-5 w-100"><?= t('I accept that anonymized technical traces will be collected in order to improve the quality of the platform and monitor any performance problem ?', array(), array('context' => 'gofast'))?></span>
-      <span class="atatus-message mb-5 w-100"><?= t('If you regularly use %platform_name, we advise you to accept it to ensure better support.', array('%platform_name' => variable_get('site_name', 'GoFast')), array('context' => 'gofast'))?></span>
+      <span class="atatus-message mb-5 w-100"><?= t('If you regularly use %platform_name, we advise you to accept it to ensure better support.', array('%platform_name' => variable_get('site_name', 'GoFast')), array('context' => 'gofast'))?>&nbsp;<a href="https://gofast-docs.readthedocs.io/<?= $user->language ?>/latest/docs-gofast-users/doc-gofast-guide-utilisateurs.html#guide-d-acceptation-des-cookies-pour-optimiser-votre-experience-sur-gofast"><?= t('You may also need to check your browser configuration.', array(), array('context' => 'gofast')) ?></a></span>
       <button class="btn btn-sm btn-primary" onclick="Gofast.agreeToTracking()"><?= t('Accept')?></button>
       <button class="btn btn-sm text-danger ml-2" onclick="Gofast.disagreeToTracking()"><?= t('Decline')?></button>
     </div>
@@ -399,6 +390,12 @@ if ($enable == 1 && $logoPath !== null && $logoPath !== '') {
       location.hash = location.hash.slice(0, -1);
     }
     $(document).trigger("page-loaded");
+    
+    jQuery("#explorer .explorer-main-container li.nav-item").tooltip()
+
+    jQuery("#explorer .nav-link[id='explorer-webform']").on("shown.bs.tab", (e) => {
+      Gofast.sideFileBrowser.initFileBrowser("webform-browser");
+    })
   });
 </script>
 
@@ -420,40 +417,7 @@ if ($enable == 1 && $logoPath !== null && $logoPath !== '') {
   ?>
 </div>
 
-<div id="atatus-script-section">
-  <?php if (isset($conf['gofast-atatus-key']) && user_load($user->uid)->field_atatus_tracking[LANGUAGE_NONE]['0']['value'] == 2)  : ?>
-    <script src="https://dmc1acwvwny3.cloudfront.net/atatus-spa.js"></script>
-    <script type="text/javascript">
-      atatus.config('<?php echo variable_get('gofast-atatus-key'); ?>', {
-        ignoreUrls: ['<?php echo $http_bind_url; ?>', '<?php echo $poll_url; ?>']
-      }).install();
-
-      var atatusInterval = setInterval(function() {
-        if (typeof Gofast == "object" &&
-          typeof Gofast._settings == "object" &&
-          typeof Gofast._settings.gofast_version == "string" &&
-          typeof Gofast._settings.gofast == "object" &&
-          typeof Gofast._settings.gofast.user == "object" &&
-          typeof Gofast._settings.gofast.user.uid == "string") {
-          atatus.setVersion(Gofast._settings.gofast_version);
-          atatus.setUser(Gofast._settings.gofast.user.uid);
-          clearInterval(atatusInterval);
-        }
-      }, 500);
-    </script>
-    <?php if(gofast_essential_is_essential()) : ?>
-      <?php if(gofast_mobile_is_phone()) : ?>
-        <script type="text/javascript">atatus.setTags(['mobile']);</script>
-      <?php elseif($detect->isTablet()) : ?>
-        <script type="text/javascript">atatus.setTags(['tablet']);</script>
-      <?php else : ?>
-        <script type="text/javascript">atatus.setTags(['essential']);</script>
-      <?php endif; ?>
-    <?php else: ?>
-      <script type="text/javascript">atatus.setTags(['plus']);</script>
-    <?php endif; ?>
-  <?php endif; ?>
-</div>
+<?= theme("gofast_user_atatus_script") ?>
 
 <style>
   ::-webkit-scrollbar{

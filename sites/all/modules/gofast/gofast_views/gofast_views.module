@@ -2830,7 +2830,7 @@ function gofast_dropdown_link($label, $href = '', $link_id = '', $link_class = '
 
   $link_id = empty($link_identifier) ? $label : $link_identifier;
 
-  if (isset($attr['disabled'])) {
+  if (isset($attr['disabled']) && $attr['disabled']) {
     $link = theme('gofast_link_generic', array(
       'text' => $label,
       'link_id' => $link_id,
@@ -3259,6 +3259,10 @@ function gofast_views_modal_user_delete($js, $uid)
 
   $commands = ctools_modal_form_wrapper($form_id, $form_state);
 
+  if($form_state['submitted']) {// async the delete 
+    print ajax_render($commands);
+    fastcgi_finish_request();
+  }   
   if ($form_state['executed']) {
     $commands[] = gofast_command_processAjax('directory/users');
     $commands[] = gofast_command_toast_message(t("The user has been deleted", array(), array('context' => 'gofast:gofast_views')));

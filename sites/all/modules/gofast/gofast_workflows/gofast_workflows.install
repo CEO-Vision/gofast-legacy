@@ -223,3 +223,45 @@ function gofast_workflows_update_7306() {
     db_add_field('gofast_wf_profil', 'gids', $field);
   }
 }
+
+/**
+ * Migrate VARIABLE_NAME_ID_BONITA Drupal variable to user field field_bonita_id
+ */
+function gofast_workflows_update_7307() {
+  if (!defined("VARIABLE_NAME_ID_BONITA")) {
+    define( 'VARIABLE_NAME_ID_BONITA' , "gofast_bonita_ids");
+  }
+  $uid_to_bid_assoc = variable_get(VARIABLE_NAME_ID_BONITA, array());
+  foreach ($uid_to_bid_assoc as $uid => $bid) {
+    if (!is_int($uid) || !is_int($bid)) {
+      continue;
+    }
+    $fields = [
+      "entity_type" => "user",
+      "bundle" => "user",
+      "deleted" => 0,
+      "entity_id" => $uid,
+      "revision_id" => $uid,
+      "language" => LANGUAGE_NONE,
+      "delta" => 0,
+      "field_bonita_id_value" => $bid,
+    ];
+    foreach (["field_data_field_bonita_id", "field_revision_field_bonita_id"] as $table) {
+      db_insert($table)->fields($fields)->execute();
+    }
+    entity_get_controller('user')->resetCache([$uid]);
+    cache_clear_all("field:user:$uid", 'cache_field');
+  }
+  variable_del(VARIABLE_NAME_ID_BONITA);
+}
+
+/** GOFAST-12716 - Create admin user in bonita if not already exist */
+function gofast_workflows_update_7308() {
+  $admin_account = user_load(1);
+  $bonita_id = gofast_workflows_get_user_id($admin_account);
+
+  if(!$bonita_id){
+    //The admin user doesn't exists, let's create it
+    gofast_workflows_create_user($admin_account);
+  }
+}

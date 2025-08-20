@@ -157,7 +157,7 @@ function gofast_features_search_apachesolr_environments() {
       'ts_birthdate' => '0',
       'ts_comments' => '0.5',
       'ts_default_role' => '0',
-      'tum_unr_author' => '0',
+      'tos_unr_author' => '0',
       'txm_comments' => '0',
       'txs_content' => '0',
       'txs_label' => '0',

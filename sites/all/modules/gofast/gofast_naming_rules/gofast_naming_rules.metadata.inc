@@ -5,7 +5,6 @@ function gofast_naming_rules_metadata_get_metadata_types()
     $metadata_types = [
         t("Reference", [], ["context" => "gofast:gofast_naming_rules"]) => "field_document_reference",
         t("Creation date", [], ["context" => "gofast:gofast_naming_rules"]) => "created",
-        t("Category", [], ["context" => "gofast:gofast_naming_rules"]) => "field_category",
         t("Author", [], ["context" => "gofast:gofast_naming_rules"]) => "field_document_author",
         t("Title", [], ["context" => "gofast:gofast_naming_rules"]) => "field_title",
         GOFAST_METADATA_CUSTOM_DATE_LABEL => "field_custom_date",
@@ -19,17 +18,32 @@ function gofast_naming_rules_metadata_get_metadata_value($node, $term, $field_na
    if ($field_name == "field_category") {
     return i18n_taxonomy_localize_terms($term)->name;
    }
-   if ($field_name == "created" || $field_name == "field_custom_date") {
-    $value = $node->created;
-    $datetime = DateTime::createFromFormat('U', $value)->setTime(0, 0)->format(DATE_ATOM);
-    $date = explode("T", $datetime)[0];
-    return $date;
-   }
    if ($field_name == "field_document_author") {
     $infos = gofast_cmis_alfresco_get_infos($node);
     return $infos['document_author'];
    }
-   return $node->$field_name[LANGUAGE_NONE][0]["value"];
+
+   $value = isset($node->$field_name[LANGUAGE_NONE][0]["value"]) ? $node->$field_name[LANGUAGE_NONE][0]["value"] : "";
+
+   // Special cases
+   if ($field_name == "created") {
+    $value = $node->created;
+   }
+   if ($field_name == "field_custom_date") {
+    $value = strtotime($value);
+   }
+   // Return empty string if no value is found
+   if (!$value) {
+    return "";
+   }
+
+   if ($field_name == "created" || $field_name == "field_custom_date") {
+    $datetime = DateTime::createFromFormat('U', $value)->setTime(0, 0)->format(DATE_ATOM);
+    $date = explode("T", $datetime)[0];
+    return $date;
+   }
+
+   return $value;
 }
 
 /**
@@ -52,9 +66,11 @@ function gofast_naming_rules_node_has_no_naming_rule($node)
         $term = taxonomy_term_load($node_category_tid);
         $ruled_value = gofast_naming_rule_get_node_ruled_value($node, $term, TRUE);
         $node_title = explode(".", $node->title);
+        $extension = array_pop($node_title);
         $node_title = implode(".", $node_title);
+
         // node is already named according to its naming rule
-        $has_ruled_value = $ruled_value == $node_title;
+        $has_ruled_value = ($ruled_value == $node_title || $node_title == $ruled_value."_".$node->nid);
     }
     if ($has_rule && $has_ruled_value) {
         return t("This document has a naming rule enforced by its category", [], ["context" => "gofast:gofast_naming_rules"]);

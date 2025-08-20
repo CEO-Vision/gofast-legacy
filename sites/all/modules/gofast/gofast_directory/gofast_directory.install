@@ -29,39 +29,44 @@ function gofast_directory_install(){
         `u`.`picture` AS `picture`,
         `frlug`.`ldap_user_givenname_value` AS `firstname`,
         `frlus`.`ldap_user_sn_value` AS `lastname`,
-        `frluo`.`ldap_user_o_value` AS `entity`,
+        `ttd`.`name` AS `entity`,
         `up`.`points` AS `points`,
         GROUP_CONCAT(`ur`.`rid` SEPARATOR ',') AS `role_id`,
         GROUP_CONCAT(`r`.`name` SEPARATOR ',') AS `role_name`,
         `frfl`.`field_left_value` AS `left`,
         `extr`.`is_extranet_value` AS `is_extranet`,
+        `fped`.`field_password_expiration_date_value` AS `password_expiration`,
         (CASE
             WHEN (`u`.`status` = 0) AND (`frfl`.`field_left_value` = 1) THEN 1
             WHEN (`u`.`status` = 0) THEN 0
             ELSE 2
         END) AS `total_status`
     FROM
-        ((((((((`users` `u`
-    LEFT JOIN `field_revision_ldap_user_givenname` `frlug` ON
+        ((((((((((`users` `u`
+    LEFT JOIN `field_data_ldap_user_givenname` `frlug` ON
         ((`frlug`.`entity_id` = `u`.`uid`)))
-    LEFT JOIN `field_revision_ldap_user_sn` `frlus` ON
+    LEFT JOIN `field_data_ldap_user_sn` `frlus` ON
         ((`frlus`.`entity_id` = `u`.`uid`)))
-    LEFT JOIN `field_revision_ldap_user_o` `frluo` ON
-        ((`frluo`.`entity_id` = `u`.`uid`)))
+    LEFT JOIN `field_data_field_entity` `fdfe` ON
+        ((`fdfe`.`entity_id` = `u`.`uid`)))
+    LEFT JOIN `taxonomy_term_data` `ttd` ON
+        ((`ttd`.`tid` = `fdfe`.`field_entity_tid`)))
     LEFT JOIN `userpoints` `up` ON
         ((`up`.`uid` = `u`.`uid`)))
     LEFT JOIN `users_roles` `ur` ON
         ((`u`.`uid` = `ur`.`uid`)))
     LEFT JOIN `role` `r` ON
         ((`ur`.`rid` = `r`.`rid`)))
-    LEFT JOIN `field_revision_field_left` `frfl` ON
+    LEFT JOIN `field_data_field_left` `frfl` ON
         ((`frfl`.`entity_id` = `u`.`uid`)))
-    LEFT JOIN `field_revision_is_extranet` `extr` ON
+    LEFT JOIN `field_data_is_extranet` `extr` ON
         ((`extr`.`entity_id` = `u`.`uid`)))
+    LEFT JOIN `field_data_field_password_expiration_date` `fped` ON
+        ((`fped`.`entity_id` = `u`.`uid`)))
     WHERE
         (`u`.`uid` NOT IN (0, 1))
     GROUP BY
-	    (`u`.`uid`)");  
+	    (`u`.`uid`)");
     
     db_query("CREATE VIEW `d7`.`view_userlist_og` AS SELECT  `gu`.`ulid` AS `ulid`, `gu`.`nid` AS `ul_nid`, `n`.`nid` AS `og_nid`, `om`.`created` AS `created`, `om`.`state` AS `state` FROM ((`d7`.`og_membership` `om` JOIN `d7`.`gofast_userlists` `gu` ON ((`gu`.`ulid` = `om`.`etid`))) LEFT JOIN `d7`.`node` `n` ON ((`n`.`nid` = `om`.`gid`))) WHERE (`om`.`entity_type` = 'userlist')");   
     
@@ -416,4 +421,115 @@ function gofast_directory_update_7006() {
           ->condition('nid', $contact_node->nid)
           ->execute();
     }
+}
+
+/** Update users directory SQL view to retrieve entities from the taxonomy rather than from the old plain text field */
+function gofast_directory_update_7007() {
+    db_query("DROP VIEW `d7`.`users_directory_detail`");
+    db_query("CREATE VIEW `d7`.`users_directory_detail` AS
+    SELECT
+        `u`.`uid` AS `uid`,
+        `u`.`access` AS `access`,
+        `u`.`name` AS `username`,
+        `u`.`mail` AS `mail`,
+        `u`.`created` AS `created`,
+        `u`.`login` AS `login`,
+        `u`.`status` AS `status`,
+        `u`.`language` AS `language`,
+        `u`.`timezone` AS `timezone`,
+        `u`.`picture` AS `picture`,
+        `frlug`.`ldap_user_givenname_value` AS `firstname`,
+        `frlus`.`ldap_user_sn_value` AS `lastname`,
+        `ttd`.`name` AS `entity`,
+        `up`.`points` AS `points`,
+        GROUP_CONCAT(`ur`.`rid` SEPARATOR ',') AS `role_id`,
+        GROUP_CONCAT(`r`.`name` SEPARATOR ',') AS `role_name`,
+        `frfl`.`field_left_value` AS `left`,
+        `extr`.`is_extranet_value` AS `is_extranet`,
+        (CASE
+            WHEN (`u`.`status` = 0) AND (`frfl`.`field_left_value` = 1) THEN 1
+            WHEN (`u`.`status` = 0) THEN 0
+            ELSE 2
+        END) AS `total_status`
+    FROM
+        (((((((((`users` `u`
+    LEFT JOIN `field_data_ldap_user_givenname` `frlug` ON
+        ((`frlug`.`entity_id` = `u`.`uid`)))
+    LEFT JOIN `field_data_ldap_user_sn` `frlus` ON
+        ((`frlus`.`entity_id` = `u`.`uid`)))
+    LEFT JOIN `field_data_field_entity` `fdfe` ON
+        ((`fdfe`.`entity_id` = `u`.`uid`)))
+    LEFT JOIN `taxonomy_term_data` `ttd` ON
+        ((`ttd`.`tid` = `fdfe`.`field_entity_tid`)))
+    LEFT JOIN `userpoints` `up` ON
+        ((`up`.`uid` = `u`.`uid`)))
+    LEFT JOIN `users_roles` `ur` ON
+        ((`u`.`uid` = `ur`.`uid`)))
+    LEFT JOIN `role` `r` ON
+        ((`ur`.`rid` = `r`.`rid`)))
+    LEFT JOIN `field_data_field_left` `frfl` ON
+        ((`frfl`.`entity_id` = `u`.`uid`)))
+    LEFT JOIN `field_data_is_extranet` `extr` ON
+        ((`extr`.`entity_id` = `u`.`uid`)))
+    WHERE
+        (`u`.`uid` NOT IN (0, 1))
+    GROUP BY
+	    (`u`.`uid`)");  
+}
+
+/** Add field_password_expiration_date to users directory */
+function gofast_directory_update_7008() {
+    db_query("DROP VIEW `d7`.`users_directory_detail`");
+    db_query("CREATE VIEW `d7`.`users_directory_detail` AS
+    SELECT
+        `u`.`uid` AS `uid`,
+        `u`.`access` AS `access`,
+        `u`.`name` AS `username`,
+        `u`.`mail` AS `mail`,
+        `u`.`created` AS `created`,
+        `u`.`login` AS `login`,
+        `u`.`status` AS `status`,
+        `u`.`language` AS `language`,
+        `u`.`timezone` AS `timezone`,
+        `u`.`picture` AS `picture`,
+        `frlug`.`ldap_user_givenname_value` AS `firstname`,
+        `frlus`.`ldap_user_sn_value` AS `lastname`,
+        `ttd`.`name` AS `entity`,
+        `up`.`points` AS `points`,
+        GROUP_CONCAT(`ur`.`rid` SEPARATOR ',') AS `role_id`,
+        GROUP_CONCAT(`r`.`name` SEPARATOR ',') AS `role_name`,
+        `frfl`.`field_left_value` AS `left`,
+        `extr`.`is_extranet_value` AS `is_extranet`,
+        `fped`.`field_password_expiration_date_value` AS `password_expiration`,
+        (CASE
+            WHEN (`u`.`status` = 0) AND (`frfl`.`field_left_value` = 1) THEN 1
+            WHEN (`u`.`status` = 0) THEN 0
+            ELSE 2
+        END) AS `total_status`
+    FROM
+        ((((((((((`users` `u`
+    LEFT JOIN `field_data_ldap_user_givenname` `frlug` ON
+        ((`frlug`.`entity_id` = `u`.`uid`)))
+    LEFT JOIN `field_data_ldap_user_sn` `frlus` ON
+        ((`frlus`.`entity_id` = `u`.`uid`)))
+    LEFT JOIN `field_data_field_entity` `fdfe` ON
+        ((`fdfe`.`entity_id` = `u`.`uid`)))
+    LEFT JOIN `taxonomy_term_data` `ttd` ON
+        ((`ttd`.`tid` = `fdfe`.`field_entity_tid`)))
+    LEFT JOIN `userpoints` `up` ON
+        ((`up`.`uid` = `u`.`uid`)))
+    LEFT JOIN `users_roles` `ur` ON
+        ((`u`.`uid` = `ur`.`uid`)))
+    LEFT JOIN `role` `r` ON
+        ((`ur`.`rid` = `r`.`rid`)))
+    LEFT JOIN `field_data_field_left` `frfl` ON
+        ((`frfl`.`entity_id` = `u`.`uid`)))
+    LEFT JOIN `field_data_is_extranet` `extr` ON
+        ((`extr`.`entity_id` = `u`.`uid`)))
+    LEFT JOIN `field_data_field_password_expiration_date` `fped` ON
+        ((`fped`.`entity_id` = `u`.`uid`)))
+    WHERE
+        (`u`.`uid` NOT IN (0, 1))
+    GROUP BY
+	    (`u`.`uid`)");  
 }

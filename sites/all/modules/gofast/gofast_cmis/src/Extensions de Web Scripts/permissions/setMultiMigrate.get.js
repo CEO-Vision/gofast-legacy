@@ -60,10 +60,12 @@ else{
 				node.setPermission(role,"GROUP_"+g);
 			}else{
 				logger.log("Standard: GROUP_" + g + "_STANDARD");
+				logger.log("GroupManager: GROUP_" + g + "_GROUPMANAGER");
 				logger.log("Coordinator: GROUP_" + g + "_ADMIN");
 				logger.log("Consumer: GROUP_" + g);
 				
-				node.setPermission("Standard","GROUP_"+g+"_STANDARD");
+				node.setPermission("Standard", "GROUP_"+g+"_STANDARD");
+				node.setPermission("GroupManager", "GROUP_"+g+"_GROUPMANAGER");
 				node.setPermission("Coordinator", "GROUP_"+g+"_ADMIN");
 				node.setPermission("Consumer", "GROUP_"+g);
 			}

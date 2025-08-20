@@ -1,4 +1,10 @@
 <?php
+
+define('GOFAST_WEBFORM_FOLDER_NAME', 'WEBFORM');
+
+module_load_include('inc', 'gofast_webform', 'gofast_webform.api');
+module_load_include('inc', 'gofast_webform', 'gofast_webform.utils');
+
 /*
  * Implements hook_menu
  */
@@ -40,6 +46,22 @@ function gofast_webform_menu(){
     'title' => 'Get form results',
     'page callback' => 'gofast_webform_get_results',
     'page arguments' => array(3),
+    'access callback' => 'node_access',
+    'access arguments' => array('update', 3),
+  );
+
+  $items['gofast/webform-browser/explorer'] = array(
+    'title' => 'Webform explorer',
+    'page callback' => 'gofast_webform_browser_menu_ajax',
+    'type' => MENU_CALLBACK,
+    'access callback' => "user_access",
+    'access arguments' => array('access content'),
+  );
+  
+  $items['modal/%ctools_js/node/%node/webform/manage'] = array(
+    'title' => 'Manage publish',
+    'page callback' => 'gofast_webform_modal_manage_publish',
+    'page arguments' => array(1,3),
     'access callback' => 'node_access',
     'access arguments' => array('update', 3),
   );
@@ -104,6 +126,9 @@ function gofast_webform_theme() {
     'gofast_webform_webform_tabs' => array(
       'template' => 'tpl/components/webform-tabs'
     ),
+    'gofast_webform_webform_iframe' => array(
+      'template' => 'tpl/components/webform-iframe'
+    ),
     'gofast_webform_panels_filloutPanel' => array(
       'template' => 'tpl/components/panels/webform-panels-filloutPanel'
     ),
@@ -135,6 +160,15 @@ function gofast_webform_theme() {
 function template_preprocess_gofast_webform(&$variables) {
   // here we simplify the variables array passed in the webform-container
   $variables["node"] = $variables["elements"]["#node"];
+}
+
+function template_preprocess_gofast_webform_webform_iframe(&$variables) {
+  global $user;
+  // here we simplify the variables array passed in the webform-iframe
+  $variables["nid"] = $variables["node"]->nid;
+  
+  // Get language from url if it exists
+  $variables['language'] = $_GET["language"] ?? $user->language;
 }
 
 /*
@@ -362,6 +396,18 @@ function gofast_webform_form_alter(&$form, &$form_state, $form_id){
     $form['#submit'][] = 'gofast_webform_form_webform_client_gofast_submit';
     $form['#validate'][] = 'gofast_webform_form_webform_client_gofast_validate';
     $form['actions']['submit']['#attributes']['id'] = 'save-webform-submit';
+  }
+  
+  // Hide the messages for webform_client_form
+  if (strpos($form_id, 'webform_client_form') !== false) {
+    $messages = drupal_get_messages();
+    if (isset($messages['status'])) {
+      foreach ($messages['status'] as $key => $message) {
+        if (strpos($message, t('The webform component')) !== FALSE) {
+          unset($messages['status'][$key]);
+        }
+      }
+    }
   }
 }
 
@@ -668,4 +714,219 @@ function gofast_webform_ajax_node_delete($form = null, $form_state = null) {
   }  else {
     drupal_set_message(t("You don't have permission to do this action", array(), array("context" => "gofast")), "error");
   }
+}
+
+function gofast_webform_browser_menu_ajax() {
+
+  $tree_items = gofast_webform_get_json_webforms();
+  print gofast_get_explorer_tree_template($tree_items, "webform-browser", "webform");
+}
+
+function gofast_webform_get_json_webforms($target_gids = []) {
+  global $user;
+
+  $gids = [];
+  if (empty($target_gids)) {
+    $gids = gofast_og_get_spaces_by_user($user);
+  } else {
+    // keep only $target_gids user has access to (using grants to avoid perfs hit)
+    $query = new EntityFieldQuery();
+    $query->entityCondition('entity_type', "node");
+    $query->entityCondition("entity_id", $target_gids, "IN");
+    $query->addTag('node_access');
+    $gids = array_keys($query->execute()["node"]);
+  }
+  $tree = gofast_webform_get_webforms($gids);
+
+  return $tree;
+}
+
+/**
+ * Returns an array of all webforms belonging to certain groups.
+ *
+ * @param array $gids
+ *   An array of group IDs to filter by.
+ *
+ * @return array
+ *   An array of all webforms.
+ */
+function gofast_webform_get_webforms($gids, $get_empty_webforms = FALSE) {
+  if (empty($gids)) {
+    return array();
+  }
+
+  $all_webforms = &drupal_static(__FUNCTION__ . implode(':', $gids), array());
+  if (empty($all_webforms)) {
+    $query = db_select('node', 'n');
+    $query->addField('n', 'title', 'name');
+    $query->fields('n', array('nid', 'type'));
+    $query->fields('ogm', array("gid"));
+    $query->innerJoin("og_membership", "ogm", "ogm.etid = n.nid");
+    $query->condition('ogm.gid', $gids, 'IN');
+    $query->condition("ogm.field_name", "og_group_content_ref");
+    $query->condition("n.type", "webform");
+    $query->addTag('node_access');
+    $fetched_webforms = $query->execute()->fetchAll();
+  }
+  $all_webforms = [];
+  foreach($fetched_webforms as $webform){
+    if(!isset($all_webforms[$webform->gid])){
+      $all_webforms[$webform->gid] = new stdClass();
+      $all_webforms[$webform->gid]->icon = gofast_node_get_icon((object)["type" => gofast_get_node_type($webform->gid, true)]);
+      $all_webforms[$webform->gid]->name = gofast_get_node_title($webform->gid);
+      $all_webforms[$webform->gid]->link_path = "/node/$webform->gid";
+      $all_webforms[$webform->gid]->id = random_int(0, 999999);
+      $all_webforms[$webform->gid]->pid = 0;
+    }
+
+    $webform->icon = gofast_node_get_icon((object)["type" => "webform"]);
+    $webform->link_path = "/node/$webform->nid";
+    $webform->pid = $all_webforms[$webform->gid]->id;
+    $webform->id = random_int(0, 999999);
+    $all_webforms[$webform->gid]->children[] = $webform;
+  }
+  return $all_webforms;
+}
+
+/**
+ * Callback from modal/%ctools_js/node/%node/webform/manage
+ */
+function gofast_webform_modal_manage_publish($js, $node) {
+  if (gofast_webform_is_closed($node)) {
+    $form_title = t("Publish this webform", array(), array('context' => 'gofast_webform'));
+  }
+  else {
+    $form_title = t("Unpublish this webform", array(), array('context' => 'gofast_webform'));
+  }
+  $form_id = 'gofast_webform_manage_publish_form';
+
+  if (!$js) {
+    return drupal_get_form($form_id, $node);
+  }
+
+  ctools_include('modal');
+  ctools_include('ajax');
+
+  $form_state = array(
+    'ajax' => TRUE,
+    'build_info' => array(
+      'args' => array($node)
+    ),
+    'title' => $form_title
+  );
+  $commands = ctools_modal_form_wrapper($form_id, $form_state);
+  
+  if (isset($commands[0])) {
+    $commands[0]['output'] = gofast_normalize_string_from_ajaxifying($commands[0]['output']);
+  }
+  if($form_state['executed']){
+    if(gofast_webform_is_closed($node)){
+      $commands[] = gofast_command_toast_message(t("The webform has been unpublished", array(), array('context' => 'gofast_webform')), 'success');
+    }else{
+      $commands[] = gofast_command_toast_message(t("The webform has been published", array(), array('context' => 'gofast_webform')), 'success');
+    }
+    $commands[] = ctools_modal_command_dismiss();
+    $commands[] = gofast_command_processAjax("/node/{$node->nid}");
+  }
+
+  print ajax_render($commands);
+}
+
+/**
+ * Implements hook_form for the publish/unpublish webform modal
+ */
+function gofast_webform_manage_publish_form($form, &$form_state){
+  $node = $form_state['build_info']['args'][0];
+
+  $form['nid'] = array(
+    '#type' => 'hidden',
+    '#title' => t('Subject'),
+    '#default_value' => $node->nid,
+    '#value' => $node->nid,
+    '#size' => 60,
+    '#maxlength' => 128,
+  );
+  
+  if(gofast_webform_is_closed($node)){
+    $confirm_form = confirm_form(
+      $form,
+      t('Publish this webform', array(), array('context' => 'gofast_webform')),
+      '',
+      t('Are you sure you want to publish this webform ?', array(), array('context' => 'gofast_webform')),
+      t('Publish', array(), array('context' => 'gofast_webform')),
+      t('Cancel', array(), array('context' => 'gofast'))
+    ); 
+  }else{
+    
+    // Add a warning message to prevent user that submissions will be lost
+    $form['prevent_submissions'] = array(
+      '#markup' => '<div class="alert alert-custom alert-notice alert-light-warning fade show" role="alert"><div class="alert-icon"><i class="flaticon-warning"></i><div class="alert-text ml-2">' . t('Please note that if you unpublish this webform, you will permanently lose all submissions made!') . '</div></div><div class="alert-text"></div></div>',
+    );
+    
+    $confirm_form = confirm_form(
+      $form,
+      t('Unpublish this webform', array(), array('context' => 'gofast_webform')),
+      '',
+      t('Are you sure you want to unpublish this webform ?', array(), array('context' => 'gofast_webform')),
+      t('Unpublish', array(), array('context' => 'gofast_webform')),
+      t('Cancel', array(), array('context' => 'gofast'))
+    );
+  }
+
+
+  $confirm_form['actions']['submit']['#attributes'] = array(
+      'id' => 'edit-submit',
+      'class' => array('btn', 'btn-primary')
+  );
+  $confirm_form['actions']['cancel']['#type'] = "submit";
+  $confirm_form['actions']['cancel']['#value'] = t('Cancel');
+  $confirm_form['actions']['cancel']['#attributes'] = array(
+      'id' => 'edit-cancel',
+      'class' => array('btn', 'btn-secondary')
+  );
+  
+  return $confirm_form;
+}
+
+/**
+ * Implements hook_validate() Validate function for the publish/unpublish webform modal
+ */
+function gofast_webform_manage_publish_form_validate($form, &$form_state){
+  $node = node_load($form_state['values']['nid']);
+  if (gofast_webform_is_closed($node)) {
+    $form_state['values']['status'] = 1;
+  }else{
+    $form_state['values']['status'] = 0;
+  }
+}
+
+/**
+ * Implements hook_submit() Submit function for the publish/unpublish webform modal
+ */
+function gofast_webform_manage_publish_form_submit($form, &$form_state){
+  $node = node_load($form_state['values']['nid']);
+  if (gofast_webform_is_closed($node)) {
+    $node->webform['status'] = 1;
+    node_save($node);
+    drupal_set_message(t("The webform has been published", array(), array('context' => 'gofast_webform')));
+  }else{
+    $node->webform['status'] = 0;
+    node_save($node);
+    
+    // Set all submissions to draft
+    db_update('webform_submissions')
+      ->fields(array('is_draft' => 1))
+      ->condition('nid', $node->nid)
+      ->execute();
+      
+    drupal_set_message(t("The webform has been unpublished", array(), array('context' => 'gofast_webform')));
+  }
+}
+
+/** 
+ * Render the status of the webform
+ */
+function gofast_webform_is_closed($node) {
+
+  return $node->webform['status'] == 0;
 }

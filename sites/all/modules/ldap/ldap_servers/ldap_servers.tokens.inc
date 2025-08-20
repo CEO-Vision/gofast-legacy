@@ -398,6 +398,13 @@ function ldap_servers_token_tokenize_user_account($user_account, $token_keys = '
         $value = @is_scalar($user_account->{$attr_name}['und'][0]['value']) ? $user_account->{$attr_name}['und'][0]['value'] : '';
       break;
 
+      /** @patch CEO-Vision */
+      case 'taxonomy':
+        $value = @is_scalar($user_account->{$attr_name}['und'][0]['tid']) ? $user_account->{$attr_name}['und'][0]['tid'] : '';
+        $term = taxonomy_term_load($value);
+        $value = $term ? $term->name : "";
+      break;
+
       case 'property':
         $value = @is_scalar($user_account->{$attr_name}) ? $user_account->{$attr_name} : '';
       break;

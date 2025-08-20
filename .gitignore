@@ -41,7 +41,6 @@ sites/all/libraries/ajax_file_browser/ITHitAJAXFileBrowser.tar.gz
 /sites/default/files/ctools/
 /sites/default/files/tmp/
 /sites/default/files/ceo-vision.jar
-/sites/default/files/.htaccess
 /sites/default/files/Logo GoFAST_3_1.png
 /sites/default/files/update_report.txt
 /sites/default/files/webform/
@@ -69,13 +68,35 @@ sites/all/libraries/ajax_file_browser/ITHitAJAXFileBrowser.tar.gz
 /sites/default/files/Logo GoFAST_2_0.png
 /sites/default/files/advagg_css/
 
-.vscode/sftp.json
+# Ignore VSCode and JetBrains config
+.vscode/*
+.idea/*
+
 opt/*
 var/*
 etc/*
+
+sites/all/themes/.DS_Store
+
+sites/all/themes/gofast/.DS_Store
+
+sites/all/.DS_Store
+
+sites/all/themes/gofast/assets/fontawesome/.DS_Store
+
+sites/all/themes/bootstrap-keen/scss/style.css.map
+
+.kdev4/
+
+*.kdev4
 
 .history/
 
 .kdev4/
 
 *.kdev4
+
+.vscode/
+sites/all/modules/gofast/gofast_ajax_file_browser/scatch.json
+
+.DS_Store

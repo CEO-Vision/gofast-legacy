@@ -906,12 +906,10 @@ function gofast_workflows_get_html_list_available_processes($reference = false){
         
         $array_show_fields_list_processes = gofast_workflows_get_show_fields_list_processes();
         $output .= "<table class='available_process_table table table-bordered' id='available_process_table'><thead><tr>";
-        foreach($array_show_fields_list_processes as $key=>$title){
-             $output .=  "<th>".t($key, array(), array('context' => 'gofast:gofast_workflows'))."</th>";
+        foreach($array_show_fields_list_processes as $key=>$class){
+             $output .=  "<th class='$class'>".t($key, array(), array('context' => 'gofast:gofast_workflows'))."</th>";
         }
 
-        //on rajoute les actions
-       $output .="<th>".t("Manage model", array(), array('context' => 'gofast:gofast_workflows'))."</th>";
        $output .= "</tr></thead>";
 
         foreach($list_available_processes as $key=>$process){
@@ -920,10 +918,10 @@ function gofast_workflows_get_html_list_available_processes($reference = false){
 
             // title
             $content = "<span style='font-weight:bold;'>" . t($process["displayName"], array(), array('context' => 'gofast:gofast_workflows')) . "</span>";
-            $output .= "<td class=\"gofast_wf_actions\">" . theme("link_start_process_popup", array('process' => $process, "reference" => $reference, "content" => $content)) . "</td>";
+            $output .= "<td class=\"gofast_wf_type\">" . theme("link_start_process_popup", array('process' => $process, "reference" => $reference, "content" => $content)) . "</td>";
 
             // Process Model
-            $output .= "<td class=\"gofast_wf_profil\" style=\"display: flex; align-items: center; justify-content: space-between;\">";
+            $output .= "<td class=\"gofast_wf_profil\"><div class='d-flex justify-content-between align-items-center'>";
 
             // We load all saved profil to display multiple line for each process with saved profils in a droplist
             $saved_profils = gofast_workflows_profil_get_all_from_type_wf($process["displayName"]);
@@ -946,6 +944,7 @@ function gofast_workflows_get_html_list_available_processes($reference = false){
                 $output .= t("This process is not compatible with process models", array(), array('context' => 'gofast:gofast_workflows'));
                 $output .= gofast_workflows_get_availables_buttons_from_process($process, $reference, $process['id'], FALSE);
             }           
+            $output .= "</div></td>";
 
             // version
            // $output .= "<td>" . $process["version"] . "</td>";
@@ -956,7 +955,7 @@ function gofast_workflows_get_html_list_available_processes($reference = false){
             
              //  action
            $model_actions = theme("workflows_process_model_actions", array('profils' => $saved_profils, 'process_id'=> $process['id'], 'addOnclick'=> $addOnlick));      
-           $output .= "<td class=\"gofast_wf_actions\" >" . $model_actions . "</td>";
+           $output .= "<td class=\"gofast_wf_buttons\" >" . $model_actions . "</td>";
 
            $output .= "</tr>";
       
@@ -1369,8 +1368,9 @@ function gofast_workflows_get_show_fields_list_task($name_workflow = null){
  * fonction qui renvoit la liste des champs que l'on affiche dans le tableau de la liste des processes dispo pour le user courant
  */
 function gofast_workflows_get_show_fields_list_processes(){
-     $fields = array("Process type" => "displayName",
-                     "Process model" => "processModel",
+     $fields = array("Process type" => "gofast_wf_type",
+                     "Process model" => "gofast_wf_profil",
+                     "Manage model" => "gofast_wf_buttons",
                     // "Version" => "version",
                      //"Status" => "activationState",
                      //"Description" => "__displayDescription__", // ce champs contient un objet json qui lui même contient plusieurs infos
@@ -1487,8 +1487,8 @@ function gofast_workflows_get_image_process($processId, $process_name){
 
 
 
-/*
- * fonction qui renvoit l'id drupal (uid) du id (bonita ID) recu en parametre
+/**
+ * Function that returns the Drupal ID (uid) matching the Bonita ID received as a parameter
  */
 function gofast_workflows_get_drupalid_from_bonitaid($bonita_id, $returnobject = false){
 
@@ -1496,17 +1496,14 @@ function gofast_workflows_get_drupalid_from_bonitaid($bonita_id, $returnobject =
         return false;
     }
 
-    //ceo_vision_bonita_get_cookie(true);
     $cookie_name = "cookie_bonitainstall.txt";
 
-     //on charge la variable Drupal qui contient l'association entre le drupal_id et le bonita_id
-    $variable_association = variable_get(VARIABLE_NAME_ID_BONITA, array());
-    $drupal_id = array_search($bonita_id, $variable_association);
+    $drupal_id = gofast_workflows_get_uid_from_database($bonita_id);
 
     if($drupal_id){
        if($returnobject == true){
-           $myuser = user_load($drupal_id);
-           return $myuser;
+            $myuser = user_load($drupal_id);
+            return $myuser;
         }else{
             return $drupal_id;
         }
@@ -1529,8 +1526,7 @@ function gofast_workflows_get_drupalid_from_bonitaid($bonita_id, $returnobject =
         }
 
         $myuser = user_load_by_name(trim($username));
-        $variable_association[$myuser->uid] = $bonita_id;
-        variable_set(VARIABLE_NAME_ID_BONITA, $variable_association);
+        gofast_workflows_set_bonitaid_in_database($myuser->uid, $bonita_id);
         if($returnobject == true){
              return $myuser;
         }else{
@@ -2048,6 +2044,7 @@ function gofast_workflows_get_task_type_label($task_type){
                         "custom" => $task_type,
                         "sign_yousign" => t("For signature (Yousign)", array(), array("context" => "gofast:gofast_workflows")),
                         "sign_yousign_advanced" => t("For advanced signature (Yousign)", array(), array("context" => "gofast:gofast_workflows")),
+                        "sign_yousign_qualified" => t("For qualified signature (Yousign)", array(), array("context" => "gofast:gofast_workflows")),
                         "sign_digitalsign" => t("For signature (Digitalsign)", array(), array("context" => "gofast:gofast_workflows")),
                     ];
     if(in_array($task_type, array_keys($all_task_types))){

@@ -5,7 +5,7 @@
  */
 function gofast_search_advanced_form_alter(&$form, &$form_state, $form_id) {
   if ($form['#form_id'] === 'user_profile_form') {
-    $form["field_search_history"]["#access"] = 0;
+    $form["search_advanced_history"]["#access"] = 0;
   }
 }
 
@@ -27,18 +27,18 @@ function gofast_search_form($form, &$form_state) {
   $form['content_type'] = array(
     '#type' => 'select',
     '#options' => gofast_search_advanced_get_categories(),
-    '#title' => t('Select content category(ies)'),
+    '#title' => t('Category(ies)', array(), array("context" => "gofast:gofast_search_advanced")),
     '#attributes' => array(
-      'placeholder' => t('Start entering a category name...'),
+      'placeholder' => t('Select content category(ies)'),
       'multiple' => true,
+      'style' => array("width: 100%"),
     ),
   );
-
   $form['search_label'] = array(
     '#type' => 'textfield',
     '#title' => t('Search'),
     '#attributes' => array(
-      'placeholder' => t('Enter search...'),
+      'placeholder' => t('Enter one or more keywords', array(), array("context" => "gofast:gofast_search_advanced")),
     ),
   );
 
@@ -47,23 +47,45 @@ function gofast_search_form($form, &$form_state) {
 
 
 function gofast_search_advanced_history_clear_confirm_form($form, &$form_state){
+  $selected = $_POST['selected_ids'];
+  if($selected){
+    $form['selected_ids'] = array(
+      "#type" => "textfield",
+      '#attributes' => array(
+        'class' => array('d-none')
+      ),
+      "#value" => $selected
+    );
+    $markup = t("Are you sure you want to delete the selected items ?", array(), array("context" => "gofast:gofast_search_advanced"));
+  }else{
+    $markup = t("Are you sure you want to delete the advanced search history ?", array(), array("context" => "gofast:gofast_search_advanced"));
+  }
+  
   $form['confirm_clear_label'] = array(
     '#type' => 'item',
-    '#markup' => t("Are you sure you want to delete the advanced search history ?"),
+    '#markup' => $markup,
   );
 
   $form['submit'] = array(
     '#type' => 'submit',
      '#value' => t('Delete history'),
-     "#attributes" => array(
-       'class' => array("btn btn-success")
-     )
+    "#attributes" => array(
+      'class' => array("btn btn-success")
+    )
   );
   return $form;
 }
 
 function gofast_search_advanced_history_clear_confirm_form_submit($form, &$form_state){
-
-  // Clear history
-  gofast_search_advanced_history_clear();
+  
+  $selected_ids = $form['selected_ids']['#value'];
+  
+  // Clear only selected items if any
+  if(!empty($selected_ids)){
+    $selected_ids = explode(' ', $selected_ids);
+    gofast_search_advanced_history_clear($selected_ids);
+  }else{
+    // Else clear all history
+    gofast_search_advanced_history_clear();
+  }
 }

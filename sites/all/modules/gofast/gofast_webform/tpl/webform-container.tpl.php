@@ -32,7 +32,7 @@
         hide($content['comments']);
         hide($content['links']);
 
-        print theme("gofast_webform_webform_tabs", ["node" => $node]);
+        print theme("gofast_webform_webform_iframe", ["node" => $node]);
         ?>
         <!--   </p>-->
       </div>

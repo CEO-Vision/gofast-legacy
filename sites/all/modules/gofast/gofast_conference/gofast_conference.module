@@ -6,6 +6,7 @@
 global $conf;
 include_once 'invite.php';
 define('CONFERENCE_URL', 'https://'.$conf['gofast-comm_domain'].'/jitsi-meet');
+define('ORGANIZER_EMAIL_IS_POSTMASTER', variable_get('organizer_email_is_postmaster', FALSE));
 
 
 function gofast_conference_enable() {
@@ -30,6 +31,19 @@ function gofast_conference_form_conference_node_form_alter(&$form, &$form_state)
       'group' => JS_THEME + 1,
       'data' => drupal_get_path('module', 'gofast') . '/js/gofast_ajax_form.js',
     );
+
+  $form['#attached']['js'][] = [
+    'type' => 'file',
+    'data' => drupal_get_path('module', 'gofast_conference') . '/js/gofast_conference_form.js',
+  ];
+
+  // preemptively add states lib so that the recurrence modal form can use it
+  // for some reason it does not work otherwise when creating a new conference.
+  // (works fine without when editing however)
+  $form['#attached']['library'][] = [
+    'system',
+    'drupal.states',
+  ];
 
  // $form['#suffix'] = "<script>Gofast.conference.attach_before_submit();</script>"; //Apply custom js on submit button to format dates
   // Replace adresses textarea with a textfield for autocompletion
@@ -73,7 +87,7 @@ function gofast_conference_form_conference_node_form_alter(&$form, &$form_state)
       $space = node_load($gid['target_id']);
       if($space->type !== 'private_space'){
         //This is a space
-        $list_participants[] = str_replace(",", " ", gofast_modal_ac_format_send_email_value('node', $space, null, $space->title, null));
+        $list_participants[] = gofast_modal_ac_format_send_email_value('node', $space, null, $space->title, null);
       }
     }
 
@@ -167,6 +181,45 @@ function gofast_conference_form_conference_node_form_alter(&$form, &$form_state)
     '#keen-accordion' => TRUE
   );
 
+  // conference recurrence input
+  $node = $form_state['node'];
+  $or_default = fn (&$value, $default) => isset($value) ? $value : $default;
+  $node_recurrence = $or_default($node->field_recurrence[LANGUAGE_NONE][0]['value'], 'never');
+
+  $default_rules = [
+    'never' => t('Never repeat', [], ['context' => 'gofast:gofast_conference']),
+    'FREQ=DAILY' => t('Every day', [], ['context' => 'gofast:gofast_conference']),
+    'FREQ=WEEKLY' => t('Every week', [], ['context' => 'gofast:gofast_conference']),
+    'FREQ=MONTHLY' => t('Every month', [], ['context' => 'gofast:gofast_conference']),
+    'FREQ=YEARLY' => t('Every year', [], ['context' => 'gofast:gofast_conference']),
+  ];
+
+  $is_default_recurrence = array_key_exists($node_recurrence, $default_rules);
+  $customized_option = [];
+  if (!$is_default_recurrence) {
+    $customized_option = [
+      $node_recurrence => t('Custom', [], ['context' => 'gofast:gofast_conference']),
+    ];
+  }
+
+  $form['recurrence'] = [
+    '#type' => 'select',
+    '#title' => t('Repetition', [], ['context' => 'gofast:gofast_conference']),
+    '#default_value' => $node_recurrence,
+    '#options' => [
+      ...$default_rules,
+      ...$customized_option,
+      'customize' => t('Advanced configuration...', [], ['context' => 'gofast:gofast_conference']),
+    ],
+    // We are modifying the select options dynamically for the sake
+    // of UX, Drupal automatically checks that the submitted value is one of the
+    // provided options so we disable that by pretending the field has already
+    // been validated.
+    // Tried AJAX forms, couldn't not destroy UX or perfs.
+    // We do manual validation instead
+    '#validated' => true,
+  ];
+
   global $user;
   $form['folders']['locations_checks'] = array(
 	'#type' => 'item',
@@ -246,7 +299,9 @@ function gofast_conference_form_conference_node_form_alter(&$form, &$form_state)
     '#name' => 'ac-list-tags-list-participants',
     '#size' => 62,
     // '#required' => TRUE,
-    //'#default_value' => isset($form_state['values']['list_participants']) ? $form_state['values']['list_participants'] : '',
+    '#default_value' =>  isset($info['json_conference_participant']) ?
+      json_encode($info['json_conference_participant'])
+      : '',
     '#maxlength' => '', // no maxlength
     '#attributes' =>  $attributes_list_participants
   );
@@ -299,6 +354,1059 @@ function gofast_conference_form_conference_node_form_alter(&$form, &$form_state)
   unset($form['actions']['delete']);
   $form['#attributes']['class'][] = 'GofastForm GofastForm__Conference';
 
+}
+
+/**
+ * Form builder function.
+ *
+ * This form's output is mostly just handled by the client-side JS
+ */
+function gofast_conference_event_recurrence_form(&$form, &$form_state) {
+
+  if (!isset($form_state['title'])) {
+    $form_state['title'] = t('Recurrence rule', [], ['context' => 'gofast:gofast_conference']);
+  }
+
+  $values = &$form_state['values'];
+
+  // small utilities to handle default values
+  $or_null = fn (&$value) => isset($value) ? $value : null;
+  $or_default = fn (&$value, $default) => isset($value) ? $value : $default;
+
+  $form['common_row'] = [
+    '#type' => 'container',
+    '#attributes' => [
+      'class' => [
+        'd-flex',
+        'gap-3',
+      ],
+    ],
+  ];
+
+  $form['common_row']['frequency'] = [
+    '#type' => 'select',
+    '#title' => t('Frequency', [], ['context' => 'gofast:gofast_conference']),
+    '#default_value' => $or_null($values['frequency']),
+    '#empty_option' => t('Select'),
+    '#options' => [
+      'DAILY' => t('Every day', [], ['context' => 'gofast:gofast_conference']),
+      'WEEKLY' => t('Every week', [], ['context' => 'gofast:gofast_conference']),
+      'MONTHLY' => t('Every month', [], ['context' => 'gofast:gofast_conference']),
+      'YEARLY' => t('Every year', [], ['context' => 'gofast:gofast_conference']),
+    ],
+    '#attributes' => [
+      // this is to make the select element keep a consistent width compared to
+      // other inputs, and make it not resize when changing the value. Defaults suck?
+      'style' => 'width: 100%',
+    ],
+    '#prefix' => '<div class="flex-fill">',
+    '#suffix' => '</div>',
+  ];
+
+  $form['common_row']['interval'] = [
+    '#type' => 'textfield',
+    '#title' => t('Interval', [], ['context' => 'gofast:gofast_conference']),
+    '#default_value' => $or_default($values['interval'], 1),
+    '#size' => 5,
+    '#attributes' => [
+      'placeholder' => '1',
+    ],
+  ];
+
+  $default_ends = match (true) {
+    isset($values['count']) => 'count',
+    isset($values['until']) => 'until',
+    default => 'never',
+  };
+
+  $form['common_row']['ends'] = [
+    '#type' => 'select',
+    '#title' => t('Ends', [], ['context' => 'gofast:gofast_conference']),
+    '#default_value' => $default_ends,
+    '#options' => [
+      'never' => t('Never'),
+      'until' => t('After a given date', [], ['context' => 'gofast:gofast_conference']),
+      'count' => t('After a given number of occurrences', [], ['context' => 'gofast:gofast_conference']),
+    ],
+    '#attributes' => [
+      // this is to make the select element keep a consistent width compared to
+      // other inputs, and make it not resize when changing the value. Defaults suck?
+      'style' => 'width: 100%',
+    ],
+    '#prefix' => '<div class="flex-fill">',
+    '#suffix' => '</div>',
+  ];
+
+  $form['common_row']['end_configuration'] = [
+    '#type' => 'container',
+    '#attributes' => [
+      'class' => ['flex-fill', 'd-flex'],
+    ],
+  ];
+
+  $format_date = new DateTime();
+  $format_date_string = $format_date->format(gofast_conference__get_date_format_without_time('short'));
+
+  $form['common_row']['end_configuration']['until'] = [
+    '#type' => 'textfield',
+    '#title' => t('Until', [], ['context' => 'gofast:gofast_conference']),
+    '#default_value' => $or_null($values['until']),
+    '#description' => t(
+      'Format: @date',
+      ['@date' => $format_date_string],
+    ),
+    '#attributes' => [
+      'placeholder' => t('Forever', [], ['context' => 'gofast:gofast_conference']),
+      'class' => ['gofastDatepicker'],
+    ],
+    '#states' => [
+      'visible' => [
+        ':input[name="ends"]' => ['value' => 'until'],
+      ]
+    ],
+    '#size' => null,
+  ];
+
+  $form['common_row']['end_configuration']['count'] = [
+    '#type' => 'textfield',
+    '#title' => t('Number of occurrences', [], ['context' => 'gofast:gofast_conference']),
+    '#default_value' => $or_null($values['count']),
+    '#attributes' => [
+      'placeholder' => t('Infinite', [], ['context' => 'gofast:gofast_conference']),
+    ],
+    '#states' => [
+      'visible' => [
+        ':input[name="ends"]' => ['value' => 'count'],
+      ]
+    ],
+    '#size' => 10,
+  ];
+
+  $form['by_day'] = [
+    '#type' => 'textfield',
+    '#title' => t("By day", [], ['context' => 'gofast:gofast_conference']),
+    '#default_value' => $or_null($values['by_day']),
+    '#attributes' => [
+      'placeholder' => t('example(s): MO, 2TU, -1FR, +3TH, ...', [], ['context' => 'gofast:gofast_conference']),
+      'data-toggle' => 'tooltip',
+      'data-delay' => 1000,
+      'title' => t(
+        "The \"by day\" field is a comma-separated list of two letter day codes (MO,TU,WE,TH,FR,SA,SU,"
+        . " for the days of the week starting from Monday), each day may be preceded"
+        . " by a signed number (e.g.: 1, -1, +1) to specify which occurrence of the"
+        . " given day should match within the selected frequency. Negative occurrence"
+        . " number count from the end of the frequency period.",
+        [],
+        ['context' => 'gofast:gofast_conference'],
+      ),
+    ],
+    '#states' => [
+      'visible' => [
+        ':input[name="frequency"]' => [
+          ['value' => 'DAILY'],
+          ['value' => 'WEEKLY'],
+          ['value' => 'MONTHLY'],
+          ['value' => 'YEARLY'],
+        ],
+      ],
+    ],
+  ];
+
+  $form['by_month_day'] = [
+    '#type' => 'textfield',
+    '#title' => t("By month day", [], ['context' => 'gofast:gofast_conference']),
+    '#default_value' => $or_null($values['by_month_day']),
+    '#attributes' => [
+      'placeholder' => t('example(s): 1, -1, +10, ...', [], ['context' => 'gofast:gofast_conference']),
+      'data-toggle' => 'tooltip',
+      'data-delay' => 1000,
+      'title' => t(
+        "The \"by month day\" field is a comma-separated list of signed day numbers"
+        . " within a month. Negative values count from the end of the month.",
+        [],
+        ['context' => 'gofast:gofast_conference'],
+      ),
+    ],
+    '#states' => [
+      'visible' => [
+        ':input[name="frequency"]' => [
+          ['value' => 'DAILY'],
+          ['value' => 'MONTHLY'],
+          ['value' => 'YEARLY'],
+        ],
+      ],
+    ],
+  ];
+
+  $form['by_year_day'] = [
+    '#type' => 'textfield',
+    '#title' => t("By year day", [], ['context' => 'gofast:gofast_conference']),
+    '#default_value' => $or_null($values['by_year_day']),
+    '#attributes' => [
+      'placeholder' => t('example(s): 1, -1, +10, ...', [], ['context' => 'gofast:gofast_conference']),
+      'data-toggle' => 'tooltip',
+      'data-delay' => 1000,
+      'title' => t(
+        "The \"by year day\" field is a comma-separated list of signed day numbers"
+        . " within the year. Negative values count from the end of the year.",
+        [],
+        ['context' => 'gofast:gofast_conference'],
+      ),
+    ],
+    '#states' => [
+      'visible' => [
+        ':input[name="frequency"]' => [
+          ['value' => 'YEARLY'],
+        ],
+      ],
+    ],
+  ];
+
+  $form['by_week_number'] = [
+    '#type' => 'textfield',
+    '#title' => t("By week number", [], ['context' => 'gofast:gofast_conference']),
+    '#default_value' => $or_null($values['by_week_number']),
+    '#attributes' => [
+      'placeholder' => t('example(s): 1, -1, +10, ...', [], ['context' => 'gofast:gofast_conference']),
+      'data-toggle' => 'tooltip',
+      'data-delay' => 1000,
+      'title' => t(
+        "The \"by week number\" field is a comma-separated list of signed week numbers"
+        . " within a year. Negative values count from the end of the year. The week"
+        . " chosen depends on the value of the \"week start\" field.",
+        [],
+        ['context' => 'gofast:gofast_conference'],
+      ),
+    ],
+    '#states' => [
+      'visible' => [
+        ':input[name="frequency"]' => [
+          ['value' => 'YEARLY'],
+        ],
+      ],
+    ],
+  ];
+
+  $form['by_month'] = [
+    '#type' => 'textfield',
+    '#title' => t("By month", [], ['context' => 'gofast:gofast_conference']),
+    '#default_value' => $or_null($values['by_month']),
+    '#attributes' => [
+      'placeholder' => t('example(s): 1, -1, +10, ...', [], ['context' => 'gofast:gofast_conference']),
+      'data-toggle' => 'tooltip',
+      'data-delay' => 1000,
+      'title' => t(
+        "The \"by month\" field is a comma-separated list of signed month numbers"
+        . " within a year. Negative values count from the end of the year.",
+        [],
+        ['context' => 'gofast:gofast_conference'],
+      ),
+    ],
+    '#states' => [
+      'visible' => [
+        ':input[name="frequency"]' => [
+          ['value' => 'DAILY'],
+          ['value' => 'WEEKLY'],
+          ['value' => 'MONTHLY'],
+          ['value' => 'YEARLY'],
+        ],
+      ],
+    ],
+  ];
+
+  $form['week_start'] = [
+    '#type' => 'select',
+    '#title' => t("Week start", [], ['context' => 'gofast:gofast_conference']),
+    '#description' => t(
+      "Which day is the start of the week in the context of this event.",
+      [],
+      ['context' => 'gofast:gofast_conference'],
+    ),
+    '#default_value' => $or_default($values['week_start'], 'MO'),
+    '#options' => [
+      'MO' => t('Monday'),
+      'TU' => t('Tuesday'),
+      'WE' => t('Wednesday'),
+      'TH' => t('Thursday'),
+      'FR' => t('Friday'),
+      'SA' => t('Saturday'),
+      'SU' => t('Sunday'),
+    ],
+    '#states' => [
+      'disabled' => [
+        ':input[name="interval"]' => ['value' => 1],
+        ':input[name="by_day"]' => ['value' => ''],
+        ':input[name="by_week_number"]' => ['value' => ''],
+      ],
+      'visible' => [
+        ':input[name="frequency"]' => [
+          ['value' => 'WEEKLY'],
+          ['value' => 'YEARLY'],
+        ],
+      ],
+    ],
+  ];
+
+  $form['by_set_position'] = [
+    '#type' => 'textfield',
+    '#title' => t("By set position", [], ['context' => 'gofast:gofast_conference']),
+    '#default_value' => $or_null($values['by_set_position']),
+    '#attributes' => [
+      'placeholder' => t('example(s): 1, -1, +10, ...', [], ['context' => 'gofast:gofast_conference']),
+      'data-toggle' => 'tooltip',
+      'data-delay' => 1000,
+      'title' => t(
+        "The \"by set position\" field is a comma-separated list of signed occurrence numbers"
+        . " within an occurrence set. Negative values count from the end of the"
+        . " occurrence set. The occurrence set is the set of individual occurrences"
+        . " matched by the previous fields. e.g.: When \"frequency\" is monthly and"
+        . " \"by day\" is set to \"MO,TU,WE,TH,FR\", all work days of the month are"
+        . " occurrences. You can then set the \"by set position\" field value to"
+        . " \"-1\", by doing so you select the last of the work days of the month"
+        . " (repeated for every month).",
+        [],
+        ['context' => 'gofast:gofast_conference'],
+      ),
+    ],
+    '#states' => [
+      'disabled' => [
+        ':input[name="by_day"]' => ['value' => ''],
+        ':input[name="by_month_day"]' => ['value' => ''],
+        ':input[name="by_year_day"]' => ['value' => ''],
+        ':input[name="by_week_number"]' => ['value' => ''],
+        ':input[name="by_month"]' => ['value' => ''],
+      ],
+      'visible' => [
+        ':input[name="frequency"]' => [
+          ['value' => 'DAILY'],
+          ['value' => 'WEEKLY'],
+          ['value' => 'MONTHLY'],
+          ['value' => 'YEARLY'],
+        ],
+      ],
+    ],
+  ];
+
+  $form['actions'] = [
+    '#type' => 'actions',
+  ];
+
+  $form['actions']['submit'] = [
+    '#type' => 'submit',
+    '#value' => t('Save'),
+    '#id' => 'recurrence-form-submit',
+    '#submit' => ['gofast_conference_event_recurrence_form_submit'],
+    '#validate' => ['gofast_conference_event_recurrence_form_validate'],
+    '#attributes' => [
+      'class' => [
+        'btn-success',
+      ],
+    ],
+  ];
+
+  $form['actions']['cancel'] = [
+    '#type' => 'button',
+    '#value' => t('Cancel'),
+    '#id' => 'recurrence-form-cancel',
+  ];
+
+  return $form;
+}
+
+/**
+ * Shortcut function to require the php-rrule autoload
+ *
+ * Must be used before using anything in the \RRule namespace.
+ * By nature of being a function that is not automatically called to limit
+ * side-effects of including the module file, it is incompatible with the use of
+ * `use` imports.
+ */
+function gofast_conference__require_rrule_autoload() {
+  require_once libraries_get_path('php-rrule-2.4.1') . '/vendor/autoload.php';
+}
+
+/**
+ * Picks relevant field values based on frequency and ends field value into a new array
+ * @param array $form_values The submitted form values
+ * @return array The array with only the picked relevant properties
+ */
+function gofast_conference__pick_recurrence_form_values(&$form_values) {
+  $additional_fields_by_frequency = [
+    'DAILY' => ['by_day', 'by_month_day', 'by_month', 'by_set_position'],
+    'WEEKLY' => ['by_day', 'by_month', 'week_start', 'by_set_position'],
+    'MONTHLY' => ['by_day', 'by_month_day', 'by_month', 'by_set_position'],
+    'YEARLY' => [
+      'by_day',
+      'by_month_day',
+      'by_year_day',
+      'by_week_number',
+      'by_month',
+      'week_start',
+      'by_set_position',
+    ],
+  ];
+
+  $end_fields = [
+    'never' => [],
+    'until' => ['until'],
+    'count' => ['count'],
+  ];
+
+  $rule_fields = [
+    'frequency',
+    'interval',
+    ...$end_fields[$form_values['ends']],
+    ...$additional_fields_by_frequency[$form_values['frequency']]
+  ];
+
+  return array_intersect_key($form_values, array_flip($rule_fields));
+}
+
+/**
+ * Checks that a given value is an empty string specifically
+ *
+ * This exists because the standard `empty` function detects the string `'0'` as
+ * empty, but we need it not to be for validation, and having a function can make
+ * the intention clearer.
+ *
+ * @param mixed $value The value to check
+ * @return bool true if the given value is the `''` empty string, false otherwise.
+ */
+function gofast_conference__is_empty_string($value) {
+  return "" === $value;
+}
+
+/**
+ * Get a date format without the time part.
+ *
+ * This is very flaky, unless justified, other solutions should be used/designed.
+ * @param "short"|"medium"|"long" $format_name The name of the format to get the date-only version of.
+ * @return string The format string for the given format with only the date part.
+ */
+function gofast_conference__get_date_format_without_time($format_name) {
+  $format_defaults = [
+    'short' => 'm/d/Y - H:i',
+    'medium' => 'D, m/d/Y - H:i',
+    'long' => 'l, F j, Y - H:i',
+  ];
+  $default = isset($format_defaults[$format_name]) ? $format_defaults[$format_name] : $format_defaults['short'];
+  $format = variable_get('date_format_' . $format_name, $default);
+  $format = explode(' -', $format)[0];
+  return $format;
+}
+
+/**
+ * Makes an array of rules that associate a key of the recurrence configuration
+ * form with an ICS recur value key, as well as a parsing function that can allow
+ * filtering values (when returning null).
+ * @return array The list of rules mapping recurrence form values to ICS values.
+ */
+function gofast_conference__get_recurrence_form_ics_mapping_rules() {
+  // array describing which form value property maps to which ICS recurrence
+  // property with additional configuration to parse property (and decide to include it or not)
+  // (e.g.: exclude property when they are the default value because that adds no
+  // information)
+  return [
+    // The frequency rule MUST be the first for compatibility reasons,
+    // the order of the rest is not significant
+    [
+      'key' => 'frequency',
+      'ics_key' => 'FREQ',
+    ],
+    [
+      'key' => 'interval',
+      'ics_key' => 'INTERVAL',
+      'parse_form_callback' => fn ($v) => ($v > 1 ? $v : null),
+    ],
+    [
+      'key' => 'until',
+      'ics_key' => 'UNTIL',
+      'parse_form_callback' => function ($v) {
+        $date = gofast_conference__parse_date_time($v);
+        if ($date === false) {
+          return null;
+        }
+
+        // set time to latest possible so that any time within the day is less
+        // than or equal to this time (microseconds are not stored)
+        return $date->setTime(23, 59, 59);
+      },
+      'map_to_form_value' => fn ($v) => $v?->format(gofast_conference__get_date_format_without_time('short')),
+    ],
+    [
+      'key' => 'count',
+      'ics_key' => 'COUNT',
+    ],
+    [
+      'key' => "week_start",
+      'ics_key' => "WKST",
+      'parse_form_callback' => fn ($v) => ((!empty($v) && $v !== 'MO') ? $v : null),
+    ],
+    [
+      'key' => "by_day",
+      'ics_key' => "BYDAY",
+    ],
+    [
+      'key' => "by_month",
+      'ics_key' => "BYMONTH",
+    ],
+    [
+      'key' => "by_month_day",
+      'ics_key' => "BYMONTHDAY",
+    ],
+    [
+      'key' => "by_year_day",
+      'ics_key' => "BYYEARDAY",
+    ],
+    [
+      'key' => "by_week_number",
+      'ics_key' => "BYWEEKNO",
+    ],
+    [
+      'key' => "by_set_position",
+      'ics_key' => "BYSETPOS",
+    ],
+  ];
+}
+
+/**
+ * Builds an ICS RRULE string value from the processed recurrence form submit
+ * values. The ICS RRULE string is our base unit for handling recurrence,
+ * anything regarding it should be able to serialize to and deserialize from it.
+ */
+function gofast_conference__build_ics_recurrence_rule_string($values) {
+  // array keyed by ICS keys and their value to serialize
+  $properties = [];
+
+  $rules = gofast_conference__get_recurrence_form_ics_mapping_rules();
+
+  // processing the rules array and adding serialized properties to the
+  // $properties array when appropriate
+  $default_parse = (fn ($v) => (!empty($v) ? $v : null));
+  foreach ($rules as $rule) {
+    $parse = isset($rule['parse_form_callback']) ? $rule['parse_form_callback'] : $default_parse;
+    $value = $parse($values[$rule['key']]);
+    if ($value === null) {
+      continue;
+    }
+
+    $properties[$rule['ics_key']] = $value;
+  }
+
+  gofast_conference__require_rrule_autoload();
+
+  // build and return final string
+  $rule = new \RRule\RRule($properties);
+  return $rule->rfcString();
+}
+
+/**
+ * Recurrence form submit handler
+ */
+function gofast_conference_event_recurrence_form_submit(&$_form, &$form_state) {
+  $values = gofast_conference__pick_recurrence_form_values($form_state['values']);
+
+  // add serialized ICS recurrence rule as output on form_state
+  $form_state['gofast_recurrence_rule'] = gofast_conference__build_ics_recurrence_rule_string($values);
+}
+
+/**
+ * Checks that a number is inside at least one of a set of inclusive number ranges.
+ * @param int|float $number The number to check
+ * @param array{0:int|float,1:int|float}[] $ranges The inclusive ranges the number should be a part of.
+ * @return bool `true` If $number is in one of the provided ranges, `false` otherwise.
+ */
+function gofast_conference__is_number_in_inclusive_ranges($number, $ranges) {
+  foreach ($ranges as [$lower_bound, $upper_bound]) {
+    // number is in range, we can return true early
+    if ($number >= $lower_bound && $number <= $upper_bound) {
+      return true;
+    }
+  }
+  // number was in none of the provided ranges
+  return false;
+}
+
+/** @var int The maximum number of weeks in a year */
+const MAXIMUM_WEEK_NUMBER = 53;
+
+/** @var int The maximum number of days in a month */
+const MAXIMUM_MONTH_DAY_NUMBER = 31;
+
+/** @var int The maximum number of months in a year */
+const MAXIMUM_MONTH_NUMBER = 12;
+
+/** @var int The maximum number of days in a year */
+const MAXIMUM_YEAR_DAY_NUMBER = 366;
+
+/**
+ * Applies validation for a recurrence occurrence count value. It must verify that:
+ * - it is a number
+ * - it is positive and non zero
+ *
+ * @param mixed $count The count value to run the validation on.
+ * @return array{error:'not_a_number'|'negative_or_zero'}|false Returns false
+ *  when there is no error, otherwise returns an array with an error code in
+ *  the 'error' key
+ */
+function gofast_conference__validate_positive_nonzero_number($count) {
+  if (!is_numeric($count)) {
+    return ['error' => 'not_a_number'];
+  }
+  $count_number = intval($count);
+  if ($count_number <= 0) {
+    return ['error' => 'negative_or_zero'];
+  }
+  return false;
+}
+
+/**
+ * Validate the value of the "by day" field in the recurrence form
+ * @param mixed $by_day The value of the by day field.
+ * @return array{ok:false,message:string}|array{ok:true,has_occurrence_number:bool}
+ *  Returns an array with an 'ok' value specifying whether the validation was a
+ *  success or not. When OK, the array contains an extra boolean
+ *  'has_occurrence_number' boolean which is true if and only if any of the
+ *  values in the list specified a number before the week day code. When not OK,
+ *  the array contains a translated error message in the 'message' key.
+ */
+function gofast_conference__validate_recurrence_by_day_list($by_day) {
+  $days = explode(',', $by_day);
+  $days = array_map('trim', $days);
+
+  $has_occurrence_number = false;
+  // A two-letter day code preceded by an optional signed integer representing the
+  // occurrence of day within the recurrence frequency. The integer sign is optional for positive values.
+  $day_pattern = '/^(?<occurrence_number>[+-]?\d+)?\s*(?<day>MO|TU|WE|TH|FR|SA|SU)$/';
+  foreach ($days as $day) {
+    // check formatting of items
+    if (!preg_match($day_pattern, $day, $matches)) {
+      return [
+        'ok' => false,
+        'message' => t(
+          'The "by day" field value is not formatted correctly',
+          [],
+          ['context' => 'gofast:gofast_conference'],
+        ),
+      ];
+    }
+
+    // if a number of occurrence was specified validate the number's value
+    if (isset($matches['occurrence_number']) && !gofast_conference__is_empty_string($matches['occurrence_number'])) {
+      $occurrence_number = intval($matches['occurrence_number']);
+      if (!gofast_conference__is_number_in_inclusive_ranges(
+        $occurrence_number,
+        [
+          [-MAXIMUM_WEEK_NUMBER, -1],
+          [1, MAXIMUM_WEEK_NUMBER],
+        ],
+      )) {
+        return [
+          'ok' => false,
+          'message' => t(
+            'The "by day" field occurrence values must be in the ranges from -53 to -1 or from 1 to 53',
+            [],
+            ['context' => 'gofast:gofast_conference'],
+          ),
+        ];
+      }
+      // number value passed validation
+      $has_occurrence_number = true;
+    }
+  }
+  // every item passed validations, no error to report
+  return [
+    'ok' => true,
+    'has_occurrence_number' => $has_occurrence_number,
+  ];
+}
+
+/**
+ * Validate a string containing a comma-separated list of numbers whose values
+ * should lies in the given numerical ranges
+ * @param mixed $value The value to validate
+ * @param array{0:int,1:int}[] $valid_ranges An array of tuples of lower
+ *  and upper bounds of inclusive numerical ranges. Each number value is validated
+ *  to be in one of the given ranges.
+ * @return bool `true` if there is any issue, `false` otherwise.
+ */
+function gofast_conference__validate_recurrence_index_list($value, $valid_ranges) {
+  // split the string into an array
+  $item_list = explode(',', $value);
+  return gofast_iterable_any($item_list, function ($item) use (&$valid_ranges) {
+    $item = trim($item);
+
+    if (!is_numeric($item)) {
+      return true;
+    }
+
+    $index_number = intval($item);
+    if (!gofast_conference__is_number_in_inclusive_ranges($index_number, $valid_ranges)) {
+      return true;
+    }
+
+    return false;
+  });
+}
+
+/**
+ * Parse a value to a `\DateTimeImmutable` object if possible, according to the
+ * passed format if the passed value is a string.
+ *
+ * note: the 'accept_time' option is a band-aid solution to the fact there is no
+ * date-only format and datepicker input use the short format and dynamically
+ * remove the time part in a similar manner.
+ * see `sites\all\modules\gofast\js\gofastDatetimepicker.js:50` and
+ * `sites\all\themes\bootstrap-keen\js\components\GofastEditableInput.js:42` for
+ * implementation of issues cited here.
+ * @param mixed $value A value to try to parse into a date time object
+ * @param string|null $format The format of the expected string value.
+ *  WARNING: by default the time part is pruned to make the use of this function
+ *  with date picker inputs easy and straightforward.
+ * @param array{accept_time?:bool} $options Additional options
+ *  - 'accept_time': if set, the time part of the format (assumed to be after a
+ *    ' -' substring) is kept.
+ * @return DateTimeImmutable|false A `\DateTimeImmutable` object if parsing
+ *  succeeded, `false` otherwise
+ */
+function gofast_conference__parse_date_time($value, $format = null, $options = []) {
+  // value is already immutable date time object
+  if ($value instanceof \DateTimeImmutable) {
+    return $value;
+  }
+
+  // value is mutable date time object, return immutable instance
+  if ($value instanceof \DateTime) {
+    return \DateTimeImmutable::createFromMutable($value);
+  }
+
+  // apply default options
+  $options += [
+    'accept_time' => false,
+  ];
+
+  // value is a string in the given format
+  if (is_string($value)) {
+    // fallback on default ('short') format if not specified
+    if (!isset($format)) {
+      $format = variable_get('date_format_short', 'm/d/Y - H:i');
+    }
+
+    // if time is not accepted, remove it
+    if (!$options['accept_time']) {
+      $format = trim(explode(' -', $format)[0]);
+    }
+
+    // actually parse the string
+    return \DateTimeImmutable::createFromFormat(
+      $format,
+      $value,
+      new \DateTimeZone(drupal_get_user_timezone()),
+    );
+  }
+
+  // value is assumed to be unix timestamp
+  if (is_int($value)) {
+    try {
+      return new \DateTimeImmutable('@' . $value);
+    } catch (Exception) { // FIXME: switch to DateMalformedStringException after PHP 8.3 to prevent too-broad exception catching
+      return false;
+    }
+  }
+  // unhandled/invalid case
+  return false;
+}
+
+/**
+ * Recurrence form validation handler
+ */
+function gofast_conference_event_recurrence_form_validate(&$_form, &$form_state) {
+  $form_values = &$form_state['values'];
+
+  // validate frequency
+  $frequency_error = false;
+  if (empty($form_values['frequency'])) {
+    form_set_error('frequency', t('Recurrence frequency is a required field', [], ['context' => 'gofast:gofast_conference']));
+    $frequency_error = true;
+  }
+
+  // validate interval
+  if (isset($form_values['interval']) && !gofast_conference__is_empty_string($form_values['interval'])) {
+    $result = gofast_conference__validate_positive_nonzero_number($form_values['interval']);
+    if ($result !== false) {
+      form_set_error(
+        'interval',
+        match ($result['error']) {
+          'not_a_number' => t(
+            'Interval must be a number',
+            [],
+            ['context' => 'gofast:gofast_conference'],
+          ),
+          'negative_or_zero' => t(
+            'Interval must be greater than 0',
+            [],
+            ['context' => 'gofast:gofast_conference'],
+          ),
+        }
+      );
+    }
+  }
+
+  // validate count ending condition
+  if ($form_values['ends'] === 'count' && !gofast_conference__is_empty_string($form_values['count'])) {
+    $result = gofast_conference__validate_positive_nonzero_number($form_values['count']);
+    if ($result !== false) {
+      form_set_error(
+        'count',
+        match ($result['error']) {
+          'not_a_number' => t(
+            'Occurrence count must be a number',
+            [],
+            ['context' => 'gofast:gofast_conference'],
+          ),
+          'negative_or_zero' => t(
+            'Occurrence count must be greater than 0',
+            [],
+            ['context' => 'gofast:gofast_conference'],
+          ),
+        }
+      );
+    }
+  }
+
+  // validate until ending condition
+  if ($form_values['ends'] === 'until' && !gofast_conference__is_empty_string($form_values['until'])) {
+    $datetime = gofast_conference__parse_date_time($form_values['until']);
+    if ($datetime === false) {
+      form_set_error(
+        'until',
+        t(
+          'The "until" field must be a correctly formatted date',
+          [],
+          ['context' => 'gofast:gofast_conference'],
+        ),
+      );
+    }
+  }
+
+  if ($frequency_error) {
+    // further validations require frequency to be valid to work
+    return;
+  }
+
+  $values = gofast_conference__pick_recurrence_form_values($form_values);
+
+  // validate by_day
+  $by_day_result = null;
+  if (isset($values['by_day']) && !gofast_conference__is_empty_string($values['by_day'])) {
+    $by_day_result = gofast_conference__validate_recurrence_by_day_list($values['by_day']);
+    if ($by_day_result['ok'] === false) {
+      form_set_error('by_day', $by_day_result['message']);
+    }
+  }
+
+  // validate by_month
+  if (isset($values['by_month']) && !gofast_conference__is_empty_string($values['by_month'])) {
+    $invalid = gofast_conference__validate_recurrence_index_list($values['by_month'], [[1, MAXIMUM_MONTH_NUMBER]]);
+    if ($invalid) {
+      form_set_error(
+        'by_month',
+        t(
+          'The "by month" field must be a comma-separated list of month numbers in the range from 1 to 12',
+          [],
+          ['context' => 'gofast:gofast_conference'],
+        ),
+      );
+    }
+  }
+
+  // validate by_month_day
+  if (isset($values['by_month_day']) && !gofast_conference__is_empty_string($values['by_month_day'])) {
+    $invalid = gofast_conference__validate_recurrence_index_list(
+      $values['by_month_day'],
+      [
+        [-MAXIMUM_MONTH_DAY_NUMBER, -1],
+        [1, MAXIMUM_MONTH_DAY_NUMBER],
+      ],
+    );
+
+    if ($invalid) {
+      form_set_error(
+        'by_month_day',
+        t(
+          'The "by month day" field must be a comma-separated list of day numbers in the ranges from -31 to -1 or from 1 to 31',
+          [],
+          ['context' => 'gofast:gofast_conference'],
+        ),
+      );
+    }
+  }
+
+  // validate by_year_day
+  if (isset($values['by_year_day']) && !gofast_conference__is_empty_string($values['by_year_day'])) {
+    $invalid = gofast_conference__validate_recurrence_index_list(
+      $values['by_year_day'],
+      [
+        [-MAXIMUM_YEAR_DAY_NUMBER, -1],
+        [1, MAXIMUM_YEAR_DAY_NUMBER],
+      ],
+    );
+
+    if ($invalid) {
+      form_set_error(
+        'by_year_day',
+        t(
+          'The "by year day" field must be a comma-separated list of numbers in the ranges from -366 to -1 or from 1 to 366',
+          [],
+          ['context' => 'gofast:gofast_conference'],
+        ),
+      );
+    }
+  }
+
+  // validate by_week_number
+  $by_week_number_valid = true;
+  if (isset($values['by_week_number']) && !gofast_conference__is_empty_string($values['by_week_number'])) {
+    $invalid = gofast_conference__validate_recurrence_index_list(
+      $values['by_week_number'],
+      [
+        [-MAXIMUM_WEEK_NUMBER, -1],
+        [1, MAXIMUM_WEEK_NUMBER],
+      ],
+    );
+    $by_week_number_valid = !$invalid;
+
+    if ($invalid) {
+      form_set_error(
+        'by_week_number',
+        t(
+          'The "by week number" field must be a comma-separated list of numbers in the ranges from -53 to -1 or from 1 to 53',
+          [],
+          ['context' => 'gofast:gofast_conference'],
+        ),
+      );
+    }
+  }
+
+  // validate by_set_position
+  if (isset($values['by_set_position']) && !gofast_conference__is_empty_string($values['by_set_position'])) {
+    $invalid = gofast_conference__validate_recurrence_index_list(
+      $values['by_set_position'],
+      [
+        [-MAXIMUM_YEAR_DAY_NUMBER, -1],
+        [1, MAXIMUM_YEAR_DAY_NUMBER],
+      ],
+    );
+
+    if ($invalid) {
+      form_set_error(
+        'by_set_position',
+        t(
+          'The "by set position" field must be a comma-separated list of numbers in the ranges from -366 to -1 or from 1 to 366',
+          [],
+          ['context' => 'gofast:gofast_conference'],
+        ),
+      );
+    }
+  }
+
+  // validate by day has no numeric offsets on yearly frequency when by week number is specified
+  if (
+    $values['frequency'] === 'YEARLY'
+    && !gofast_conference__is_empty_string($values['by_week_number'])
+    && $by_week_number_valid
+    && $by_day_result['ok']
+    && $by_day_result['has_occurrence_number']
+  ) {
+    form_set_error(
+      'by_day',
+      t(
+        'The "by day" field cannot specify occurrence numbers when frequency is'
+        . ' yearly and the "by week number" field is filled',
+        [],
+        ['context' => 'gofast:gofast_conference'],
+      ),
+    );
+  }
+}
+
+/**
+ * Map an array with ICS recurrence properties as keys to the equivalent form values array
+ * @param array $ics_values An array whose keys are ICS recurrence property names
+ *  (e.g.: 'FREQ').
+ * @return array An array where the keys are form field names
+ */
+function gofast_conference__map_ics_to_form_values($ics_values) {
+  // create a lookup array/map
+  $ics_key_to_form_key_map = [];
+  foreach (gofast_conference__get_recurrence_form_ics_mapping_rules() as $rule) {
+    $ics_key_to_form_key_map[$rule['ics_key']] = [
+      'key' => $rule['key'],
+      'map_callback' => $rule['map_to_form_value'],
+    ];
+  }
+
+  // map input keys
+  $values = [];
+  foreach ($ics_values as $key => $value) {
+    if (isset($ics_key_to_form_key_map[$key]['map_callback'])) {
+      $value = $ics_key_to_form_key_map[$key]['map_callback']($value);
+    }
+    $values[$ics_key_to_form_key_map[$key]['key']] = $value;
+  }
+
+  return $values;
+}
+
+/**
+ * Page callback for recurrence modal form.
+ */
+function gofast_conference_recurrence_modal($js = null) {
+  $form_id = 'gofast_conference_event_recurrence_form';
+
+  if (!$js) {
+    $form = drupal_get_form($form_id);
+    return drupal_render($form);
+  }
+
+  $values = [];
+  // build initial values from get parameter value passed as a RRULE ICS string
+  if (!empty($_GET['initial_recurrence'])) {
+    gofast_conference__require_rrule_autoload();
+    try {
+      // parse and map
+      $rule = new \RRule\RRule($_GET['initial_recurrence']);
+      $values = gofast_conference__map_ics_to_form_values($rule->getRule());
+    } catch (InvalidArgumentException) {
+      // rule parsing failed, do nothing
+    }
+  }
+
+  $form_state = [
+    'values' => $values,
+    'ajax' => TRUE,
+    're_render' => FALSE,
+    'no_redirect' => TRUE,
+    'reset_html_ids' => TRUE, // prevent auto incrementing form ids
+  ];
+
+  ctools_include('modal');
+  $commands = ctools_modal_form_wrapper($form_id, $form_state);
+
+  // form submitted successfully ?
+  if ($form_state['executed'] && !$form_state['rebuild']) {
+    // reset commands
+    $commands = [];
+
+    // trigger event on client side for submit. Allows client side to handle submit
+    $commands[] = gofast_command_trigger_event(
+      '#gofast-conference-event-recurrence-form',
+      'gofast:submit_success',
+      [['ruleString' => $form_state['gofast_recurrence_rule']]],
+    );
+  }
+
+  echo ajax_render($commands);
 }
 
 /*
@@ -423,6 +1531,9 @@ function gofast_conference_theme() {
   );
 }
 
+/**
+ * Implements hook_menu()
+ */
 function gofast_conference_menu() {
   $items = array();
 
@@ -441,6 +1552,14 @@ function gofast_conference_menu() {
     'access arguments' => array('access content'),
     'access callback' => 'user_access'
   );
+
+  $items['modal/%ctools_js/recurrence'] = [
+    'title' => 'recurrence',
+    'page callback' => 'gofast_conference_recurrence_modal',
+    'page arguments' => [1],
+    'access callback' => TRUE,
+    'type' => MENU_CALLBACK,
+  ];
 
   return $items;
 }
@@ -656,6 +1775,24 @@ function gofast_conference_form_conference_node_form_validate(&$form, &$form_sta
     drupal_get_messages();
   }
 
+  // validate recurrence by attempting to parse the string to an RRule value
+  if (isset($form_state['values']['recurrence']) && $form_state['values']['recurrence'] !== 'never'
+  ) {
+    gofast_conference__require_rrule_autoload();
+    try {
+      \RRule\RRule::createFromRfcString($form_state['values']['recurrence']);
+    } catch (InvalidArgumentException) {
+      form_set_error(
+        'recurrence',
+        t(
+          'The value of the recurrence field is invalid',
+          [],
+          ['context' => 'gofast:gofast_conference'],
+        ),
+      );
+    }
+  }
+
   $json_list_documents = json_decode($form_state['input']['ac-list-tags-list-documents']);
   foreach($json_list_documents as $document) {
     if(in_array((int)$document->value, array_keys($timestamp_target_save), TRUE)){ //Old value
@@ -669,6 +1806,31 @@ function gofast_conference_form_conference_node_form_validate(&$form, &$form_sta
     $save_list_spaces_bis =   str_replace(',','',$save_list_spaces);
     $form_state['values']['list_participants'] = implode(',', array_merge(explode(',', $form_state['values']['list_participants']), $save_list_spaces_bis));
   }
+}
+
+/**
+ * Get the recurrence pattern string and only the recurrence pattern string (not
+ * prefixed by 'RRULE:') from a RRule object instance
+ * @param \RRule\RRule $rule The RRule object representing the recurrence
+ */
+function gofast_conference__get_recurrence_pattern_string($rule) {
+  $rrule_pattern = 'RRULE:';
+
+  $ics_string = $rule->rfcString();
+
+  $lines = explode("\n", $ics_string);
+
+  // get the line starting with 'RRULE:' containing the pattern or fallback to
+  // the original ics_string if none is found.
+  $pattern = $ics_string;
+  foreach ($lines as $l) {
+    if (str_starts_with($l, $rrule_pattern)) {
+      $pattern = $l;
+      break;
+    }
+  }
+  // remove 'RRULE:' from the start of pattern if present.
+  return str_starts_with($pattern, $rrule_pattern) ? substr($pattern, strlen($rrule_pattern)) : $pattern;
 }
 
 function gofast_conference_form_conference_node_form_submit(&$form, &$form_state) {
@@ -739,6 +1901,103 @@ function gofast_conference_form_conference_node_form_submit(&$form, &$form_state
   $form_state['values']['field_conference_has_lobby_room'][LANGUAGE_NONE][0]["value"] = $form_state['input']['field_conference_has_lobby_room'][LANGUAGE_NONE] = $form_state['input']['field_conference_has_lobby_room_bs_switch'][LANGUAGE_NONE];
 
   $_POST['notify_added_removed_only'] = $form_state['input']['notify_added_removed_only'];
+
+  $values = &$form_state['values'];
+  // handle recurrence
+  // parse start and end dates as datetimes
+  $start_date_string = $values['field_date'][LANGUAGE_NONE][0]['value'];
+  $start_datetime = \DateTimeImmutable::createFromFormat(
+    MYSQL_DATETIME_FORMAT,
+    $start_date_string,
+    new \DateTimeZone(drupal_get_user_timezone()),
+  );
+  if ($start_datetime === false) {
+    throw new \LogicException('conference start date field values is not formatted correctly for MySQL, expected format `' . MYSQL_DATETIME_FORMAT . '`, got value `' . $start_date_string . '`');
+  }
+
+  $end_date_string = $values['field_end_date'][LANGUAGE_NONE][0]['value'];
+  $end_datetime = \DateTimeImmutable::createFromFormat(
+    MYSQL_DATETIME_FORMAT,
+    $end_date_string,
+    new \DateTimeZone(drupal_get_user_timezone()),
+  );
+  if ($end_datetime === false) {
+    throw new \LogicException('conference end date field values is not formatted correctly for MySQL, expected format `' . MYSQL_DATETIME_FORMAT . '`, got value `' . $end_date_string . '`');
+  }
+
+  $recurrence = $form_state['values']['recurrence'];
+  $recurrence = $recurrence === 'never' ? null : new \RRule\RRule($recurrence, $start_datetime);
+  $recurrence_string = isset($recurrence) ? gofast_conference__get_recurrence_pattern_string($recurrence) : null;
+
+  $values['field_recurrence'][LANGUAGE_NONE][0]['value'] = $recurrence_string;
+
+  // compute last possible instance and set it as recurrence end when recurring else set to null
+  if ($recurrence === null) {
+    $values['field_recurrence_end_date'][LANGUAGE_NONE][0]['value'] = null;
+  } else {
+    // compute duration
+    $conference_duration = $start_datetime->diff($end_datetime);
+
+    // compute last event date after all recurrences has ended
+    $last_recurrence_end_date_string = ($recurrence->isInfinite()) ?
+      MYSQL_MAX_DATETIME_VALUE // we store an end date even when the recurrence is infinite to simplify queries
+    : $recurrence[count($recurrence) - 1]->add($conference_duration)->format(MYSQL_DATETIME_FORMAT);
+
+    $values['field_date'][LANGUAGE_NONE][0]['value'];
+    $values['field_recurrence_end_date'][LANGUAGE_NONE][0]['value'] = $last_recurrence_end_date_string;
+  }
+}
+
+/**
+ * Test if a node is a recurring event
+ * @param object $node A loaded node object
+ * @return bool true if the node is recurrent, false otherwise
+ */
+function gofast_conference__node_has_recurrence($node) {
+  return null !== gofast_conference__node_get_recurrence_string($node);
+}
+
+/**
+ * Get the recurrence pattern if a node is a recurring event
+ * @param object $node A loaded node object
+ * @return string|null A string containing the recurrence rule pattern, or null
+ *  if the node is not a recurring event
+ */
+function gofast_conference__node_get_recurrence_string($node) {
+  return $node->field_recurrence[LANGUAGE_NONE][0]['value'];
+}
+
+/**
+ * Get a recurrence rule object if a node is a recurring event
+ *
+ * Includes the RRule autoload as a side effect.
+ * @param object $node A loaded node object
+ * @return \RRule\RRule|null A recurrence rule object corresponding to the node
+ */
+function gofast_conference__node_get_recurrence_rule_object($node) {
+  gofast_conference__require_rrule_autoload();
+  $rule_string = gofast_conference__node_get_recurrence_string($node);
+
+  if ($rule_string === null) {
+    return null;
+  }
+
+  // parse start date from MySQL format (the one we should get when setting the
+  // field or using node_load)
+  $date_start = DateTime::createFromFormat(
+    MYSQL_DATETIME_FORMAT,
+    $node->field_date[LANGUAGE_NONE][0]['value'],
+    new DateTimeZone('UTC'),
+  );
+
+  if ($date_start === false) {
+    throw new LogicException("Node field start date is not formatted as a MySQL datetime value");
+  }
+
+  return new \RRule\RRule(
+    $rule_string,
+    $date_start,
+  );
 }
 
 function gofast_conference_removed_from_meeting($node, $user){
@@ -787,20 +2046,29 @@ function gofast_conference_removed_from_meeting($node, $user){
       $invite = new Invite($uid_ics);
       $invite->setSubject($node->title);
       $invite->setDescription($description);
-    $invite->setStart(new DateTime($node->field_date[LANGUAGE_NONE][0]['value']));
-    $invite->setEnd(new DateTime($node->field_end_date[LANGUAGE_NONE][0]['value']));
-    $invite->setLocation($conference_place);
-    $invite->setOrganizer($owner->mail, $owner->ldap_user_givenname[LANGUAGE_NONE][0]['value']." ".$owner->ldap_user_sn[LANGUAGE_NONE][0]['value']);
-    $invite->setUrl("");
+      $invite->setStart(new DateTime($node->field_date[LANGUAGE_NONE][0]['value']));
+      $invite->setEnd(new DateTime($node->field_end_date[LANGUAGE_NONE][0]['value']));
+      $invite->setLocation($conference_place);
+      $organizer_email = $owner->mail;
+      if (ORGANIZER_EMAIL_IS_POSTMASTER) {
+        $organizer_email = variable_get('site_mail');
+      }
+      $invite->setOrganizer($organizer_email, $owner->ldap_user_givenname[LANGUAGE_NONE][0]['value']." ".$owner->ldap_user_sn[LANGUAGE_NONE][0]['value']);
+      $invite->setUrl("");
 
-    $invite->setStatus("CANCELLED");
-    $invite->setMethod('CANCEL');
+      $invite->setStatus("CANCELLED");
+      $invite->setMethod('CANCEL');
 
-    $count_update = db_query("SELECT count(id) as count FROM {ceo_vision_audit} WHERE nid= '".$node->nid."' AND event_type = 'update_node' ")->fetchObject()->count;
-    $number_sequence = $count_update;
-    $invite->setSequence($number_sequence);
+      $conference_recurrence = gofast_conference__node_get_recurrence_rule_object($node);
+      if ($conference_recurrence !== null) {
+        $invite->setRecurrence($conference_recurrence);
+      }
 
-    $attachement_method = 'CANCEL';
+      $count_update = db_query("SELECT count(id) as count FROM {ceo_vision_audit} WHERE nid= '".$node->nid."' AND event_type = 'update_node' ")->fetchObject()->count;
+      $number_sequence = $count_update;
+      $invite->setSequence($number_sequence);
+
+      $attachement_method = 'CANCEL';
 
      //we generate an ics file to attach to the mail
      $ics_content = $invite->getInviteContent();
@@ -815,7 +2083,7 @@ function gofast_conference_removed_from_meeting($node, $user){
      $alt_body = gofast_user_display_name($owner) . t(' removed you from the meeting ', array(), $l) . $title;
 
 
-    $mail = array(
+      $mail = array(
         'body' => $body_gofast,
         'title' => $title,
         'subject' => $subject,
@@ -845,7 +2113,18 @@ function gofast_conference_node_compare($new, $original) {
       $diffs[$field] = ["from" => $original->$field, "to" => $new->$field];
     }
   }
-  $nested_fields = ["field_participants", "field_existing_participants", "body", "field_date", "field_end_date", "field_external_conference_source", "field_participants", "field_existing_participants", "field_conference_organizer"];
+  $nested_fields = [
+    "field_participants",
+    "field_existing_participants",
+    "body",
+    "field_date",
+    "field_end_date",
+    "field_external_conference_source",
+    "field_participants",
+    "field_existing_participants",
+    "field_conference_organizer",
+    "field_recurrence",
+  ];
   // comparison of structured fields
   foreach ($nested_fields as $nested_field) {
     // we just want to compare the actual values (if any)
@@ -874,6 +2153,8 @@ function gofast_conference_node_insert($node, $delete = false, $update = false) 
 
     $existing_participants_email = array();
     $non_gofast_participants_email = array();
+
+    $conference_recurrence = gofast_conference__node_get_recurrence_rule_object($node);
 
     //fills the existing_participants_email array
     foreach($node->field_existing_participants[LANGUAGE_NONE] as $participant){
@@ -952,7 +2233,7 @@ function gofast_conference_node_insert($node, $delete = false, $update = false) 
       $conference_documents_array = gofast_conference_build_documents_list($node->field_timestamp_target_link[LANGUAGE_NONE], TRUE);
       $conference_documents = '';
       foreach($conference_documents_array as $doc){
-           $conference_documents .= '<div style="font-family:Poppins;font-size:14px;font-weight:400;line-height:1;text-align:left;color:#000000;" title="'.$doc['date'].'"><span>'.gofast_mail_queue_fa_png($doc['node_icon']).'</span>  <a href="'.$doc['href'].'" style="color: #337ab7; text-decoration: none;">'.$doc['title'].'</a></div>';
+           $conference_documents .= '<div style="font-family:Poppins;font-size:14px;font-weight:400;line-height:1;text-align:left;color:#000000;" title="'.$doc['date'].'"><span>'.gofast_mail_queue_fa_png($doc['node_icon']).'</span>  <a href="'.$base_url.$doc['href'].'" style="color: #337ab7; text-decoration: none;">'.$doc['title'].'</a></div>';
       }
       $conference_alt_documents = gofast_conference_build_documents_list_alt($node->field_timestamp_target_link[LANGUAGE_NONE]);
     }
@@ -972,7 +2253,7 @@ function gofast_conference_node_insert($node, $delete = false, $update = false) 
     foreach( $custom_mail_recipients as $partIndex => $email_recipient){
     // foreach( $participants_email as $partIndex => $email_recipient ) {
 
-      $recipient = user_load_by_mail($email_recipient);
+      $recipient = user_load_by_mail($email_recipient) ?: new stdClass();
 
       if (isset($recipient->language)) {
         $l = array('langcode' => $recipient->language, 'context' => 'gofast:gofast_conference');
@@ -991,7 +2272,6 @@ function gofast_conference_node_insert($node, $delete = false, $update = false) 
       $footer = t('Meeting powered by GoFAST', array(), $l);
 
       $recipient_name = $recipient->ldap_user_givenname[LANGUAGE_NONE][0]['value'] ?: $email_recipient;
-      $recipient = gofast_get_properties_user_by_uid_or_u_name($recipient->uid, NULL, ['uid', 'mail', 'picture', 'fullname']) ?: new stdClass();
       if(isset($recipient->uid)){
         $recipient->picture = gofast_get_url_picture_by_id($recipient->picture);
       } else {
@@ -1005,11 +2285,24 @@ function gofast_conference_node_insert($node, $delete = false, $update = false) 
       $start_time = strtotime(gofast_change_time_zone($date, 'UTC', $recipient->timezone ?? null));
       $end_time = strtotime(gofast_change_time_zone($end_date, 'UTC', $recipient->timezone ?? null));
 
+      // if recurring event: make the displayed date the next, current or last occurrence
+      if ($conference_recurrence !== null) {
+        $duration = (new DateTime('@' . $start_time))->diff(new DateTime('@' . $end_time));
+        $display_occurrence_start =
+          gofast_conference__recurrence_get_current_next_or_last_occurrence($conference_recurrence, $duration);
+
+        if ($display_occurrence_start !== null) {
+          $display_occurrence_start = DateTimeImmutable::createFromInterface($display_occurrence_start);
+          $start_time = $display_occurrence_start->getTimestamp();
+          $end_time = $display_occurrence_start->add($duration)->getTimestamp();
+        }
+      }
+
       $conference_datetime = format_date($start_time, 'medium');
       $conference_end_datetime = format_date($end_time, 'medium');
       
       $conference_password = $node->field_conference_password[LANGUAGE_NONE][0]['value'];
-      
+
       //generating email body
       $body_gofast = theme($delete ? 'gofast_conference_email_canceled_body' : 'gofast_conference_email_body', array(
         'conference_title' => $node->title,
@@ -1023,13 +2316,14 @@ function gofast_conference_node_insert($node, $delete = false, $update = false) 
         'duration' => getConferenceDuration($start_time, $end_time),
         'conference_content' => [
           "subject" => $conference_content,
-          "place" => $conference_place
+          "place" => $conference_place,
         ],
         'conference_owner' => $conference_owner,
         'conference_documents' => $conference_documents,
         'conference_folders' => $conference_folders,
         'recipient' => $recipient,
         'recipient_name' => $recipient_name,
+        'conference_recurrence' => $conference_recurrence,
         'l' => $l,
       ));
       //generating email body
@@ -1045,13 +2339,14 @@ function gofast_conference_node_insert($node, $delete = false, $update = false) 
         'duration' => getConferenceDuration($start_time, $end_time),
         'conference_content' => [
           "subject" => $conference_content,
-          "place" => $conference_place
+          "place" => $conference_place,
         ],
         'conference_owner' => $conference_owner,
         'conference_documents' => $conference_documents,
         'conference_folders' => $conference_folders,
         'recipient' => $recipient,
         'recipient_name'=> $recipient_name,
+        'conference_recurrence' => $conference_recurrence,
         'l' => $l,
       ));
 
@@ -1081,8 +2376,16 @@ function gofast_conference_node_insert($node, $delete = false, $update = false) 
         $invite->setStart(new DateTime($date));
         $invite->setEnd(new DateTime($end_date));
         $invite->setLocation($conference_place);
-        $invite->setOrganizer($owner->mail, $owner->ldap_user_givenname[LANGUAGE_NONE][0]['value'] . " " . $owner->ldap_user_sn[LANGUAGE_NONE][0]['value']);
+        $organizer_email = $owner->mail;
+        if (ORGANIZER_EMAIL_IS_POSTMASTER) {
+          $organizer_email = variable_get('site_mail');
+        }
+        $invite->setOrganizer($organizer_email, $owner->ldap_user_givenname[LANGUAGE_NONE][0]['value']." ".$owner->ldap_user_sn[LANGUAGE_NONE][0]['value']);
         $invite->setUrl($conference_custom_url);
+
+        if ($conference_recurrence !== null) {
+          $invite->setRecurrence($conference_recurrence);
+        }
 
         foreach ($participants_email as $participant_email) {
           $recipient_user = user_load_by_mail($participant_email);
@@ -1579,7 +2882,55 @@ function getConferenceDuration($startTime, $endTime){
 
 }
 
+/**
+ * Computes the current or next occurrence start date, or alternatively the last
+ * occurrence of a recurring event
+ * @param \RRule\RRuleInterface $recurrence The recurrence rule of the event
+ * @param DateInterval $duration The duration of the event (necessary to get the
+ *  current occurrence)
+ * @return \DateTimeInterface|null A DateTimeInterface object (most likely
+ *  DateTime) if at least one occurrence exists, `null` otherwise
+ */
+function gofast_conference__recurrence_get_current_next_or_last_occurrence($recurrence, $duration) {
+  $next = $recurrence->getNthOccurrenceAfter((new DateTime())->sub($duration), 1);
 
+  if ($next !== null) {
+    return $next;
+  }
+
+  if ($recurrence->count() === 0) {
+    return null;
+  }
+
+  return $recurrence[$recurrence->count() - 1];
+}
+
+/**
+ * Transforms a recurrence rule into a human readable string
+ *
+ * This function applies a couple of custom format options and serves to keep
+ * consistent formatting across the application.
+ * @global object $user Uses the user's locale to localise the result string.
+ * @param \RRule\RRule $recurrence The rule to get as a human readable string.
+ * @return string The human readable string representation of the given
+ *  recurrence rule.
+ */
+function gofast_conference__get_human_readable_recurrence($recurrence) {
+  global $user;
+
+  // get locale to use in RRule's humanReadable function. We map 'en' to
+  // 'en_GB' to get European english dates by default
+  $recurrence_locale_map = ['en' => 'en_GB'];
+  $recurrence_locale = isset($recurrence_locale_map[$user->language]) ?
+    $recurrence_locale_map[$user->language]
+    : $user->language;
+
+  return $recurrence->humanReadable([
+    'locale' => $recurrence_locale,
+    'include_start' => false,
+    'date_format' => IntlDateFormatter::LONG,
+  ]);
+}
 
 function template_preprocess_gofast_conference(&$variables) {
 
@@ -1625,8 +2976,49 @@ function template_preprocess_gofast_conference(&$variables) {
        // $list_participants[] = str_replace(",", " ", gofast_modal_ac_format_send_email_value('node', $space, null, $space->title, null));
       }
     }
-    
-    
+
+    // handle recurrence extra information.
+    gofast_conference__require_rrule_autoload();
+
+    $recurrence_pattern = $node->field_recurrence[LANGUAGE_NONE][0]['value'];
+    $has_recurrence = isset($recurrence_pattern) && !empty($recurrence_pattern);
+    $recurrence = $has_recurrence ? new \RRule\RRule($recurrence_pattern, $startTime) : null;
+
+    // Compute the label string
+    $recurrence_label = ($has_recurrence) ?
+      t(
+        'Repeats @pattern',
+        [
+          '@pattern' => gofast_conference__get_human_readable_recurrence($recurrence),
+        ],
+        ['context' => 'gofast:gofast_conference'],
+      )
+      : t('Never repeats', [], ['context' => 'gofast:gofast_conference']);
+
+    $occurrence_number = null;
+    // change start and end times to start and end of next recurring event
+    if ($recurrence !== null) {
+      // get next occurrence start, make sure it matches the current occurrence
+      // while it is happening (check next occurrence from now - the conference
+      // duration)
+      $duration = (new DateTime('@' . $startTime))->diff(new DateTime('@' . $endTime));
+      $display_occurrence_start =
+        gofast_conference__recurrence_get_current_next_or_last_occurrence($recurrence, $duration);
+
+      if ($display_occurrence_start !== null) {
+        // Get the number of the displayed occurrence
+        $occurrence_number = count($recurrence->getOccurrencesBefore($display_occurrence_start)) + 1;
+
+        // compute the new start and end date times to display
+        $display_occurrence_start = DateTimeImmutable::createFromInterface($display_occurrence_start);
+        $display_occurrence_end = $display_occurrence_start->add($duration);
+
+        // overwrite the displayed start and end date times with that of next occurrence
+        $startDateTime = explode(' - ', format_date($display_occurrence_start->getTimestamp(), 'long', '', date_default_timezone_get()));
+        $endDateTime = explode(' - ', format_date($display_occurrence_end->getTimestamp(), 'long', '', date_default_timezone_get()));
+      }
+    }
+
     $variables['conferenceDetails'] = [
 
         //left informations
@@ -1676,6 +3068,18 @@ function template_preprocess_gofast_conference(&$variables) {
           "label" => t("Lobby room", [], ["gofast:gofast_conference"]),
           "postIcon" => $node->field_conference_has_lobby_room[LANGUAGE_NONE][0]["value"] ? "fas fa-check text-success" : "fas-fa-times text-danger",
         ],
+        "recurrence" => [
+          "preIcon" => "fas fa-repeat",
+          "label" => $recurrence_label,
+        ],
+        ...(isset($occurrence_number) ?
+          [
+            "occurrenceNumber" => [
+              "preIcon" => "fas fa-hashtag",
+              "label" => t("Occurrence number @number", ['@number' => $occurrence_number], ['context' => 'gofast:gofast_conference']),
+            ]
+          ]
+          : []),
         "mediaDetection" => [
             "mainDevices" => [
                 "label" => t('Main devices', array(), array('context' => 'gofast:gofast_conference')),
@@ -1961,9 +3365,15 @@ function gofast_api_conference_recording($params){
 function gofast_api_conference_get_code($params){
     //Check if the request is coming from the associated GoFAST COMM
     global $conf;
-    if(gethostbyname($conf['gofast-comm_domain']) != $_SERVER['HTTP_X_REAL_IP']){
-        gofast_api_forbidden("This API is only accessible from the GoFAST COMM");
+    $gofast_comm_ip = gethostbyname($conf['gofast-comm_domain']);
+    $ip_from_headers = [
+    	$_SERVER['HTTP_X_REAL_IP'],
+    	$_SERVER['REMOTE_ADDR']
+    ];
+    if(!in_array($gofast_comm_ip, $ip_from_headers)){
+      gofast_api_forbidden("This API is only accessible from the GoFAST COMM");
     }
+
     
     //Get params and check mandatory params
     if(isset($params['room'])){
@@ -2032,11 +3442,16 @@ function gofast_api_conference_get_code($params){
  * Send OK if the room has a lobby room, else send KO
  */
 function gofast_api_conference_get_lobby($params){
-  //Check if the request is coming from the associated GoFAST COMM
-  global $conf;
-  if(gethostbyname($conf['gofast-comm_domain']) != $_SERVER['HTTP_X_REAL_IP']){
+    //Check if the request is coming from the associated GoFAST COMM
+    global $conf;
+    $gofast_comm_ip = gethostbyname($conf['gofast-comm_domain']);
+    $ip_from_headers = [
+    	$_SERVER['HTTP_X_REAL_IP'],
+    	$_SERVER['REMOTE_ADDR']
+    ];
+    if(!in_array($gofast_comm_ip, $ip_from_headers)){
       gofast_api_forbidden("This API is only accessible from the GoFAST COMM");
-  }
+    }
   
   //Get params and check mandatory params
   if(isset($params['room'])){

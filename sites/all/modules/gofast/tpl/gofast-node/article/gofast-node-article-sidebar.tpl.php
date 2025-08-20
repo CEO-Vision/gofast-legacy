@@ -26,7 +26,7 @@ if (count(module_implements("extra_metadata")) >= 1) {
     <div class="card-body p-0">
       <div class="tab-content p-3 h-100 w-100" id="myTabContent" data-nid="<?= $node->nid ?>">
 
-        <div data-nid="<?= $node->nid ?>" class="tab-pane fade show active " id="document__infotab" role="tabpanel" aria-labelledby="info-tab">
+        <div data-nid="<?= $node->nid ?>" class="tab-pane fade show active " id="article__infotab" role="tabpanel" aria-labelledby="info-tab">
           <div id="node-info-content-unprocessed" class="spinner spinner-center spinner-primary spinner-lg m-5 not-processed position-absolute h-100 w-100"></div>
         </div>
         <?php if (count(module_implements("extra_metadata")) >= 1) { ?>
@@ -44,7 +44,7 @@ if (count(module_implements("extra_metadata")) >= 1) {
         <?php } ?>
 
 
-        <div class="tab-pane fade" id="document__commentstab" role="tabpanel" aria-labelledby="comments-tab">
+        <div class="tab-pane fade" id="article__commentstab" role="tabpanel" aria-labelledby="comments-tab">
           <div id="comments-container">
             <div>
               <div id="comments" class="comment-wrapper">
@@ -54,7 +54,7 @@ if (count(module_implements("extra_metadata")) >= 1) {
           </div>
         </div>
 
-        <div class="tab-pane fade" id="document__historytab" role="tabpanel" aria-labelledby="history-tab">
+        <div class="tab-pane fade" id="article__historytab" role="tabpanel" aria-labelledby="history-tab">
           <div id="historytab-container">
             <div>
               <div id="historytab" class="comment-wrapper">
@@ -65,7 +65,7 @@ if (count(module_implements("extra_metadata")) >= 1) {
         </div>
 
         <?php if (gofast_audit_access("node", $node->nid)) { ?>
-          <div class="tab-pane fade" id="document__audittab" role="tabpanel" aria-labelledby="audit-tab">
+          <div class="tab-pane fade" id="article__audittab" role="tabpanel" aria-labelledby="audit-tab">
             <section id="gofast-audit-container">
             </section>
           </div>
@@ -89,7 +89,7 @@ if (count(module_implements("extra_metadata")) >= 1) {
     <?php else: ?>
       <div class="card-body p-0">
         <div class="tab-content p-3 h-100 w-100" id="myTabContent">
-          <div class="tab-pane fade show active " id="document__infotab" role="tabpanel" aria-labelledby="info-tab">
+          <div class="tab-pane fade show active " id="article__infotab" role="tabpanel" aria-labelledby="info-tab">
             <div id="node-info-content-unprocessed" class="spinner spinner-center spinner-primary spinner-lg m-5 not-processed position-absolute h-100 w-100"></div>
           </div>
         </div>
@@ -102,25 +102,27 @@ if (count(module_implements("extra_metadata")) >= 1) {
   jQuery(document).ready(function() {
     Gofast.gofast_right_block_breadcrumb(false);
 
-    <?php if (!gofast_essential_is_essential() && (gofast_book_is_node_wiki_article($node->nid) || gofast_book_is_article_homepage($nid))) : ?>
     jQuery("#collapsible-metadata-panel-toggle").on("click", Gofast.initCollapsibleMetadataPanel);
+
+    <?php if (!gofast_essential_is_essential() && (gofast_book_is_node_wiki_article($node->nid) || gofast_book_is_article_homepage($nid))) : ?>
+      Gofast.sideFileBrowser.initFileBrowser("book-browser");
     <?php endif; ?>
 
-    jQuery("[href='#document__historytab']").on("click", function() {
-      Gofast.historyTab("<?= $node->nid ?>");
+    jQuery("[href='#article__historytab']").on("click", function() {
+      Gofast.historyTab("<?= $node->nid ?>", "#article__historytab");
     });
 
-    jQuery("[href='#document__audittab'").on("click", function() {
-      Gofast.loadAuditBlock();
+    jQuery("[href='#article__audittab'").on("click", function() {
+      Gofast.loadAuditBlock("#article__audittab");
     });
     <?php if (gofast_book_is_node_wiki_article($node->nid) || gofast_book_is_article_homepage($nid)) : ?>
       Drupal.settings.gofast_selected_book = "<?= $node->nid ?>";
       // Explorer is out of date: reload it
       if (!jQuery(".book-explorer-element[data-nid='" +  Drupal.settings.gofast_selected_book + "']").length) {
-        Gofast.refreshWikiPanel(); // will also highlight the current node
+        Gofast.sideFileBrowser.refreshBrowser("book-browser"); // will also highlight the current node
       } else {
         // Otherwise just hightlight the current node
-        Gofast.selectCurrentWikiArticle()
+        Gofast.sideFileBrowser.selectCurrentItem("book-browser");
       }
     <?php endif; ?>
 

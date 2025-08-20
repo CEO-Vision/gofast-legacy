@@ -201,7 +201,7 @@ function gofast_api_post_mail_metadata($params)
 
 function gofast_api_mail_locations($params){
   //Don't allow external access to this API as it's called by the old Java API internally
-  if($_SERVER['REMOTE_ADDR'] !== "127.0.0.1" && $_SERVER['REMOTE_ADDR'] !== "localhost" && $_SERVER['REMOTE_ADDR'] !== "::1"){
+  if(gofast_workflows_is_external_api()){
       //gofast_api_forbidden("Unavailable action for external requester");
   }
   watchdog('jle', json_encode($params));
@@ -408,7 +408,7 @@ function gofast_api_mail_start_workflow($params){
  */
 function gofast_api_mail_get_imputation_actors($params){
   //Don't allow external access to this API
-  if($_SERVER['REMOTE_ADDR'] !== "127.0.0.1" && $_SERVER['REMOTE_ADDR'] !== "localhost" && $_SERVER['REMOTE_ADDR'] !== "::1"){
+  if(gofast_workflows_is_external_api()){
       gofast_api_forbidden("Unavailable action for external requester");
   }
 
@@ -491,7 +491,7 @@ function gofast_api_node_set_readonly($params){
 
   //Don't allow external access to this API
   watchdog('debug amrtp', 'Je passe ici');
-  if($_SERVER['REMOTE_ADDR'] !== "127.0.0.1" && $_SERVER['REMOTE_ADDR'] !== "localhost" && $_SERVER['REMOTE_ADDR'] !== "::1"){
+  if(gofast_workflows_is_external_api()){
     gofast_api_forbidden("Unavailable action for external requester");
   }
   gofast_cmis_retrieve_and_store_ticket(user_load_by_name("admin"));
@@ -527,7 +527,7 @@ function gofast_api_node_set_readonly($params){
 function gofast_api_mail_imputation_title($params){
 watchdog("jleman", json_encode($params));
   //Don't allow external access to this API
-  if($_SERVER['REMOTE_ADDR'] !== "127.0.0.1" && $_SERVER['REMOTE_ADDR'] !== "localhost" && $_SERVER['REMOTE_ADDR'] !== "::1"){
+  if(gofast_workflows_is_external_api()){
     //gofast_api_forbidden("Unavailable action for external requester");
   }
 
@@ -576,7 +576,7 @@ function gofast_api_workflows_userlist_actors($params){
 
 function gofast_api_workflows_userlist_actors_get($params){
   
-  if($_SERVER['REMOTE_ADDR'] !== "127.0.0.1" && $_SERVER['REMOTE_ADDR'] !== "localhost" && $_SERVER['REMOTE_ADDR'] !== "::1"){
+  if(gofast_workflows_is_external_api()){
     //gofast_api_forbidden("Unavailable action for external requester");
   }
 
@@ -632,7 +632,7 @@ function gofast_api_workflows_userlist_actors_get($params){
 }
 
 function gofast_api_mail_get_register_number($params){
-  if($_SERVER['REMOTE_ADDR'] !== "127.0.0.1" && $_SERVER['REMOTE_ADDR'] !== "localhost" && $_SERVER['REMOTE_ADDR'] !== "::1"){
+  if(gofast_workflows_is_external_api()){
     gofast_api_forbidden("Unavailable action for external requester");
   }
   
@@ -651,9 +651,6 @@ function gofast_api_mail_get_register_number($params){
 }
 
 function gofast_api_mail_get_outbound_register_number($params){
-  if($_SERVER['REMOTE_ADDR'] !== "127.0.0.1" && $_SERVER['REMOTE_ADDR'] !== "localhost" && $_SERVER['REMOTE_ADDR'] !== "::1"){
-    gofast_api_forbidden("Unavailable action for external requester");
-  }
   
   // Get register number variable or init it
   $register_number = variable_get('gofast_mail_register_number', '0');
@@ -671,9 +668,6 @@ function gofast_api_mail_get_outbound_register_number($params){
 
 
 function gofast_api_mail_get_outbound_space($params){
-  if($_SERVER['REMOTE_ADDR'] !== "127.0.0.1" && $_SERVER['REMOTE_ADDR'] !== "localhost" && $_SERVER['REMOTE_ADDR'] !== "::1"){
-    gofast_api_forbidden("Unavailable action for external requester");
-  }
   
   $outbound_path = "/Sites/_Groups/_Traitement Courrier/_Traitement Courrier Sortant";
   
@@ -685,7 +679,7 @@ function gofast_api_mail_get_outbound_space($params){
 
 
 function gofast_api_mail_send_mail($params){
-  if($_SERVER['REMOTE_ADDR'] !== "127.0.0.1" && $_SERVER['REMOTE_ADDR'] !== "localhost" && $_SERVER['REMOTE_ADDR'] !== "::1"){
+  if(gofast_workflows_is_external_api()){
     gofast_api_forbidden("Unavailable action for external requester");
   }
   

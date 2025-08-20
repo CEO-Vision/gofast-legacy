@@ -45,15 +45,19 @@ function gofast_book_is_node_wiki_article($nid) {
 function gofast_book_format_article_handle_subwikis($child, &$articles) {
     $key = urlencode($child->name);
     if ($child->isFolder) {
+        $child->icon = "fas fa-book";
         foreach($child->children as $kc => $c){
             if(urlencode($c->name) == $key){
                 $nid = $c->nid;
                 $child->nid = $nid;
                 $child->link_path = $c->link_path;
                 $child->edit_link = $c->edit_link;
+                $child->add_link = $c->add_link;
                 unset($child->children[$kc]);
             }
         }
+    } else {
+        $child->icon = "far fa-ballot";
     }
     
     $articles[] = $child;
@@ -76,6 +80,7 @@ function gofast_book_format_article_from_alfresco_api_descendant($descendant, $p
         }
         $descendant->link_path = "/node/" . $nid;
         $descendant->edit_link = "/modal/nojs/article/" . $nid . "/edit";
+        $descendant->add_link = "/node/add/article?target_location=$nid";
         $descendant->weight = gofast_book_get_articles_weights([$nid])[0]->body_summary;
     }
     if ($descendant->isFolder && empty($descendant->children)) {
@@ -140,7 +145,7 @@ function gofast_book_set_weight($entity_id, $weight_value) {
     } else {
         $node = node_load($entity_id);
         $node->body[LANGUAGE_NONE][0]['summary'] = $weight_value;
-        field_attach_update("node", $node);
+        gofast_update_field_database($node, "body");
     }
 }
 

@@ -1,0 +1,7 @@
+<webscript>
+    <shortname>Delete Aspect</shortname>
+    <description>Delete aspect using javascript API</description>
+    <url>/del/aspect/?aspectName={aspectName}&amp;nodeRef={nodeRef}</url>
+    <format default="html"/>
+    <authentication>admin</authentication>
+</webscript>

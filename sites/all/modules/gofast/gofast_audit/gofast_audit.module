@@ -1,6 +1,9 @@
 <?php
-define ('GOFAST_AUDIT_TABLE_NAME', 'ceo_vision_audit');
 module_load_include('inc', 'gofast_audit', 'gofast_audit.log');
+
+define ('GOFAST_AUDIT_TABLE_NAME', 'ceo_vision_audit');
+
+define("GOFAST_EXPORT_RESULTS_MAX_SIZE", 50000);
 
 /* fonction qui renvoie la liste des événements existants pour l'audit*/
 function gofast_audit_get_list_event_types(){
@@ -24,6 +27,9 @@ function gofast_audit_get_list_event_types(){
         "card_delete",
         "delete_userlist",
         "delete_room",
+      ),
+      t("Conversion") => array(
+        "convert_node",
       ),
       t("Modification") => array(
         "update_node",
@@ -171,7 +177,7 @@ function gofast_audit_menu(){
 function gofast_audit_optimize_query_set_joins($columns, &$query, &$target_alias, &$target_id) {
   $is_user = !empty(array_intersect(["login", "displayname"], $columns));
   $is_node = !empty(array_intersect(["title", "type"], $columns));
-  $is_audit = !empty(array_intersect(["timestamp", "startDate", "endDate", "event_type", "eventtype"], $columns));
+  $is_audit = !empty(array_intersect(["timestamp", "date", "startDate", "endDate", "event_type", "eventtype"], $columns));
   $user_props = [
     "alias" => "u",
     "id" => "uid",
@@ -310,7 +316,8 @@ function gofast_audit_sort_query(&$query, $sort, $subquery = FALSE) {
         $arguments = ["translated_type_nocase", $direction];
         break;
       default:
-          break;
+        $arguments = ["timestamp", "DESC"];
+        break;
     }
   } else {
     $arguments = ["timestamp", "DESC"];
@@ -346,11 +353,11 @@ function gofast_audit_filter_query(&$query, $filters, $type, $entity_id) {
   if (!empty($filters['displayname'])) {
     $or = db_or();
     $or->where("ldap_user_givenname_value LIKE " . $conn->quote("%" . db_like($filters["displayname"]) . "%"));
-    $or->where("ldap_user_sn_value LIKE" . $conn->quote("%" . db_like($filters["displayname"]) . "%"));
+    $or->where("ldap_user_sn_value LIKE " . $conn->quote("%" . db_like($filters["displayname"]) . "%"));
     $query->condition($or);
   }
   if (!empty($filters['title'])) {
-    $query->where("n.title LIKE " . db_like("%" .  $conn->quote($filters["title"]) . "%"));
+    $query->where("n.title LIKE " . $conn->quote("%" . db_like($filters["title"]) . "%"));
   }
   if (!empty($filters['type'])) {
     $query->where("n.type = " .  $conn->quote($filters['type']) );
@@ -386,6 +393,8 @@ function gofast_audit_filter_query(&$query, $filters, $type, $entity_id) {
 function gofast_audit_get_audit($type = "site", $entity_id = 0) {
   $pagination = $_GET['pagination'] ? gofast_xss_clean($_GET['pagination']) : [];
   $sort = $_GET['sort']? gofast_xss_clean($_GET['sort']) : [];
+  $sort["field"] = $sort["field"] ?: "timestamp";
+  $sort["sort"] = $sort["sort"] ?: "desc";
   $filters = $_GET['query'] ? gofast_xss_clean($_GET['query']) : [];
   $current_page = $_GET['currentPage'] ? gofast_xss_clean($_GET['currentPage']) : [];
 
@@ -400,6 +409,10 @@ function gofast_audit_get_audit($type = "site", $entity_id = 0) {
   }
   if (empty($pagination["perpage"])) {
       $pagination["perpage"] = 20;
+  }
+  // if we're not on the first page and we're filtering, we want to go back to the first page
+  if(!empty($filters)&& $current_page !=1 && $pagination["page"]== $current_page ){
+    $pagination["page"] = 1;
   }
   $offset = max(($pagination["page"] - 1) * $pagination["perpage"], 0);
 
@@ -513,7 +526,11 @@ function gofast_audit_get_audit($type = "site", $entity_id = 0) {
   // we apply the range on the subquery: it's faster than on the outer query
   // and the inner join on audit id will make sure the range is enforced in the outer query
   if ($subquery && $aliases["a"]) {
-    $subquery->range($offset, $pagination["perpage"]);
+    if(isset($_GET["export"])){
+      $subquery->range(0, GOFAST_EXPORT_RESULTS_MAX_SIZE);
+    } else {
+      $subquery->range($offset, $pagination["perpage"]);
+    }
   } else {
     // remove additional joins from outer query to make the count faster
     $fields =& $count_query->getFields();
@@ -529,7 +546,6 @@ function gofast_audit_get_audit($type = "site", $entity_id = 0) {
   if (!$audit_count) {
     $audit_count = $count_query->countQuery()->execute()->fetchField();
   }
-
   // expressions will slow down the count query so we add them after
   foreach($target_fields as $alias => $columns) {
     if (isset($expressions_by_field[$alias])) {
@@ -567,7 +583,7 @@ function gofast_audit_get_audit($type = "site", $entity_id = 0) {
 
   // apply server-side pagination only if we're not exporting
   if (isset($_GET["export"])) {
-    $query->range(0, 50000);
+    $query->range(0, GOFAST_EXPORT_RESULTS_MAX_SIZE);
   } elseif (!$subquery || !$aliases["a"]) { // subquery having audit rows, it already enforces the right range
     if (empty($target_ids)) {
       $query->range($offset, $pagination["perpage"]);
@@ -963,13 +979,21 @@ function gofast_audit_message_formated($message){
             }else{
                 $uid = $message_data["ruid"]["to"];
             }
+
+            $event_type = "update_node";
+            if (isset($_POST['is_location_update'])) {
+              $event_type = "update_location";
+            }
+            if (isset($_POST['is_convert_node'])) {
+              $event_type = $last_event_serialized["event"] = "convert_node";
+            }
+
             $last_event_serialized["mod_author"] = $uid;
             $last_event_serialized["mod_timestamp"] = time();
             $last_event_serialized = rawurlencode(serialize($last_event_serialized));
             $last_event_unserialized["mod_timestamp"] = time();
             $last_event_unserialized["mod_author"] = $uid;
 
-            $event_type = isset($_POST['is_location_update']) ? "update_location" : "update_node";
             gofast_audit_insert_line_audit($message_data["nid"]["value"],$event_type, $last_event_serialized, $last_event_unserialized);
         break;
         case "NCON":
@@ -1008,6 +1032,7 @@ function gofast_audit_view_node_update_events_log($data){
       case 'ECON':
       case 'NREV':
       case 'ETDL':
+      case 'convert_node':
         $count = 0;
         foreach($event_unformatted as $key=>$props){
           if(isset($props["current"]) && $key != "changed"){

@@ -70,3 +70,21 @@
 .contacts-directory-delete-action .navi-text{
   flex-grow: 0 !important;
 }
+
+#DirectorySpacesFilterForm .tagify-filter-container:not(.tagify--focus){
+  z-index: 1;
+  max-height: 40px;
+  overflow-y: scroll;
+  overflow-x: hidden;
+}
+
+#DirectorySpacesFilterForm .tagify-filter-container.tagify--focus{
+  z-index: 2;
+  position: absolute;
+  max-width: min-content;
+}
+
+#DirectorySpacesFilterForm {
+  align-items: flex-start !important;
+  height: 50px;
+}

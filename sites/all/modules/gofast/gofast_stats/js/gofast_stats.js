@@ -271,10 +271,15 @@
       }
        
         load_document_radar(currentGid);
-        $(".radar-chart-btn-group > button").on("click", (e) => {
+        $(".radar-chart-btn-group > button").once("radar-chart-btn").on("click", (e) => {
+          let gid = false;
+          if($(".gofast-og-page").length){
+            gid = $(".gofast-og-page").attr("id").replace("node-", "")
+          }
+            
           let metadata = $(e.currentTarget).data("filter");
           Drupal.radar_charts_metadata = metadata;
-          load_document_radar(currentGid);
+          load_document_radar(gid);
         })
       }
     });
@@ -738,7 +743,7 @@
       if (stats_name == "global_doc_stats") {
         filters = {};
         if ($("#gofast-stats-list-docs-form #edit-date").data("datepicker")?.dates?.length) {
-          filters.date = $("#gofast-stats-list-docs-form #edit-date").data("datepicker").dates[0].getTime();
+          filters.date = $("#gofast-stats-list-docs-form #edit-date").data("datepicker").dates[0].getTime() / 1000;
         }
         const $spaces = $("#gofast-stats-list-docs-form .form-item-og .checkbox input:checked");
         if ($spaces.length) {
@@ -800,7 +805,7 @@
     }
     Drupal.CTools.Modal.dismiss();
     Gofast.modal('<div class="loader-sync-status"></div> ' + Drupal.t("Please hold on while your export is being generating. This process may take a few minutes.", {}, {context : "gofast_stats"}), Drupal.t("Your export is being generating", {}, {context : "gofast_stats"}));
-    $.post("/gofast_stats/space_document_stats_export", { 
+    $.post("/gofast_stats/space_document_stats_export/"+currentGid, { 
       fields: selectedFields, 
       get_subspaces: getSubpspaces,
       gid: currentGid,

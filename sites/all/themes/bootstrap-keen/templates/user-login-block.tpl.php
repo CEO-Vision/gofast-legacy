@@ -1,11 +1,11 @@
 <?php if((bool)variable_get("gofast_disable_login_form", false) === true){$hidden_class = "d-none";}  ?>
-    <div class="d-block">
+    <div class="d-flex flex-column align-items-center">
       <?php if(isset($form['saml_sp_drupal_login_links'])): ?>
-        <div class="GofastLoginField">
+        <div class="GofastLoginField login-double-max-width w-100">
           <?php print render($form['saml_sp_drupal_login_links']); ?>
         </div>
       <?php endif; ?>
-      <div class="GofastLoginField <?php echo $hidden_class; ?>">
+      <div class="GofastLoginField login-max-width w-100 <?php echo $hidden_class; ?>">
         <label class="font-size-h6 font-weight-bolder text-dark"><?php print t('Username'); ?> *</label>
         <span class ="badge badge-pill badge-light-info"
           title="<?= t("Please use your actual username, an email will not work.", array(), array("context" => "gofast: gofast_user")) ?>"
@@ -15,7 +15,7 @@
         ><i class="fas fa-question"></i></span>
         <?php print render($form['name']); ?>
       </div>
-      <div class="GofastLoginField">
+      <div class="GofastLoginField login-max-width w-100">
         <div class="d-flex justify-content-between mt-n5">
           <label class="font-size-h6 font-weight-bolder text-dark pt-5 <?php echo $hidden_class; ?>"><?php print t('Password'); ?> *</label>
           <?php if((bool) variable_get("gofast_disable_password_reset") === FALSE): ?>
@@ -24,7 +24,7 @@
         </div>
         <span class="<?php echo $hidden_class; ?>"><?php print render($form['pass']); ?></span>
       </div>
-        <div class="pb-lg-0 pb-5 font-weight-bolder <?php if((bool)variable_get("gofast_disable_login_form", false) === true){echo "d-none";}else{echo "d-flex";}  ?> justify-content-center">
+        <div class="pb-lg-0 pb-5 font-weight-bolder login-max-width w-100 <?php if((bool)variable_get("gofast_disable_login_form", false) === true){echo "d-none";}else{echo "d-flex";}  ?> justify-content-center">
           <?php echo render($form['actions']); ?>
         </div>
       <div class="d-none"><?php echo drupal_render_children($form); ?></div>

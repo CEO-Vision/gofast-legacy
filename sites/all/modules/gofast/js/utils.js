@@ -552,6 +552,85 @@ var Gofast = (function($) {
       return w.innerHeight || e.clientHeight || g.clientHeight;
     },
 
+    // When nothing fancy is needed for the cropper save handler, you may use this
+    getGofastCropperSaveHandler(el, cropper) {
+      var imgUrl = URL.parse($("#image").attr("src")) || URL.parse(location.origin + $("#image").attr("src"));
+      if(!imgUrl){
+        return
+      }
+      imgUrl.search = "";
+      var src = imgUrl.href
+      var ext = "";
+
+      if (
+        (src.startsWith("blob:") || src.startsWith("data:")) &&
+        window._inputImageExt
+      ) {
+        ext = window._inputImageExt;
+      } else {
+        ext = src.split(".").pop();
+      }
+      // canvas.toDtaURL returns JPEG format if mimeType = image/jpeg, otherwise, it returns PNG format for the others mimeType.
+      var result = cropper
+        .getCroppedCanvas({ maxWidth: 300, maxHeight: 300 })
+        .toDataURL("image/" + ext, 1, 0);
+      var endpoint = $("#image").attr("data-target-endpoint");
+      let body = {
+        data: result.substring(result.indexOf(",") + 1),
+        ext: ext,
+      };
+      var bodyAttributes = $("#image").attr("data-body-attributes");
+      if (bodyAttributes) {
+        bodyAttributes = JSON.parse(atob(bodyAttributes));
+        body = {...body, ...bodyAttributes};
+      }
+      $.ajax({
+        url: endpoint,
+        type: "POST",
+        dataType: "json",
+        data: body,
+        beforeSend: function (xhr) {
+          $("#save").html(
+            '<span class="glyphicon glyphicon-refresh glyphicon-refresh-animate"></span> ' +
+              Drupal.t("Saving...", {}, { context: "gofast" })
+          );
+          $(".crop-buttons.btn, .crop-buttons input").attr(
+            "disabled",
+            "disabled"
+          );
+        },
+        error: function (xhr, textStatus, err) {
+          var errorMsg =
+            (xhr.responseJSON && xhr.responseJSON.errorMsg) || "unknown";
+          console.error(err, errorMsg);
+          Gofast.toast(err + ": " + errorMsg, "error");
+          $("#save > span").remove();
+          $("#save").text(Drupal.t("Save", {}, { context: "gofast" }));
+          $(".crop-buttons.btn, .crop-buttons input").removeAttr("disabled");
+          // Leave time for the user to see the error message before the cropper resets.
+          setTimeout(function () {
+            $("#modal-content button#reset").click();
+          }, 1000);
+        },
+        async: true,
+      }).done(function (result) {
+        if (result.success) {
+          Gofast.toast(Drupal.t('Image successfully changed!'), "success")
+          // Refresh board to use updated image
+          window.ktKanbanItem.reload();
+          var doneEvent = $("#image").attr("data-done-event");
+          if (doneEvent) {
+            $(document).trigger(doneEvent, [result.src]);
+          }
+          var redirectUrl = $("#image").attr("data-redirect-url");
+          if (redirectUrl) {
+            Gofast.processAjax(redirectUrl, false);
+          }
+          Drupal.CTools.Modal.dismiss(); //auto close modal
+        }
+      });
+    },
+
     getGofastCropper() {
       // Private functions
       var initCropper = function($image, saveHandler) {
@@ -662,7 +741,7 @@ var Gofast = (function($) {
         document.title = ajaxResponse['settings']['title'] || siteName;
       }
     },
-    setCookie: function(name, value, expiration) {
+    setCookie: function(name, value, expiration, sameSite = "Lax") {
        /**@todo encodeURIComponent() ? */
       if (typeof expiration === undefined) {
         expiration = 0;
@@ -670,7 +749,8 @@ var Gofast = (function($) {
       var date = new Date();
       date.setTime(date.getTime() + (expiration * 1000));
       var expires = '; expires=' + date.toGMTString();
-      document.cookie = name + '=' + value + expires + '; path=/; secure=true;';
+      var sameSiteDirective = ' SameSite=' + sameSite;
+      document.cookie = name + '=' + value + expires + '; path=/; secure=true;' + sameSiteDirective;
     },
 
     getCookie: function getCookie(c_name) {
@@ -947,9 +1027,11 @@ var Gofast = (function($) {
     },
 
     temporarySpaceDisplay: function(nodePath, nodeName, nodeId) {
-      Gofast.toast(Drupal.t("A new space is being created and will be shown as soon as it will be ready", {}, {
+      nodePath = nodePath.includes("/alfresco/webdav") ? nodePath : "/alfresco/webdav" + nodePath;
+      const message = Drupal.t("A new space is being created and will be shown as soon as it will be ready", {}, {
         context: 'gofast:ajax_file_browser'
-      }), "info");
+      });
+      Gofast.toast(message, "info");
 
       // disable refresh button
       $("#file_browser_tooolbar_refresh").prop("disabled", true);
@@ -957,15 +1039,23 @@ var Gofast = (function($) {
       var fakeTreeNode = false;
       // fake tree node
       var waitForTreeInterval = setInterval(async function() {
-        if (!jQuery("#file_browser_full_tree_element > *").length) {
+        if (!Gofast.ITHit.tree) {
+          return;
+        }
+        // parent location still not loaded
+        if (!Gofast.ITHit.tree.getNodesByParam("path", nodePath).length) {
           return;
         }
         clearInterval(waitForTreeInterval);
+        // target space already loaded
+        if (Gofast.ITHit.tree.getNodesByParam("path", nodePath + "/" + nodeName).length) {
+          return;
+        }
         // fake GFB node
         fakeTreeNode = await Gofast.ITHit.addItem(nodePath, nodeName, "Folder", true, Drupal.t("A new space is being created and will be shown as soon as it will be ready", {}, {
           context: 'gofast:ajax_file_browser'
         }));
-
+        $("#space__infotab").html("<div class='alert alert-custom alert-notice alert-light-warning fade show' role='alert'><div class='alert-icon'><i class='flaticon-warning'></i></div><div class='alert-text m-0'><span class='font-weight-bold'>" + message + "</span></div></div>");
       }, 250);
 
       // check if is in Alfresco store, if is in store reload the browser to show the real group node
@@ -1420,25 +1510,35 @@ var Gofast = (function($) {
         target.classList.remove("open");
         target.querySelector("i").classList.remove("fa-chevron-right");
         target.querySelector("i").classList.add("fa-chevron-left");
-        $(".mainContent.gofast-content--collapsible-side .gofast-content__node").css("gridTemplateColumns", "97% 3%");
+        $(".mainContent[class*=--collapsible-side] > .gofast-content__node").css("gridTemplateColumns", "97% 3%");
         $(target).parent().parent().find(".card-body").css("visibility", "hidden");
+        $(target).parent().parent().find(".card-body").addClass("collapsed");
         // if metadata panel is collapsed, there is not enough room anymore for the contextual submenu to be shown on the right
         $(".gofastDropdown > .dropdown-menu").addClass("dropleft");
         // don't forget to update the "More" icon as well
         $(".gofastDropdown > .navi-link  .navi-icon").remove();
         $(".gofastDropdown > .navi-link").prepend("<span class=\"navi-icon\"><i class=\"fas fa-arrow-left\"></i></span>")
         $('.sideContent .gofastTab .nav-item .nav-link .nav-text').hide();
-        return;
+      } else {
+        target.classList.add("open");
+        target.querySelector("i").classList.add("fa-chevron-right");
+        target.querySelector("i").classList.remove("fa-chevron-left");
+        let gridRatio = "67% 33%";
+        if($(target).attr("id") == "collapsible-space-metadata-panel-toggle"){
+          gridRatio = "80% 20%";
+        }
+        $(".mainContent[class*=--collapsible-side] > .gofast-content__node").css("gridTemplateColumns", gridRatio);
+        $(target).parent().parent().find(".card-body").css("visibility", "visible");
+        $(target).parent().parent().find(".card-body").removeClass("collapsed");
+        $(".gofastDropdown > .dropdown-menu").removeClass("dropleft");
+        $(".gofastDropdown > .navi-link  .navi-icon").remove();
+        $(".gofastDropdown > .navi-link").append("<span class=\"navi-icon\"><i class=\"fas fa-arrow-right\"></i></span>")
+        $('.sideContent .gofastTab .nav-item .nav-link .nav-text').show();
       }
-      target.classList.add("open");
-      target.querySelector("i").classList.add("fa-chevron-right");
-      target.querySelector("i").classList.remove("fa-chevron-left");
-      $(".mainContent.gofast-content--collapsible-side .gofast-content__node").css("gridTemplateColumns", "67% 33%");
-      $(target).parent().parent().find(".card-body").css("visibility", "visible");
-      $(".gofastDropdown > .dropdown-menu").removeClass("dropleft");
-      $(".gofastDropdown > .navi-link  .navi-icon").remove();
-      $(".gofastDropdown > .navi-link").append("<span class=\"navi-icon\"><i class=\"fas fa-arrow-right\"></i></span>")
-      $('.sideContent .gofastTab .nav-item .nav-link .nav-text').show();
+      // Wait for the animation to end, transition time is set to .5 sec
+      setTimeout(() => {
+        $("#file_browser_full_files").trigger("resize");
+      }, 500)
     },
   };
 })(jQuery);

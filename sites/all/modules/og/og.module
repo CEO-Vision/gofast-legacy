@@ -870,8 +870,9 @@ function og_entity_insert($entity, $entity_type) {
   list($id, $vid, $bundle) = entity_extract_ids($entity_type, $entity);
   if (!empty($entity->uid)) {
     // Subscribe the group manager.
-    ## PATCH CEO-VISION dont insert userlist creator as group manager
-    if($entity->type != 'userlist'){
+    ## PATCH CEO-VISION dont insert userlist creator as group manager,
+    ## Allow creation functions to not add creator as admin of space.
+    if($entity->type != 'userlist' && ($GLOBALS['gofast_og_add_creator_as_admin'] ?? TRUE)){
       og_group($entity_type, $id, array('entity' => $entity->uid));
       // Assign roles to group manager.
       $name = 'og_group_manager_default_rids_' . $entity_type . '_' . $bundle;

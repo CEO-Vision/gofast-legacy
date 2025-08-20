@@ -724,24 +724,12 @@ function gofast_ztree_array_path_to_nested_objects_async($array_path = array(), 
   extract($array_options);
 
   foreach ($array_path as $key => $path) {
-    if($origine){
+    if($origine && $origine != $path){
 
       $path = str_replace($origine, "", $path);
       $array_path[$key] = $path;
     }
   }
-  // Sort paths in ascending order, case-insensitive, spaces first
-  uasort($array_path, function($path_a, $path_b){
-    // Take only the last part of the path to compare them
-    $path_a = end(explode("/", $path_a));
-    $path_b = end(explode("/", $path_b));
-    // If we compare a space and a folder put the space before
-    if(str_starts_with($path_a, "_") XOR str_starts_with($path_b, "_")){
-      return str_starts_with($path_a, "_") ? -1 : 1;
-    }
-    // If we compare two space or two folder, sort normally case-insensitive
-    return strtoupper($path_a) <=> strtoupper($path_b);
-  });
 
   $tree = new ztree_tree;
   $last_depth = false;
@@ -771,10 +759,10 @@ function gofast_ztree_array_path_to_nested_objects_async($array_path = array(), 
       $computed_path .= '/' . $part;
 
 
+      $last_depth = $index === count($parts) - 1;
       //add members if necessary
       if (!$node->getChild($part) ){
-
-        $last_depth = $index === count($parts) - 1;
+        
 
         if(isset($array_options['spaces_members']['display']) && $array_options['spaces_members']['display'] == TRUE
             && ($origine."".$computed_path != '/Sites' && $_GET['members'] !== "false")
@@ -807,17 +795,24 @@ function gofast_ztree_array_path_to_nested_objects_async($array_path = array(), 
           }
         }
         if( strlen($part) > 0 ){ //avoid creation of empty node
-          $node->addChild($node = new ztree_node($part, $origine."".$computed_path, $gid, $last_depth));
-
+          // Prevent setting the gid if it is not the last depth ($gid is the gid of the last depth)
+          if($last_depth){
+            $node->addChild($node = new ztree_node($part, $origine."".$computed_path, $gid, $last_depth));
+          } else {
+            $node->addChild($node = new ztree_node($part, $origine."".$computed_path, null, $last_depth));
+          }
           if ($index === 0) {
             $node->open = TRUE;
           }
-          $node->update_icon_async();
         }
-      }
-      else {
+      // If child already exist but git is not set, set it only if it's the last path ($gid is the gid of the last depth)
+      } else if($node->getChild($part)->gid == null && $last_depth){ 
+        $node = $node->getChild($part);
+        $node->gid = $gid;
+      } else {
         $node = $node->getChild($part);
       }
+      $node->update_icon_async();
       if ($path === $origine."".$computed_path) {
         $node->non_member = $is_non_member_paths;
         $node->isHidden = $is_non_member_paths ? TRUE : FALSE;
@@ -851,6 +846,9 @@ function gofast_ztree_array_path_to_nested_objects_async($array_path = array(), 
       $parts = explode($delimiter, $path);
     }
     foreach ($parts as $part) {
+      if($part == "Sites"){
+        continue;
+      }
       $computed_path .= '/' . $part;
       if ($node->getChild($part) != null){
           $node = $node->getChild($part);

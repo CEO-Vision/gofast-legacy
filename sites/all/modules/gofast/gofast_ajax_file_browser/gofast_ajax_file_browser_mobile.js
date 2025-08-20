@@ -45,7 +45,7 @@
       //Ajax query possible changes in the explorer for forums and books views
       setTimeout(function(){
         if($("#explorer-wiki").hasClass("active") && $("#explorer-toggle").hasClass("open")){ 
-          Gofast.refreshWikiPanel();
+          Gofast.sideFileBrowser.refreshBrowser("book-browser");
         }
       }, 5000);
     },
@@ -771,6 +771,8 @@
               $('.bulk_archive').click();
 	          }else if ($(element[0]).hasClass('compress-files') || $(element[0]).parentsUntil('ul').hasClass('compress-files')) {
               $('.compress_files').click();
+	          }else if ($(element[0]).hasClass('unzip-files') || $(element[0]).parentsUntil('ul').hasClass('unzip-files')) {
+              $('.unzip_files').click();
             } else{
               $('.bulk_add_to_cart').click();
             }

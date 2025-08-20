@@ -11,11 +11,11 @@
         '<input type="text" name="entity" class="form-control GofastDirectoryUsersFilter__entity" placeholder="' + Drupal.t("Enter entity") + '"/>',
         '<select name="role" class="form-control selectpicker"><option value="">' +
         Drupal.t("All") +
-        '</option><option value="3">' +
+        '</option><option value="' + Drupal.settings.gofast_role_super_admin_rid + '">' +
         Drupal.t("Super administrator", {}, { context: "gofast:gofast_directory" }) +
-        '</option>><option value="7">' +
+        '</option>><option value="' + Drupal.settings.gofast_role_business_admin_rid + '">' +
         Drupal.t("User support", {}, { context: "gofast:gofast_directory" }) +
-        '</option><option value="4">' +
+        '</option><option value="' + Drupal.settings.gofast_role_contributor_rid + '">' +
         Drupal.t("Standard", {}, { context: "gofast:gofast_directory" }) +
         '</option></select>',
         '<select name="type" class="form-control selectpicker"><option value="">' +
@@ -95,6 +95,10 @@
             _columns = JSON.parse(jsonColumns)
             // prevent KTDatatable setting title for all select inputs, including select filters
             $.fn.KTDatatable.defaults.translate.toolbar.pagination.items.default.select = "";
+            // shift filters if the password expiration column is added
+            if (_columns["password_expiration"]) {
+                DirectoryUsersTableSubheaderElements.splice(DirectoryUsersTableSubheaderElements.length - 1, 0, '<div class="input-daterange input-group GofastDateRange GofastDirectoryUsersFilter__password_expiration" data-field="password_expiration"><input type="text" class="form-control" name="startExpiration" style="font-size: 12px; padding: 3px;" /><div class="input-group-append"><span class="input-group-text" style="padding: 1px;"></span></div><input type="text" class="form-control" name="endExpiration" style="font-size: 12px; padding: 3px;"/></div>');
+            }
             _crateTable(table)
         };
 
@@ -326,6 +330,25 @@
                             return tem
                         }
                     },
+                    ...(
+                        _columns["password_expiration"] ?
+                        [{
+                            field: 'password_expiration',
+                            title: _columns["password_expiration"],
+                            autoHide: false,
+                            width: 80,
+                            sortable: true,
+                            template: function(data) {
+                                if (!data || data.length == 0 || !data.password_expiration || data.password_expiration == 0 || parseInt(data.login) == 0) return "-";
+                                let color = "primary";
+                                if (data.password_expiration < Math.floor(Date.now() / 1000)) {
+                                    color = "warning";
+                                }
+                                return '<span class="text-'+color+'">' + window.GofastFormatAsDrupalDate(data.password_expiration * 1000) + '</span>';
+                            },
+                        }] :
+                        []
+                    ),
                     {
                         field: 'buttons',
                         title: "",
@@ -385,36 +408,7 @@
                 if (!$('#DirectoryUserFilterForm').length) {
                     return;
                 }
-                $('#DirectoryUserFilterForm').on('submit', function(e){
-                    e.preventDefault()
-                    _table.spinnerCallback(true)
-                    let filterArr = $(this).serializeArray()
-                    let filter = Object.create({})
-    
-                    filterArr.forEach(fil => {
-                        if(!!fil.value){
-                            let att = fil.name
-                            filter[att] = fil.value
-                        }
-                    })
-                    // don't submit if date values are incomplete
-                    const dateValues = [{start: filter.startLogin, end: filter.endLogin}, {start: filter.startCreated, end: filter.endCreated}];
-                    for (const dateValue of dateValues) {
-                        if ((dateValue.start && !dateValue.end) || (!dateValue.start && dateValue.end)) {
-                            Gofast.toast(Drupal.t("Please fill in both start and end dates", {}, {context: "gofast:gofast_directory"}), "error");
-                            return;
-                        }
-                    }
-
-                    // if date is localized, we need to "unformat" it in order to get the correct timestamp
-                    if(filter.startLogin) filter.startLogin = moment(filter.startLogin, GofastConvertDrupalDatePattern("moment", Drupal.settings.date_format_short, false)).valueOf() / 1000;
-                    if(filter.endLogin) filter.endLogin = moment(filter.endLogin, GofastConvertDrupalDatePattern("moment", Drupal.settings.date_format_short, false)).valueOf() / 1000;
-                    if(filter.startCreated) filter.startCreated = moment(filter.startCreated, GofastConvertDrupalDatePattern("moment", Drupal.settings.date_format_short, false)).valueOf() / 1000;
-                    if(filter.endCreated) filter.endCreated = moment(filter.endCreated, GofastConvertDrupalDatePattern("moment", Drupal.settings.date_format_short, false)).valueOf() / 1000;
-    
-                    _table.setDataSourceParam("query", filter)
-                    _table.load()
-                })
+                $('#DirectoryUserFilterForm').off('submit').on('submit', e => window.GofastKDataTableFormSubmit(e, _table));
                 $('#DirectoryUserFilterForm').on('reset', function(e){
                     $(e.currentTarget['status']).val('').selectpicker("refresh")
                     _table.setDataSourceParam("query", {})

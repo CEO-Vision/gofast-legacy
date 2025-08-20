@@ -399,21 +399,15 @@ function gofast_mail_inbound_outbound_download_zip(){
   }
 
   $nids = json_decode($nids, true);
+  $nodes_ref = [];
+  $nodes = node_load_multiple($nids);
+  foreach($nodes as $node){
+    $nodes_ref[] = array("nodeRef" => gofast_cmis_node_get_item_id($node));
+  }
   // Render zip files
-  $zip = gofast_multi_link_sharing_generate_zip_file($nids);
-  //Prepare buffer for stream
-  while (ob_get_level()) ob_end_clean();
-
   $file_name = "Courrier-sortant_" . $date . "-" . $reference . ".zip";
-
-  ## send the file to the browser as a download
-  header('Content-disposition: attachment; filename="'.$file_name.'"');
-  header('Content-type: application/zip');
-  header('Content-Length: ' . filesize($zip));
-  readfile($zip);
-  unlink($zip);
-
-  # need to exit because other header overload both header
-  print $zip;
-  exit;
+  $options = array("output_title" => $file_name, "AS_ADMIN" => true, "download" => true);
+  $zip_node_ref = gofast_cmis_initialize_node_compression($nodes_ref, $options);
+  $_GET["nodeRef"] = $zip_node_ref;
+  gofast_ajax_file_browser_download_file();
 }

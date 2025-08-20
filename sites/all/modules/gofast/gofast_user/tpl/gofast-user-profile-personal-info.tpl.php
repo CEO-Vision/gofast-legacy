@@ -1,6 +1,6 @@
 <div class="card card-custom ">
     <div class="card-body p-0">
-        <div class="pt-0 px-8 pb-4" style="<?php if(gofast_mobile_is_phone()){print "height: calc(100vh - 80px);overflow: scroll;";} ?>">
+        <div class="pt-0 px-8 pb-4">
             <div class="gutter-b mt-4 d-flex">
                 <div class="position-relative GofastUserProfile__picture" style="width:40%">
                     <?php empty($account->picture->filename) ? $filename = "/sites/all/themes/bootstrap-keen/keenv2/assets/media/users/blank.png" : $filename = "/sites/default/files/pictures/" . $account->picture->filename ; ?>
@@ -143,19 +143,19 @@
                 </div>
             </div>
             <div class="gutter-b">
-                <span class="font-size-md text-muted text-hover-primary font-weight-bold mb-2 d-block text-uppercase" id="skills_id" data-enforce="true" data-vid="<?php print $skills_vid?>"><?php print t('Skills'); ?></span>
+                <span class="font-size-md text-muted text-hover-primary font-weight-bold mb-2 d-block text-uppercase"><?php print t('Skills'); ?></span>
                 <div class="text-muted text-hover-primary font-weight-bold">
                     <div class="profile-skills-info spinner py-4"></div>
                 </div>
             </div>
             <div class="gutter-b">
-                <span class="font-size-md text-muted text-hover-primary font-weight-bold mb-2 d-block text-uppercase" id="passions_id" data-enforce="true" data-vid="<?php print $interests_vid?>"><?php print t('Passions'); ?></span>
+                <span class="font-size-md text-muted text-hover-primary font-weight-bold mb-2 d-block text-uppercase"><?php print t('Passions'); ?></span>
                 <div class="text-muted text-hover-primary font-weight-bold">
                     <div class="profile-passions-info spinner py-4"></div>
                 </div>
             </div>
             <div class="gutter-b">
-                <span class="font-size-md text-muted text-hover-primary font-weight-bold mb-2 d-block text-uppercase" id="hobbies_id" data-enforce="true" data-vid="<?php print $hobbies_vid?>"><?php print t('Hobbies'); ?></span>
+                <span class="font-size-md text-muted text-hover-primary font-weight-bold mb-2 d-block text-uppercase"><?php print t('Hobbies'); ?></span>
                 <div class="text-muted text-hover-primary font-weight-bold">
                     <div class="profile-hobbies-info spinner py-4"></div>
                 </div>

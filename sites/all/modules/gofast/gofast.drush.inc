@@ -106,12 +106,130 @@ function gofast_drush_command() {
     'bootsrap' => DRUSH_BOOTSTRAP_DRUPAL_FULL,
     'callback' => 'drush_gofast_riot_sync_avatars'
   );  
-  $items['remove-compress'] = array(
-    'description' => dt('Remove temporary zip files from the alfresco trashcan.'),
-    'bootsrap' => DRUSH_BOOTSTRAP_DRUPAL_FULL,
-    'callback' => 'drush_gofast_cmis_remove_compress',
+
+  $items['pre-updatedb-gf'] = array(
+    'description' => 'Apply any database pre-updates required.',
+    'bootstrap' => DRUSH_BOOTSTRAP_DRUPAL_SITE,
+    'global-options' => array(
+      'cache-clear',
+    ),
+    'aliases' => array('pre-updb'),
   );
+
   return $items;
+}
+
+/**
+ * Perform pre-updates before running the standard database updates.
+ * WARNING: if you run hook_pre_update_7000, then hook_update_7000 will NOT run
+ * and you will have to run hook_update_7001 instead.
+ */
+function drush_gofast_pre_updatedb_gf() {
+  include_once DRUPAL_ROOT . '/includes/install.inc';
+  $pending_pre_updates = drush_gofast_get_pending_pre_updates();
+
+  if (!drush_confirm(dt('Do you wish to run all pending pre-updates?'))) {
+    return drush_user_abort();
+  }
+
+  if (empty($pending_pre_updates)) {
+    drush_log(dt('No pre-update hooks found.'), "ok");
+    return;
+  }
+
+  drush_log(dt('Starting pre-updates...'), "notice");
+
+  foreach ($pending_pre_updates as $module => $updates) {
+    foreach ($updates as $version => $function) {
+      drush_log(dt('Running @function...', ['@function' => $function]), "notice");
+      
+      try {
+        $function();
+        drush_gofast_mark_pre_update_done($module, $version);
+        drush_log(dt('Successfully completed @function.', ['@function' => $function]), "ok");
+      } catch (Exception $e) {
+        drush_log(dt('Error running @function: @message', [
+          '@function' => $function,
+          '@message' => $e->getMessage()
+        ]), LogLevel::ERROR);
+      }
+    }
+  }
+
+  drush_drupal_cache_clear_all();
+
+  drush_log(dt('Finished performing pre-updates.'), "ok");
+}
+
+function drush_gofast_mark_pre_update_done($module, $version) {
+  $current_version = drupal_get_installed_schema_version($module);
+
+  // If this pre-update is newer than the stored version, update the schema.
+  if ($version > $current_version) {
+    drupal_set_installed_schema_version($module, $version);
+    drush_log(dt('Updated schema version for @module to @version', [
+      '@module' => $module,
+      '@version' => $version,
+    ]), "ok");
+  }
+}
+
+/**
+ * Identify pending pre-update hooks across all modules.
+ *
+ * @return array
+ *   An associative array of pre-update hooks to be executed, ordered by module and update number.
+ */
+function drush_gofast_get_pending_pre_updates() {
+  $modules = drupal_get_installed_schema_version(NULL, FALSE, TRUE);
+  $pre_updates = [];
+
+  foreach ($modules as $module => $schema_version) {
+    // Get all `pre_update_N()` hooks for the module.
+    $updates = drush_gofast_get_pre_update_functions($module);
+
+    if (!empty($updates)) {
+      foreach ($updates as $update => $function) {
+        if ($update > $schema_version) {
+          $pre_updates[$module][$update] = $function;
+        }
+      }
+    }
+  }
+
+  return $pre_updates;
+}
+
+/**
+ * Get all `MODULE_pre_update_N()` functions defined in a module.
+ *
+ * @param string $module
+ *   The machine name of the module.
+ *
+ * @return array
+ *   An associative array of update numbers mapped to function names.
+ */
+function drush_gofast_get_pre_update_functions($module) {
+  $pre_update_functions = [];
+  $install_file = drupal_get_path('module', $module) . "/{$module}.install";
+  if (!file_exists($install_file)) {
+    return [];
+  }
+  include_once DRUPAL_ROOT . '/' . $install_file;
+
+  $file_contents = file_get_contents($install_file);
+  if (!$file_contents) {
+    return [];
+  }
+
+  if (preg_match_all("/function\s+({$module}_pre_update_(\d+))\s*\(/", $file_contents, $matches, PREG_SET_ORDER)) {
+    foreach ($matches as $match) {
+      $pre_update_functions[(int) $match[2]] = $match[1];
+    }
+  }
+  ksort($pre_update_functions); // Ensure updates run in order.
+
+  return $pre_update_functions;
 }
 
 function drush_gofast_full_reindex($action = 'start') {
@@ -278,11 +396,13 @@ function drush_gofast_import_technical_translations($target_language = "gfen", $
   }
   $language_list = array_keys($language_list);
   $translated_lids = db_query("SELECT s.lid FROM {locales_source} s INNER JOIN {locales_target} t ON s.lid = t.lid AND t.language IN (:languages) WHERE s.textgroup = :textgroup AND s.context LIKE :context ORDER BY t.plid, t.plural", array(':languages' => $language_list, ':textgroup' => "default", ':context' => "gofast_technical:$context"))->fetchCol();
-  db_delete("locales_source")
+  if (!empty($translated_lids)) {
+    db_delete("locales_source")
     ->condition("lid", $translated_lids, "NOT IN")
     ->condition("textgroup", "default")
     ->condition("context", "gofast_technical:$context")
     ->execute();
+  }
 
   $file = new stdClass();
   $file->filename = $target_language . "_gofast_technical_" . $context . ".po";
@@ -476,13 +596,4 @@ function drush_gofast_riot_sync_avatars () {
   }
 
   drush_log('mx_content_id: ' . $output . "\n", $status);
-}
-
-function drush_gofast_cmis_remove_compress(){
-  $trashcan_queue_items = variable_get("alfresco_trashcan_queue", []);
-  foreach ($trashcan_queue_items as $trash_item) {
-    drush_log("Removing binary file $trash_item", "notice");
-    shell_exec('rm -f ' . $trash_item);
-  }
-  variable_set("alfresco_trashcan_queue", []);
 }

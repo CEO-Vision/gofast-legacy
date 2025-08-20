@@ -6,13 +6,8 @@
 ?>
 <div id="fullscreen-node">
    <?php
-      $json_books = gofast_book_get_json_books(array(arg(1)));
       libraries_load('ztree');
-      $path = drupal_get_path('module', 'gofast_book');
-      drupal_add_js($path . '/js/gofast_book_block.js');
-      $settings = array('data_tree' => $json_books, "is_document" => "true");
-      drupal_add_js(array('gofast_book_tree' => $settings), 'setting');
-
+      
    if(gofast_group_is_archive($node)){ ?>
     <div class="alert alert-warning">
         <h4 style="font-size: 12px "><?php print t('This space is archived', array(), array('context' => 'gofast')) ?></h4>

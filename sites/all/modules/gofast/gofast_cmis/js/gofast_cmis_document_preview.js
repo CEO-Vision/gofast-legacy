@@ -2,14 +2,10 @@
   Drupal.gofast_cmis = Drupal.gofast_cmis || {};
 
   Drupal.gofast_cmis.reloadPreview = function(force_pdfjs = false) {
-    if((Gofast.isMobile() || Gofast.isTablet()) && $("#pdf_frame").length){
-      $("#pdf_frame").addClass("mode-gf-full");
-      return;
-    }
     $('#refresh-preview').addClass('disabled');
     if($('iframe[name="frameEditor"]').length > 0){
         Gofast.docEditor.destroyEditor();
-        Gofast.process_onlyoffice_editor();
+        Gofast.process_onlyoffice_editor(true);
     }else{
       $("#container_preview_element").html("");
       $.get("/gofast/get_preview_element/" + Gofast.get('node').id + "?force_pdfjs=" + force_pdfjs, function(data){

@@ -1,0 +1,57 @@
+<?php
+
+/**
+ * Implements hook_schema().
+ */
+function gofast_integrity_schema() {
+    $schema = [];
+
+    $schema['gofast_integrity_failures'] = [
+        'description' => 'The base table for integrity failures',
+        'fields' => [
+            'id' => [
+                'description' => 'Primary key for the integrity failures',
+                'type' => 'serial',
+                'unsigned' => TRUE,
+                'not null' => TRUE,
+            ],
+            'entity_reference' => [
+                'description' => 'Alfresco reference for the related entity',
+                'type' => 'varchar',
+                'length' => 255,
+            ],
+            'failure_type' => [
+                'description' => 'Kind of failure (e.g. "invalid_folder", "invalid_space", "invalid_document)',
+                'type' => 'varchar',
+                'length' => 255,
+            ],
+            'failed_check' => [
+                'description' => 'The check which failed',
+                'type' => 'varchar',
+                'length' => 255,
+            ],
+            'integrity_data' => [
+                'description' => 'All data related to the integrity failure, JSON-encoded',
+                'type' => 'text',
+            ]
+        ],
+        'primary key' => array('id'),
+        'unique keys' => [
+            'entity_failure_check_unique' => ['entity_reference', 'failure_type', 'failed_check'],
+        ],
+    ];
+
+    return $schema;
+}
+
+/**
+ * Implements hook_update_N().
+ */
+function gofast_integrity_update_7000() {
+    // Create the gofast_integrity_failures table
+    if (db_table_exists('gofast_integrity_failures')) {
+        return;
+    }
+    module_load_include("install", "gofast_integrity", "gofast_integrity");
+    drupal_install_schema('gofast_integrity');
+}

@@ -107,12 +107,26 @@
                             <div class="p-4">
                                 <ul class="navi">
                                     <li id="hasLobbyRoom" class="navi-item d-flex align-items-center mb-1">
-                                        <div class="w-30px">
+                                        <div class="w-30px flex-shrink-0">
                                             <span class="navi-icon"><i class="<?= $conferenceDetails['hasLobbyRoom']['preIcon'] ?>"></i></span>
                                         </div>
                                         <span class="navi-text mr-1"><?= $conferenceDetails['hasLobbyRoom']['label'] ?></span>
                                         <span class="navi-icon"><i class="<?= $conferenceDetails['hasLobbyRoom']['postIcon'] ?>"></i></span>
                                     </li>
+                                    <li id="recurrence" class="navi-item d-flex align-items-center mb-1">
+                                        <div class="w-30px flex-shrink-0">
+                                            <span class="navi-icon"><i class="<?= $conferenceDetails['recurrence']['preIcon'] ?>"></i></span>
+                                        </div>
+                                        <span class="navi-text mr-1"><?= $conferenceDetails['recurrence']['label'] ?></span>
+                                    </li>
+                                    <?php if (isset($conferenceDetails['occurrenceNumber'])) { ?>
+                                    <li id="occurrence-number" class="navi-item d-flex align-items-center mb-1">
+                                        <div class="w-30px flex-shrink-0">
+                                            <span class="navi-icon"><i class="<?= $conferenceDetails['occurrenceNumber']['preIcon'] ?>"></i></span>
+                                        </div>
+                                        <span class="navi-text mr-1"><?= $conferenceDetails['occurrenceNumber']['label'] ?></span>
+                                    </li>
+                                    <?php } ?>
                                 </ul>
                                 <?php echo theme("gofast_conference_report") ?>
                             </div>

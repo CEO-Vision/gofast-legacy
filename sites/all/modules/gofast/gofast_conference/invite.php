@@ -1,4 +1,5 @@
 <?php
+
 /**
  * 
  * Author: Ahmad Amin
@@ -90,6 +91,13 @@ class Invite
      * @var array
      */
     private $_guests = array();
+
+    /**
+     * The possible recurrence of the event
+     * @var \RRule\RRule|null
+     */
+    private $_recurrenceRule;
+
     private $_savePath = "./invite/";
 
     /**
@@ -326,6 +334,26 @@ class Invite
     public function setPlace($place)
     {
 	return $this->setLocation($place);
+    }
+
+    /**
+     * Set the recurrence of this invite
+     * @param \RRule\RRule|null $recurrence_rule The recurrence rule
+     *  describing how this event should repeat.
+     * @return \Invite The current Invite instance.
+     */
+    public function setRecurrence($recurrence_rule) {
+        $this->_recurrenceRule = $recurrence_rule;
+        return $this;
+    }
+
+    /**
+     * Get the recurrence of this invite
+     * @return \RRule\RRule|null $recurrence_rule The recurrence rule
+     *  describing how this event should repeat.
+     */
+    public function getRecurrence() {
+        return $this->_recurrenceRule;
     }
 
     /**
@@ -731,10 +759,16 @@ class Invite
 	    $content .= "DTSTART:{$this->getStart(true)}\n";
 	    $content .= "DTEND:{$this->getEnd(true)}\n";
 	    $content .= "DTSTAMP:{$now}\n";
-	    $content .= "ORGANIZER;CN={$this->getFromName()}:mailto:{$this->getFromEmail()}\n";
+
+            // add recurrence rule if given
+            if ($this->_recurrenceRule !== null) {
+                $content .= 'RRULE:' . gofast_conference__get_recurrence_pattern_string($this->_recurrenceRule) . "\n";
+            }
+
+	    $content .= "ORGANIZER;CN=\"\":mailto:{$this->getFromEmail()}\n";
 
       foreach ($this->getAttendees() as $email => $name) {
-        $content .= $this->line_folding("ATTENDEE;PARTSTAT=NEEDS-ACTION;RSVP=TRUE;CN={$name};X-NUM-GUESTS=0:mailto:{$email}")."\n";
+        $content .= "ATTENDEE;PARTSTAT=NEEDS-ACTION;RSVP=TRUE;CN={$name};X-NUM-GUESTS=0:mailto:{$email}\n";
 	    }
             
       $content .= $this->line_folding("DESCRIPTION:" . $this->getDescription() ). "\n";

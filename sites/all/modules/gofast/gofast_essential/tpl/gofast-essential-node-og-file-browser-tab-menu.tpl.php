@@ -26,7 +26,7 @@
                     </div>
                 </li>
           <?php else : ?>
-                <li class="nav-item <?php if($link['dropdown']){ echo 'dropdown'; } ?><?php if($link['disabled'] == true){ echo 'disabled'; } ?>" <?php if($link['hovertext']){ echo 'data-toggle="tooltip" data-theme="dark" data-trigger="hover" data-html="true" title="' . $link["hovertext"] . '"';} ?>>                    
+                <li class="nav-item <?php if($link['dropdown']){ echo 'dropdown'; } ?><?php if($link['disabled'] == true){ echo 'disabled'; } ?>" <?php if($link['hovertext']){ echo 'data-toggle="tooltip" data-theme="dark" data-trigger="hover" data-html="true" data-placement="top" title="' . $link["hovertext"] . '"';} ?>>                    
                     <a class="nav-link px-2 d-flex justify-content-center <?= gofast_essential_is_essential() ? "essentialNavTab " : "" ?><?php if($link['disabled'] == true){ echo 'disabled'; } ?>" id="<?php print $link['id']; ?>" aria-controls="<?php print $link['href']; ?>" data-toggle="tab" href="#<?php print $link['href']; ?>">
                             <span class="nav-icon">
                             <i class="<?php print $link['icon'] ?>"></i>

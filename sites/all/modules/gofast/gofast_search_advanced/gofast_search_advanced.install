@@ -1,1 +1,21 @@
 <?php
+
+/**
+ * Prevent table inconsistency breaking features revert.
+ */
+function gofast_search_advanced_pre_update_7000() {
+    $field_name = "search_advanced_history";
+    $table_name = "field_data_" . $field_name;
+    $info = field_info_field($field_name);
+    $table_exists = db_table_exists($table_name);
+    
+    if ($table_exists && !$info) {
+      watchdog("gofast", "Features are broken, dropping the search_advanced_history table...");
+      db_drop_table($table_name);
+      db_drop_table("field_revision_" . $field_name);
+      watchdog("gofast", "The search_advanced_history table has been dropped: please revert the features again.");
+    } else {
+      watchdog("gofast", "Situation is normal: features are not broken.");
+    }
+  }
+  

@@ -151,22 +151,35 @@
             </div>
             <div class="font-size-xs">
                 <span class="font-weight-bolder mr-1"><?php print t('Creat.', array(), array('context' => 'gofast'));?>:</span>
-                <?php print format_date($result[$entity_type]->created); ?> -
+                <?php print format_date($result[$entity_type]->created); ?>
 
+                <span> - </span>
                 <span class="font-weight-bolder mr-1"><?php print t('Upd.', array(), array('context' => 'gofast'))?>:</span>
-                <?php print format_date($result[$entity_type]->changed); ?> - 
+                <?php print format_date($result[$entity_type]->changed); ?>
 
                 <?php if (isset($info_split['comment'])) : ?>
-                  <span class="mr-1"><?php print t($info_split['comment']); ?></span> -
+                  <span> - </span>
+                  <span class="mr-1"><?php print t($info_split['comment']); ?></span>
                 <?php endif; ?>
                 <?php if (isset($popularity) && $bundle !== "task") : ?>
+                  <span> - </span>
                   <span class="font-weight-bolder mr-1"><?php print t('Popularity'); ?>:</span>
-                  <?php echo $popularity; ?> -
+                  <?php echo $popularity; ?>
                 <?php endif; ?>
 
                 <?php if (isset($result['score'])) : ?>
+                  <span> - </span>
                   <span class="font-weight-bolder mr-1">SCORE:</span>
                   <?php echo $result['score'] ?>
+                <?php endif; ?>
+
+                <?php if (isset($result[$entity_type]->ds_custom_date)): ?>
+                  <span> - </span>
+                  <span class="font-weight-bolder mr-1"><?= GOFAST_METADATA_CUSTOM_DATE_LABEL ?></span>
+                  <?php 
+                  $formatted_date = new DateTime($result[$entity_type]->ds_custom_date);
+                  echo format_date($formatted_date->getTimestamp());
+                  ?>
                 <?php endif; ?>
 
             </div>

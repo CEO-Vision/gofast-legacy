@@ -169,6 +169,21 @@
         if (hasInputs.indexOf(_auditType) < 0) {
           _tableEl.classList.add("no-datatable-subheader");
         }
+
+        const interferringEvents = ["datatable-on-ajax-done", "datatable-on-goto-page", "datatable-on-update-perpage"];
+        for(const interferringEvent of interferringEvents) {
+          $(table).on(interferringEvent, function(event, data){
+              GofastRefreshKDataTableSubheader("gofastAuditTable", "GofastAuditFilterForm");
+              if (!_table) {
+                return;
+              }
+              if (interferringEvent == "datatable-on-ajax-done") {
+                $(".datatable-subheader").show();
+                Gofast.removeLoading();
+              }
+          });
+        }
+
         _createTable(table);
       };
 
@@ -273,53 +288,9 @@
           _table.setDataSourceParam('pagination', Object.assign({}, _table.getDataSourceParam('pagination'), { page: 1 }));
           _table.reload();
         });
-        $("#GofastAuditFilterForm").on("submit", function (e) {
-          e.preventDefault();
-          _table.spinnerCallback(true)
-          let filterArr = $(this).serializeArray();
-          let filter = Object.create({});
-
-          filterArr.forEach((fil) => {
-            if (!!fil.value) {
-              let att = fil.name;
-              filter[att] = fil.value;
-            }
-          });
-
-          // don't submit if date values are incomplete
-          const dateValues = [{start: filter.startDate, end: filter.endDate}];
-          for (const dateValue of dateValues) {
-              if ((dateValue.start && !dateValue.end) || (!dateValue.start && dateValue.end)) {
-                  Gofast.toast(Drupal.t("Please fill in both start and end dates", {}, {context: "gofast:gofast_directory"}), "error");
-                  return;
-              }
-          }
-
-          // We have to convert the date string value into a timestamp before submission, so the server will be able to handle the filtering request
-          if(filter.startDate) filter.startDate = moment(filter.startDate, GofastConvertDrupalDatePattern("moment", Drupal.settings.date_format_short, false)).valueOf() / 1000;
-          if(filter.endDate) filter.endDate = moment(filter.endDate, GofastConvertDrupalDatePattern("moment", Drupal.settings.date_format_short, false)).valueOf() / 1000;
-
-          _table.setDataSourceParam("query", filter);
-          if(filter){_table.setDataSourceParam("currentPage", _table.getCurrentPage());} // set currentPage in the request if filter is applied GOFAST-11592
-          _table.reload();
-        });
+        $("#GofastAuditFilterForm").off("submit").on("submit", e => window.GofastKDataTableFormSubmit(e, _table));
         clearInterval(formInterval);
       }, 100);
-
-      const interferringEvents = ["datatable-on-ajax-done", "datatable-on-goto-page", "datatable-on-update-perpage"];
-
-      for(const interferringEvent of interferringEvents) {
-       $("#gofastAuditTable").on(interferringEvent, function(event, data){
-          GofastRefreshKDataTableSubheader("gofastAuditTable", "GofastAuditFilterForm");
-          if (!_table) {
-            return;
-          }
-          if (interferringEvent == "datatable-on-ajax-done") {
-            $(".datatable-subheader").show();
-            Gofast.removeLoading();
-          }
-       });
-      }
 
       return {
         init: function (table) {
@@ -329,31 +300,28 @@
     })();
   
     Gofast.initAuditDirectory = function () {
-        if (document.querySelector("#gofastAuditTable") == null) {
-            return
-        }
-        if (!document.querySelector("#gofastAuditTable").classList.contains("processed")) {
-          let table = document.querySelector("#gofastAuditTable");
-          table.classList.add("processed");
-          gofastAuditTable.init(table);
-          if (typeof ResizeObserver != "undefined") {
-            const directoryResizeObserver = new ResizeObserver(function (entries) {
-              GofastRefreshKDataTableSubheader("gofastAuditTable","GofastAuditFilterForm");
-            });
-            directoryResizeObserver.observe(document.querySelector("#gofastAuditTable"));
-            $("#gofastAuditTable").on("datatable-on-destroy", function () {
-              directoryResizeObserver.disconnect();
-            });
-          }
-          $("#gofastAuditTable").on("datatable-on-layout-updated", function () {
-              GofastAddKDataTableSubheader("gofastAuditTable", "GofastAuditFilterForm", gofastAuditTableElements);
-              Drupal.attachBehaviors();
-              $("[data-toggle='popover']").popover({
-                  template: '<div class="popover" class="d-none" role="tooltip"><div class="arrow"></div><div class="popover-body overflow-auto max-h-250px"></div></div>'
-              });
-            }
-          );
-        }
+      let table = document.querySelector("#gofastAuditTable:not(.processed)");
+      if (table == null) {
+          return
+      }
+      table.classList.add("processed");
+      gofastAuditTable.init(table);
+      if (typeof ResizeObserver != "undefined") {
+        const directoryResizeObserver = new ResizeObserver(function (entries) {
+          GofastRefreshKDataTableSubheader("gofastAuditTable","GofastAuditFilterForm");
+        });
+        directoryResizeObserver.observe(table);
+        $(table).on("datatable-on-destroy", function () {
+          directoryResizeObserver.disconnect();
+        });
+      }
+      $(table).on("datatable-on-layout-updated", function () {
+        GofastAddKDataTableSubheader("gofastAuditTable", "GofastAuditFilterForm", gofastAuditTableElements);
+        Drupal.attachBehaviors();
+        $("[data-toggle='popover']").popover({
+            template: '<div class="popover" class="d-none" role="tooltip"><div class="arrow"></div><div class="popover-body overflow-auto max-h-250px"></div></div>'
+        });
+      });
     };
 })(jQuery, Gofast, Drupal);
   

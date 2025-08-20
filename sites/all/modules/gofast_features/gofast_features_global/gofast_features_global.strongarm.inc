@@ -2971,7 +2971,7 @@ Please give your approval to sucessfully organize this event at [event_calendar:
   $strongarm->disabled = FALSE; /* Edit this to true to make a default strongarm disabled initially */
   $strongarm->api_version = 1;
   $strongarm->name = 'gofast_carousel_name';
-  $strongarm->value = 'gofast_4.2.0';
+  $strongarm->value = 'gofast_4.4.0';
   $export['gofast_carousel_name'] = $strongarm;
 
   $strongarm = new stdClass();
@@ -4390,7 +4390,7 @@ Please give your approval to sucessfully organize this event at [event_calendar:
   $strongarm->disabled = FALSE; /* Edit this to true to make a default strongarm disabled initially */
   $strongarm->api_version = 1;
   $strongarm->name = 'og_group_manager_full_access';
-  $strongarm->value = 1;
+  $strongarm->value = 0;
   $export['og_group_manager_full_access'] = $strongarm;
 
   $strongarm = new stdClass();

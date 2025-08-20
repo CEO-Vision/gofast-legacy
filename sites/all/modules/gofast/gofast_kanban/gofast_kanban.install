@@ -282,3 +282,142 @@ function gofast_kanban_update_7002(){
     db_add_index("gofast_kanban_checklist_item", "gfindex_kanban_2", array('ciid', 'cid', 'label', 'deadline', 'uid', 'status'));
   }
 }
+
+/** GOFAST-12285 - Fix COLUMNS vocabulary drupal variable not set */
+function gofast_kanban_update_7004() {
+  $columns_voc_machine_name = "columns";
+  $query = db_select("taxonomy_vocabulary", "tv")
+            ->fields("tv", array("vid"))
+            ->condition("tv.machine_name", $columns_voc_machine_name, "=");
+  $columns_voc_vid = $query->execute()->fetchCol()[0];
+
+  variable_set("gofast_vocabulary_$columns_voc_machine_name", $columns_voc_vid);
+}
+
+/** GOFAST-12285 - Remove all kanban related duplicated terms */
+function gofast_kanban_update_7005(){
+
+  // Get the COLUMNS voc vid because it can not exist yet when running updb
+  $columns_voc_machine_name = "columns";
+  $query = db_select("taxonomy_vocabulary", "tv")
+            ->fields("tv", array("vid"))
+            ->condition("tv.machine_name", $columns_voc_machine_name, "=");
+  $columns_voc_vid = $query->execute()->fetchCol()[0];
+
+  // Query to get all original default columns
+  $default_column_query = db_select("taxonomy_term_data", "ttd")
+    ->fields("ttd", array("tid", "name"));
+  $default_column_query->condition("ttd.vid", $columns_voc_vid, "=");
+  $default_column_query->condition("ttd.name", array_values(KANBAN_DEFAULT_COLUMNS), "IN");
+
+  // Subquery to get original column tid from duplicated columns with same name
+  $default_column_subquery = db_select("taxonomy_term_data", "ttd2");
+  $default_column_subquery->addExpression("MIN(ttd2.tid)", "default_column_tid");
+  $default_column_subquery->condition("ttd2.vid", $columns_voc_vid, "=")
+                        ->where("ttd2.name = ttd.name");
+  
+  $default_column_query->condition("ttd.tid", $default_column_subquery, "IN");
+  $default_columns = $default_column_query->execute()->fetchAllAssoc("tid");
+
+  // Get [name => tid] array mapping
+  $default_columns_map = array_column($default_columns, "tid", "name");
+  // Get tids of original default column
+  $default_column_tids = array_keys($default_columns);
+
+  // Query to get all duplicated default columns 
+  $duplicated_columns_query = db_select("taxonomy_term_data", "ttd")
+                                ->fields("ttd", array("tid", "name"))
+                                ->condition("ttd.vid", $columns_voc_vid, "=")
+                                ->condition("ttd.tid", $default_column_tids, "NOT IN")
+                                ->condition("ttd.name", array_values(KANBAN_DEFAULT_COLUMNS), "IN");
+
+  $duplicated_columns = $duplicated_columns_query->execute()->fetchAllAssoc("tid");
+  $duplicated_column_tids = array_keys($duplicated_columns);
+  
+  // Make query to get duplicated columns in the 'field_data_field_board_columns' 
+  // (because the table is not sync with taxonomy term)
+  $board_columns_with_duplicated_columns_query = db_select("field_data_field_board_columns", "fdfbc")
+    ->fields("fdfbc", array("entity_id", "field_board_columns_tid"))
+    ->fields("ttd", array("name"))
+    ->condition("fdfbc.field_board_columns_tid", $default_column_tids, "NOT IN")
+    ->condition("ttd.name", array_values(KANBAN_DEFAULT_COLUMNS), "IN");
+  $board_columns_with_duplicated_columns_query->leftJoin("taxonomy_term_data", "ttd", "ttd.tid = fdfbc.field_board_columns_tid");
+  $board_columns_with_duplicated_columns = $board_columns_with_duplicated_columns_query->execute()->fetchAll();
+  // Loop through 'field_data_field_board_columns' duplicated default columns and set update duplicated column tid to 
+  // the original default column tid if it's not already existing in the board
+  foreach($board_columns_with_duplicated_columns as $column){
+    $original_tid = $default_columns_map[$column->name];
+    $has_original_tid = db_select("field_data_field_board_columns", "fdfbc")
+      ->fields("fdfbc", array("entity_id"))
+      ->condition("fdfbc.field_board_columns_tid", $original_tid, "=")
+      ->condition("fdfbc.entity_id", $column->entity_id, "=")
+      ->range(0,1)
+      ->execute()
+      ->fetchField();
+    // If we there is a column with the same as one of the default columns and the original column does not exist, 
+    // fix the tid of the duplicated column to the original column tid
+    if(!$has_original_tid){
+      watchdog("DUPLICATED_KANBAN_FIX", "The column $column->name only exist as duplicated column in board (board_id: $column->entity_id), update column tid from $column->field_board_columns_tid to $original_tid");
+      $update_query = db_update("field_data_field_board_columns")
+        ->fields(array("field_board_columns_tid" => $original_tid))
+        ->condition("field_board_columns_tid", $column->field_board_columns_tid, "=")
+        ->condition("entity_id", $column->entity_id, "=");
+      $update_query->execute();
+    }
+  }
+
+  if(!empty($duplicated_column_tids)){
+    // Query to get all duplicated columns that contains tasks
+    $duplicated_columns_with_tasks_query = db_select("field_data_field_task_column", "fdftc")
+                                            ->fields("fdftc", array("entity_id", "field_task_column_tid"))
+                                            ->fields("ttd", array("name"));
+    $duplicated_columns_with_tasks_query->leftJoin("taxonomy_term_data", "ttd", "ttd.tid = fdftc.field_task_column_tid");
+    $duplicated_columns_with_tasks_query->condition("fdftc.field_task_column_tid", $duplicated_column_tids, "IN");
+    $duplicated_columns_with_tasks = $duplicated_columns_with_tasks_query->execute()->fetchAll();
+  
+    // Loop through each tasks that are on duplicated columns and move them to the corresponding original columns 
+    foreach($duplicated_columns_with_tasks as $task_column){
+      $new_column_tid = $default_columns_map[$task_column->name];
+      watchdog("DUPLICATED_KANBAN_FIX", "Moving task (task_id: $task_column->entity_id) from duplicated column ($task_column->name, column_tid: $task_column->field_task_column_tid) to original column ($task_column->name, column_tid: $new_column_tid)");
+      db_update("field_data_field_task_column")
+        ->fields(array("field_task_column_tid" => $new_column_tid))
+        ->condition("entity_id", $task_column->entity_id, "=")
+        ->execute();
+    }
+  }
+
+  // Query to get all duplicated "Task" & "Kanban" terms except the original ones
+  $query = db_select('taxonomy_term_data', 'ttd')
+    ->fields('ttd', array('tid'))
+    ->condition("ttd.vid", GOFAST_VID_FORMAT, "=")
+    ->condition("ttd.name", ["Task", "Kanban"], "IN")
+    ->orderBy('tid', 'ASC')
+    ->range(2, 100000);
+  $duplicated_format_tids = $query->execute()->fetchCol();
+
+  $duplicated_tids = [...$duplicated_column_tids, ...$duplicated_format_tids];
+
+  watchdog("DUPLICATED_KANBAN_FIX", "Removed column tids: " . json_encode($duplicated_column_tids));
+  watchdog("DUPLICATED_KANBAN_FIX", "Removed format tids: " . json_encode($duplicated_format_tids));
+  // Remove all duplicated terms
+  foreach($duplicated_tids as $tid){
+    // Remove taxonomy term
+    taxonomy_term_delete($tid);
+    // Also remove the taxonomy term from the 'field_data_field_board_columns'
+    db_delete("field_data_field_board_columns")->condition("field_board_columns_tid", $tid)->execute();
+  }
+}
+
+/** GOFAST-12748 - Add new lines in field_data_field_tags_bundle with default value for each existing tags */
+function gofast_kanban_update_7011(){
+  $tag_tids = db_select("taxonomy_term_data", "ttd")
+    ->fields("ttd", array("tid"))
+    ->condition("ttd.vid", GOFAST_VID_TAGS, "=")
+    ->execute()->fetchCol();
+
+  $insert_query = db_insert("field_data_field_tags_bundle")->fields(array("entity_type", "bundle", "deleted", "entity_id", "revision_id", "language", "delta", "field_tags_bundle_value"));
+  foreach ($tag_tids as $tid) {
+    $insert_query->values(array("taxonomy_term", "tags", 0, $tid, $tid, "und", 0, "alfresco_item"));
+  }
+  $insert_query->execute();
+}

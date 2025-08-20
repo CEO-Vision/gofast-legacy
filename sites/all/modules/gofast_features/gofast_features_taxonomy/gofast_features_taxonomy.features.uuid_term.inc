@@ -200,6 +200,9 @@ function gofast_features_taxonomy_uuid_features_default_terms() {
       ),
     ),
     'field_naming_rules' => array(),
+    'parent' => array(
+      0 => '6f2daed0-3d2c-48bf-af89-666f463e5d8b',
+    ),
   );
   $terms[] = array(
     'name' => 'Vectorial presentation',
@@ -261,6 +264,9 @@ function gofast_features_taxonomy_uuid_features_default_terms() {
       ),
     ),
     'field_naming_rules' => array(),
+    'parent' => array(
+      0 => 'ac8298ec-32c5-4e9f-b209-e0edddf66fb9',
+    ),
   );
   $terms[] = array(
     'name' => 'Userlist',
@@ -341,24 +347,6 @@ function gofast_features_taxonomy_uuid_features_default_terms() {
     'language' => 'und',
     'i18n_tsid' => 0,
     'vocabulary_machine_name' => 'criticity',
-  );
-  $terms[] = array(
-    'name' => 'Report and minutes',
-    'description' => '',
-    'format' => 'filtered_html',
-    'weight' => 2,
-    'uuid' => '37a2a55a-98c0-4efe-a95e-12446f83698b',
-    'language' => 'und',
-    'i18n_tsid' => 0,
-    'vocabulary_machine_name' => 'category',
-    'field_standard_gf' => array(
-      'und' => array(
-        0 => array(
-          'value' => 1,
-        ),
-      ),
-    ),
-    'field_naming_rules' => array(),
   );
   $terms[] = array(
     'name' => 'Text file',
@@ -648,6 +636,9 @@ function gofast_features_taxonomy_uuid_features_default_terms() {
       ),
     ),
     'field_naming_rules' => array(),
+    'parent' => array(
+      0 => 'a88f8616-c232-489d-934c-d9f49d3301e2',
+    ),
   );
   $terms[] = array(
     'name' => 'Presentation',
@@ -745,6 +736,9 @@ function gofast_features_taxonomy_uuid_features_default_terms() {
       ),
     ),
     'field_naming_rules' => array(),
+    'parent' => array(
+      0 => 'f78beb28-2624-4a99-b347-bbe9f10fc1c7',
+    ),
   );
   $terms[] = array(
     'name' => 'Pre-Archived',
@@ -780,6 +774,9 @@ function gofast_features_taxonomy_uuid_features_default_terms() {
       ),
     ),
     'field_naming_rules' => array(),
+    'parent' => array(
+      0 => 'dc45a58c-0a76-4ac9-950e-55a43ef27bd0',
+    ),
   );
   $terms[] = array(
     'name' => 'PDF Image',
@@ -917,6 +914,9 @@ function gofast_features_taxonomy_uuid_features_default_terms() {
       ),
     ),
     'field_naming_rules' => array(),
+    'parent' => array(
+      0 => 'dc45a58c-0a76-4ac9-950e-55a43ef27bd0',
+    ),
   );
   $terms[] = array(
     'name' => 'External Web Page',
@@ -1005,6 +1005,9 @@ function gofast_features_taxonomy_uuid_features_default_terms() {
       ),
     ),
     'field_naming_rules' => array(),
+    'parent' => array(
+      0 => 'dc45a58c-0a76-4ac9-950e-55a43ef27bd0',
+    ),
   );
   $terms[] = array(
     'name' => 'Specification',
@@ -1023,6 +1026,9 @@ function gofast_features_taxonomy_uuid_features_default_terms() {
       ),
     ),
     'field_naming_rules' => array(),
+    'parent' => array(
+      0 => '1dfb455c-5089-42e7-8be3-56436264c25a',
+    ),
   );
   $terms[] = array(
     'name' => 'Group',
@@ -1150,24 +1156,6 @@ function gofast_features_taxonomy_uuid_features_default_terms() {
     ),
   );
   $terms[] = array(
-    'name' => 'Information',
-    'description' => '',
-    'format' => 'filtered_html',
-    'weight' => 7,
-    'uuid' => 'd654af50-1c14-484c-993a-b523827572fe',
-    'language' => 'und',
-    'i18n_tsid' => 0,
-    'vocabulary_machine_name' => 'category',
-    'field_standard_gf' => array(
-      'und' => array(
-        0 => array(
-          'value' => 1,
-        ),
-      ),
-    ),
-    'field_naming_rules' => array(),
-  );
-  $terms[] = array(
     'name' => 'Visio',
     'description' => 'A Visio file',
     'format' => 'plain_text',
@@ -1220,6 +1208,9 @@ function gofast_features_taxonomy_uuid_features_default_terms() {
       ),
     ),
     'field_naming_rules' => array(),
+    'parent' => array(
+      0 => 'dc45a58c-0a76-4ac9-950e-55a43ef27bd0',
+    ),
   );
   $terms[] = array(
     'name' => 'Video',
@@ -1550,6 +1541,9 @@ function gofast_features_taxonomy_uuid_features_default_terms() {
       ),
     ),
     'field_naming_rules' => array(),
+    'parent' => array(
+      0 => '986a3326-766d-4e7d-b453-96b675f851c3',
+    ),
   );
   $terms[] = array(
     'name' => 'Text Document',
@@ -1587,5 +1581,793 @@ function gofast_features_taxonomy_uuid_features_default_terms() {
     'i18n_tsid' => 0,
     'vocabulary_machine_name' => 'criticity',
   );
+  $terms[] = array(
+    'name' => 'Delivery note',
+    'description' => '',
+    'format' => 'filtered_html',
+    'weight' => 0,
+    'uuid' => '01ac7b05-d726-4520-ac5a-3986cc8d6464',
+    'language' => 'und',
+    'i18n_tsid' => 0,
+    'vocabulary_machine_name' => 'category',
+    'og_taxonomy_category_group' => array(),
+    'field_standard_gf' => array(
+      'und' => array(
+        0 => array(
+          'value' => 1,
+        ),
+      ),
+    ),
+    'field_naming_rules' => array(),
+    'parent' => array(
+      0 => 'a88f8616-c232-489d-934c-d9f49d3301e2',
+    ),
+  );
+  $terms[] = array(
+    'name' => 'Planning',
+    'description' => '',
+    'format' => 'filtered_html',
+    'weight' => 0,
+    'uuid' => '0f6ae3bf-bafb-4080-8dc6-a79e3f4bf121',
+    'language' => 'und',
+    'i18n_tsid' => 0,
+    'vocabulary_machine_name' => 'category',
+    'og_taxonomy_category_group' => array(),
+    'field_standard_gf' => array(
+      'und' => array(
+        0 => array(
+          'value' => 1,
+        ),
+      ),
+    ),
+    'field_naming_rules' => array(),
+    'parent' => array(
+      0 => '6fc1eaf9-5353-4cae-b533-f156232021a7',
+    ),
+  );
+  $terms[] = array(
+    'name' => 'Budget',
+    'description' => '',
+    'format' => 'filtered_html',
+    'weight' => 0,
+    'uuid' => '11cadc0c-d823-4d10-965a-4d2c4b023549',
+    'language' => 'und',
+    'i18n_tsid' => 0,
+    'vocabulary_machine_name' => 'category',
+    'og_taxonomy_category_group' => array(),
+    'field_standard_gf' => array(
+      'und' => array(
+        0 => array(
+          'value' => 1,
+        ),
+      ),
+    ),
+    'field_naming_rules' => array(),
+    'parent' => array(
+      0 => 'a88f8616-c232-489d-934c-d9f49d3301e2',
+    ),
+  );
+  $terms[] = array(
+    'name' => 'Order',
+    'description' => '',
+    'format' => 'filtered_html',
+    'weight' => 0,
+    'uuid' => '13dee0a7-0ba6-4ca1-98bc-0058a95ba639',
+    'language' => 'und',
+    'i18n_tsid' => 0,
+    'vocabulary_machine_name' => 'category',
+    'og_taxonomy_category_group' => array(),
+    'field_standard_gf' => array(
+      'und' => array(
+        0 => array(
+          'value' => 1,
+        ),
+      ),
+    ),
+    'field_naming_rules' => array(),
+    'parent' => array(
+      0 => '6f2daed0-3d2c-48bf-af89-666f463e5d8b',
+    ),
+  );
+  $terms[] = array(
+    'name' => 'Technical',
+    'description' => '',
+    'format' => 'filtered_html',
+    'weight' => 0,
+    'uuid' => '1dfb455c-5089-42e7-8be3-56436264c25a',
+    'language' => 'und',
+    'i18n_tsid' => 0,
+    'vocabulary_machine_name' => 'category',
+    'og_taxonomy_category_group' => array(),
+    'field_standard_gf' => array(
+      'und' => array(
+        0 => array(
+          'value' => 1,
+        ),
+      ),
+    ),
+    'field_naming_rules' => array(),
+  );
+  $terms[] = array(
+    'name' => 'Blueprint',
+    'description' => '',
+    'format' => 'filtered_html',
+    'weight' => 0,
+    'uuid' => '1f0074c9-9404-4a0c-91db-0827ffdaba7c',
+    'language' => 'und',
+    'i18n_tsid' => 0,
+    'vocabulary_machine_name' => 'category',
+    'og_taxonomy_category_group' => array(),
+    'field_standard_gf' => array(
+      'und' => array(
+        0 => array(
+          'value' => 1,
+        ),
+      ),
+    ),
+    'field_naming_rules' => array(),
+    'parent' => array(
+      0 => '1dfb455c-5089-42e7-8be3-56436264c25a',
+    ),
+  );
+  $terms[] = array(
+    'name' => 'Expense report',
+    'description' => '',
+    'format' => 'filtered_html',
+    'weight' => 0,
+    'uuid' => '5d033d5c-4a17-42e1-a2be-0858377a562a',
+    'language' => 'und',
+    'i18n_tsid' => 0,
+    'vocabulary_machine_name' => 'category',
+    'og_taxonomy_category_group' => array(),
+    'field_standard_gf' => array(
+      'und' => array(
+        0 => array(
+          'value' => 1,
+        ),
+      ),
+    ),
+    'field_naming_rules' => array(),
+    'parent' => array(
+      0 => 'f78beb28-2624-4a99-b347-bbe9f10fc1c7',
+    ),
+  );
+  $terms[] = array(
+    'name' => 'Agenda',
+    'description' => '',
+    'format' => 'filtered_html',
+    'weight' => 0,
+    'uuid' => '5ed7d14b-9e32-47d2-a129-75460723336e',
+    'language' => 'und',
+    'i18n_tsid' => 0,
+    'vocabulary_machine_name' => 'category',
+    'og_taxonomy_category_group' => array(),
+    'field_standard_gf' => array(
+      'und' => array(
+        0 => array(
+          'value' => 1,
+        ),
+      ),
+    ),
+    'field_naming_rules' => array(),
+    'parent' => array(
+      0 => 'dc45a58c-0a76-4ac9-950e-55a43ef27bd0',
+    ),
+  );
+  $terms[] = array(
+    'name' => 'Email',
+    'description' => '',
+    'format' => 'filtered_html',
+    'weight' => 0,
+    'uuid' => '6d19cc4d-dba2-4e4b-bb17-4f621ff59934',
+    'language' => 'und',
+    'i18n_tsid' => 0,
+    'vocabulary_machine_name' => 'category',
+    'og_taxonomy_category_group' => array(),
+    'field_standard_gf' => array(
+      'und' => array(
+        0 => array(
+          'value' => 1,
+        ),
+      ),
+    ),
+    'field_naming_rules' => array(),
+    'parent' => array(
+      0 => 'dc45a58c-0a76-4ac9-950e-55a43ef27bd0',
+    ),
+  );
+  $terms[] = array(
+    'name' => 'Legal',
+    'description' => '',
+    'format' => 'filtered_html',
+    'weight' => 0,
+    'uuid' => '6f2daed0-3d2c-48bf-af89-666f463e5d8b',
+    'language' => 'und',
+    'i18n_tsid' => 0,
+    'vocabulary_machine_name' => 'category',
+    'og_taxonomy_category_group' => array(),
+    'field_standard_gf' => array(
+      'und' => array(
+        0 => array(
+          'value' => 1,
+        ),
+      ),
+    ),
+    'field_naming_rules' => array(),
+  );
+  $terms[] = array(
+    'name' => 'Project Management',
+    'description' => '',
+    'format' => 'filtered_html',
+    'weight' => 0,
+    'uuid' => '6fc1eaf9-5353-4cae-b533-f156232021a7',
+    'language' => 'und',
+    'i18n_tsid' => 0,
+    'vocabulary_machine_name' => 'category',
+    'og_taxonomy_category_group' => array(),
+    'field_standard_gf' => array(
+      'und' => array(
+        0 => array(
+          'value' => 1,
+        ),
+      ),
+    ),
+    'field_naming_rules' => array(),
+  );
+  $terms[] = array(
+    'name' => 'Article',
+    'description' => '',
+    'format' => 'filtered_html',
+    'weight' => 0,
+    'uuid' => '7111eeac-24f0-4113-965c-b48b844365c7',
+    'language' => 'und',
+    'i18n_tsid' => 0,
+    'vocabulary_machine_name' => 'category',
+    'og_taxonomy_category_group' => array(),
+    'field_standard_gf' => array(
+      'und' => array(
+        0 => array(
+          'value' => 1,
+        ),
+      ),
+    ),
+    'field_naming_rules' => array(),
+    'parent' => array(
+      0 => 'dc45a58c-0a76-4ac9-950e-55a43ef27bd0',
+    ),
+  );
+  $terms[] = array(
+    'name' => 'Purchase order',
+    'description' => '',
+    'format' => 'filtered_html',
+    'weight' => 0,
+    'uuid' => '7347b787-d370-4a56-b715-4774be5bab12',
+    'language' => 'und',
+    'i18n_tsid' => 0,
+    'vocabulary_machine_name' => 'category',
+    'og_taxonomy_category_group' => array(),
+    'field_standard_gf' => array(
+      'und' => array(
+        0 => array(
+          'value' => 1,
+        ),
+      ),
+    ),
+    'field_naming_rules' => array(),
+    'parent' => array(
+      0 => 'a88f8616-c232-489d-934c-d9f49d3301e2',
+    ),
+  );
+  $terms[] = array(
+    'name' => 'Minutes',
+    'description' => '',
+    'format' => 'filtered_html',
+    'weight' => 0,
+    'uuid' => '75750f23-0f30-4138-92f7-e045001696cb',
+    'language' => 'und',
+    'i18n_tsid' => 0,
+    'vocabulary_machine_name' => 'category',
+    'og_taxonomy_category_group' => array(),
+    'field_standard_gf' => array(
+      'und' => array(
+        0 => array(
+          'value' => 1,
+        ),
+      ),
+    ),
+    'field_naming_rules' => array(),
+    'parent' => array(
+      0 => 'dc45a58c-0a76-4ac9-950e-55a43ef27bd0',
+    ),
+  );
+  $terms[] = array(
+    'name' => 'Court decision',
+    'description' => '',
+    'format' => 'filtered_html',
+    'weight' => 0,
+    'uuid' => '84cee35f-2c43-4b53-830a-118dd54bfcef',
+    'language' => 'und',
+    'i18n_tsid' => 0,
+    'vocabulary_machine_name' => 'category',
+    'og_taxonomy_category_group' => array(),
+    'field_standard_gf' => array(
+      'und' => array(
+        0 => array(
+          'value' => 1,
+        ),
+      ),
+    ),
+    'field_naming_rules' => array(),
+    'parent' => array(
+      0 => '6f2daed0-3d2c-48bf-af89-666f463e5d8b',
+    ),
+  );
+  $terms[] = array(
+    'name' => 'Statement',
+    'description' => '',
+    'format' => 'filtered_html',
+    'weight' => 0,
+    'uuid' => '8a8db3b5-8bdb-495f-b2e7-9a33215807a2',
+    'language' => 'und',
+    'i18n_tsid' => 0,
+    'vocabulary_machine_name' => 'category',
+    'og_taxonomy_category_group' => array(),
+    'field_standard_gf' => array(
+      'und' => array(
+        0 => array(
+          'value' => 1,
+        ),
+      ),
+    ),
+    'field_naming_rules' => array(),
+    'parent' => array(
+      0 => 'a88f8616-c232-489d-934c-d9f49d3301e2',
+    ),
+  );
+  $terms[] = array(
+    'name' => 'Service note',
+    'description' => '',
+    'format' => 'filtered_html',
+    'weight' => 0,
+    'uuid' => '8b1f24b1-c165-45d1-bc88-006223d1512b',
+    'language' => 'und',
+    'i18n_tsid' => 0,
+    'vocabulary_machine_name' => 'category',
+    'og_taxonomy_category_group' => array(),
+    'field_standard_gf' => array(
+      'und' => array(
+        0 => array(
+          'value' => 1,
+        ),
+      ),
+    ),
+    'field_naming_rules' => array(),
+    'parent' => array(
+      0 => '986a3326-766d-4e7d-b453-96b675f851c3',
+    ),
+  );
+  $terms[] = array(
+    'name' => 'Work stoppage',
+    'description' => '',
+    'format' => 'filtered_html',
+    'weight' => 0,
+    'uuid' => '8be7117a-89c5-4ed2-ace3-8fd2b8d77a09',
+    'language' => 'und',
+    'i18n_tsid' => 0,
+    'vocabulary_machine_name' => 'category',
+    'og_taxonomy_category_group' => array(),
+    'field_standard_gf' => array(
+      'und' => array(
+        0 => array(
+          'value' => 1,
+        ),
+      ),
+    ),
+    'field_naming_rules' => array(),
+    'parent' => array(
+      0 => 'f78beb28-2624-4a99-b347-bbe9f10fc1c7',
+    ),
+  );
+  $terms[] = array(
+    'name' => 'Commitment',
+    'description' => '',
+    'format' => 'filtered_html',
+    'weight' => 0,
+    'uuid' => '94e01de0-02bd-4dfb-9546-7c7cb10121fa',
+    'language' => 'und',
+    'i18n_tsid' => 0,
+    'vocabulary_machine_name' => 'category',
+    'og_taxonomy_category_group' => array(),
+    'field_standard_gf' => array(
+      'und' => array(
+        0 => array(
+          'value' => 1,
+        ),
+      ),
+    ),
+    'field_naming_rules' => array(),
+    'parent' => array(
+      0 => '6f2daed0-3d2c-48bf-af89-666f463e5d8b',
+    ),
+  );
+  $terms[] = array(
+    'name' => 'Operational',
+    'description' => '',
+    'format' => 'filtered_html',
+    'weight' => 0,
+    'uuid' => '986a3326-766d-4e7d-b453-96b675f851c3',
+    'language' => 'und',
+    'i18n_tsid' => 0,
+    'vocabulary_machine_name' => 'category',
+    'og_taxonomy_category_group' => array(),
+    'field_standard_gf' => array(
+      'und' => array(
+        0 => array(
+          'value' => 1,
+        ),
+      ),
+    ),
+    'field_naming_rules' => array(),
+  );
+  $terms[] = array(
+    'name' => 'Report',
+    'description' => '',
+    'format' => 'filtered_html',
+    'weight' => 0,
+    'uuid' => '99abf669-3e34-475f-8dfa-59854e86b85b',
+    'language' => 'und',
+    'i18n_tsid' => 0,
+    'vocabulary_machine_name' => 'category',
+    'og_taxonomy_category_group' => array(),
+    'field_standard_gf' => array(
+      'und' => array(
+        0 => array(
+          'value' => 1,
+        ),
+      ),
+    ),
+    'field_naming_rules' => array(),
+    'parent' => array(
+      0 => 'dc45a58c-0a76-4ac9-950e-55a43ef27bd0',
+    ),
+  );
+  $terms[] = array(
+    'name' => 'Financial',
+    'description' => '',
+    'format' => 'filtered_html',
+    'weight' => 0,
+    'uuid' => 'a88f8616-c232-489d-934c-d9f49d3301e2',
+    'language' => 'und',
+    'i18n_tsid' => 0,
+    'vocabulary_machine_name' => 'category',
+    'og_taxonomy_category_group' => array(),
+    'field_standard_gf' => array(
+      'und' => array(
+        0 => array(
+          'value' => 1,
+        ),
+      ),
+    ),
+    'field_naming_rules' => array(),
+  );
+  $terms[] = array(
+    'name' => 'Organizational Chart',
+    'description' => '',
+    'format' => 'filtered_html',
+    'weight' => 0,
+    'uuid' => 'bdb53909-4bee-4c3d-9af4-98791b01a0e6',
+    'language' => 'und',
+    'i18n_tsid' => 0,
+    'vocabulary_machine_name' => 'category',
+    'og_taxonomy_category_group' => array(),
+    'field_standard_gf' => array(
+      'und' => array(
+        0 => array(
+          'value' => 1,
+        ),
+      ),
+    ),
+    'field_naming_rules' => array(),
+    'parent' => array(
+      0 => 'f78beb28-2624-4a99-b347-bbe9f10fc1c7',
+    ),
+  );
+  $terms[] = array(
+    'name' => 'Legal Text',
+    'description' => '',
+    'format' => 'filtered_html',
+    'weight' => 0,
+    'uuid' => 'c4ff25d5-6724-4343-97b4-9cfbd878c2ed',
+    'language' => 'und',
+    'i18n_tsid' => 0,
+    'vocabulary_machine_name' => 'category',
+    'og_taxonomy_category_group' => array(),
+    'field_standard_gf' => array(
+      'und' => array(
+        0 => array(
+          'value' => 1,
+        ),
+      ),
+    ),
+    'field_naming_rules' => array(),
+    'parent' => array(
+      0 => '6f2daed0-3d2c-48bf-af89-666f463e5d8b',
+    ),
+  );
+  $terms[] = array(
+    'name' => 'Agreement',
+    'description' => '',
+    'format' => 'filtered_html',
+    'weight' => 0,
+    'uuid' => 'cc05e639-3e86-41d6-ab39-bb513a3ad719',
+    'language' => 'und',
+    'i18n_tsid' => 0,
+    'vocabulary_machine_name' => 'category',
+    'og_taxonomy_category_group' => array(),
+    'field_standard_gf' => array(
+      'und' => array(
+        0 => array(
+          'value' => 1,
+        ),
+      ),
+    ),
+    'field_naming_rules' => array(),
+    'parent' => array(
+      0 => '6f2daed0-3d2c-48bf-af89-666f463e5d8b',
+    ),
+  );
+  $terms[] = array(
+    'name' => 'Announcement',
+    'description' => '',
+    'format' => 'filtered_html',
+    'weight' => 0,
+    'uuid' => 'd05f32ca-810f-42e5-8ddc-ad48cc3d3521',
+    'language' => 'und',
+    'i18n_tsid' => 0,
+    'vocabulary_machine_name' => 'category',
+    'og_taxonomy_category_group' => array(),
+    'field_standard_gf' => array(
+      'und' => array(
+        0 => array(
+          'value' => 1,
+        ),
+      ),
+    ),
+    'field_naming_rules' => array(),
+    'parent' => array(
+      0 => 'ef788c9b-1b61-4a48-b604-23ed13953889',
+    ),
+  );
+  $terms[] = array(
+    'name' => 'Call for tenders',
+    'description' => '',
+    'format' => 'filtered_html',
+    'weight' => 0,
+    'uuid' => 'd120a734-c840-45d4-8490-8ee4298b2571',
+    'language' => 'und',
+    'i18n_tsid' => 0,
+    'vocabulary_machine_name' => 'category',
+    'og_taxonomy_category_group' => array(),
+    'field_standard_gf' => array(
+      'und' => array(
+        0 => array(
+          'value' => 1,
+        ),
+      ),
+    ),
+    'field_naming_rules' => array(),
+    'parent' => array(
+      0 => '1dfb455c-5089-42e7-8be3-56436264c25a',
+    ),
+  );
+  $terms[] = array(
+    'name' => 'Employment Records',
+    'description' => '',
+    'format' => 'filtered_html',
+    'weight' => 0,
+    'uuid' => 'd60eb4aa-67f1-4a71-98b6-b8435081c44c',
+    'language' => 'und',
+    'i18n_tsid' => 0,
+    'vocabulary_machine_name' => 'category',
+    'og_taxonomy_category_group' => array(),
+    'field_standard_gf' => array(
+      'und' => array(
+        0 => array(
+          'value' => 1,
+        ),
+      ),
+    ),
+    'field_naming_rules' => array(),
+    'parent' => array(
+      0 => 'f78beb28-2624-4a99-b347-bbe9f10fc1c7',
+    ),
+  );
+  $terms[] = array(
+    'name' => 'Administrative',
+    'description' => '',
+    'format' => 'filtered_html',
+    'weight' => 0,
+    'uuid' => 'dc45a58c-0a76-4ac9-950e-55a43ef27bd0',
+    'language' => 'und',
+    'i18n_tsid' => 0,
+    'vocabulary_machine_name' => 'category',
+    'og_taxonomy_category_group' => array(),
+    'field_standard_gf' => array(
+      'und' => array(
+        0 => array(
+          'value' => 1,
+        ),
+      ),
+    ),
+    'field_naming_rules' => array(),
+  );
+  $terms[] = array(
+    'name' => 'Deed',
+    'description' => '',
+    'format' => 'filtered_html',
+    'weight' => 0,
+    'uuid' => 'dd7f07c9-de08-4aef-b832-5082cbf44358',
+    'language' => 'und',
+    'i18n_tsid' => 0,
+    'vocabulary_machine_name' => 'category',
+    'og_taxonomy_category_group' => array(),
+    'field_standard_gf' => array(
+      'und' => array(
+        0 => array(
+          'value' => 1,
+        ),
+      ),
+    ),
+    'field_naming_rules' => array(),
+    'parent' => array(
+      0 => '6f2daed0-3d2c-48bf-af89-666f463e5d8b',
+    ),
+  );
+  $terms[] = array(
+    'name' => 'Study',
+    'description' => '',
+    'format' => 'filtered_html',
+    'weight' => 0,
+    'uuid' => 'eac44a0c-a86f-426b-a36b-c45602e7a9e1',
+    'language' => 'und',
+    'i18n_tsid' => 0,
+    'vocabulary_machine_name' => 'category',
+    'og_taxonomy_category_group' => array(),
+    'field_standard_gf' => array(
+      'und' => array(
+        0 => array(
+          'value' => 1,
+        ),
+      ),
+    ),
+    'field_naming_rules' => array(),
+    'parent' => array(
+      0 => 'dc45a58c-0a76-4ac9-950e-55a43ef27bd0',
+    ),
+  );
+  $terms[] = array(
+    'name' => 'Marketing and Sales',
+    'description' => '',
+    'format' => 'filtered_html',
+    'weight' => 0,
+    'uuid' => 'ef788c9b-1b61-4a48-b604-23ed13953889',
+    'language' => 'und',
+    'i18n_tsid' => 0,
+    'vocabulary_machine_name' => 'category',
+    'og_taxonomy_category_group' => array(),
+    'field_standard_gf' => array(
+      'und' => array(
+        0 => array(
+          'value' => 1,
+        ),
+      ),
+    ),
+    'field_naming_rules' => array(),
+  );
+  $terms[] = array(
+    'name' => 'Financial report',
+    'description' => '',
+    'format' => 'filtered_html',
+    'weight' => 0,
+    'uuid' => 'f1941382-f754-47b2-b7e7-55347d874c87',
+    'language' => 'und',
+    'i18n_tsid' => 0,
+    'vocabulary_machine_name' => 'category',
+    'og_taxonomy_category_group' => array(),
+    'field_standard_gf' => array(
+      'und' => array(
+        0 => array(
+          'value' => 1,
+        ),
+      ),
+    ),
+    'field_naming_rules' => array(),
+    'parent' => array(
+      0 => 'a88f8616-c232-489d-934c-d9f49d3301e2',
+    ),
+  );
+  $terms[] = array(
+    'name' => 'Pay slip',
+    'description' => '',
+    'format' => 'filtered_html',
+    'weight' => 0,
+    'uuid' => 'f714c6c9-dfd4-4eef-81d9-b58c89a2fee8',
+    'language' => 'und',
+    'i18n_tsid' => 0,
+    'vocabulary_machine_name' => 'category',
+    'og_taxonomy_category_group' => array(),
+    'field_standard_gf' => array(
+      'und' => array(
+        0 => array(
+          'value' => 1,
+        ),
+      ),
+    ),
+    'field_naming_rules' => array(),
+    'parent' => array(
+      0 => 'f78beb28-2624-4a99-b347-bbe9f10fc1c7',
+    ),
+  );
+  $terms[] = array(
+    'name' => 'Human Resources',
+    'description' => '',
+    'format' => 'filtered_html',
+    'weight' => 0,
+    'uuid' => 'f78beb28-2624-4a99-b347-bbe9f10fc1c7',
+    'language' => 'und',
+    'i18n_tsid' => 0,
+    'vocabulary_machine_name' => 'category',
+    'og_taxonomy_category_group' => array(),
+    'field_standard_gf' => array(
+      'und' => array(
+        0 => array(
+          'value' => 1,
+        ),
+      ),
+    ),
+    'field_naming_rules' => array(),
+  );
+  $terms[] = array(
+    'name' => 'Quote',
+    'description' => '',
+    'format' => 'filtered_html',
+    'weight' => 0,
+    'uuid' => 'c35719bf-dd0c-402f-a53f-8e2455f62fe5',
+    'language' => 'und',
+    'i18n_tsid' => 0,
+    'vocabulary_machine_name' => 'category',
+    'og_taxonomy_category_group' => array(),
+    'field_standard_gf' => array(
+      'und' => array(
+        0 => array(
+          'value' => 1,
+        ),
+      ),
+    ),
+    'field_naming_rules' => array(),
+    'parent' => array(
+      0 => 'a88f8616-c232-489d-934c-d9f49d3301e2',
+    ),
+  );
+  $terms[] = array(
+    'name' => 'Miscellaneous',
+    'description' => '',
+    'format' => 'filtered_html',
+    'weight' => 0,
+    'uuid' => 'ac8298ec-32c5-4e9f-b209-e0edddf66fb9',
+    'language' => 'und',
+    'i18n_tsid' => 0,
+    'vocabulary_machine_name' => 'category',
+    'og_taxonomy_category_group' => array(),
+    'field_standard_gf' => array(
+      'und' => array(
+        0 => array(
+          'value' => 1,
+        ),
+      ),
+    ),
+    'field_naming_rules' => array(),
+  );
+
   return $terms;
 }

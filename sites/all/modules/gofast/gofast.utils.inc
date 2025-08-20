@@ -9,12 +9,82 @@ function gofast_request_is_ajax() {
   return !empty($_SERVER['HTTP_X_REQUESTED_WITH']) && strtolower($_SERVER['HTTP_X_REQUESTED_WITH']) === 'xmlhttprequest';
 }
 
+/** 
+ * Handler called by gofast_update_field_database to write fields.
+ */
+function gofast_update_field_database_write($entities, $field_name, $table, $columns, $entity_type = "node", $id_key = "nid") {
+  $ids = array_map(fn($ent) => $ent->$id_key, $entities);
+  $full_columns = array_map(fn($col) => "{$field_name}_{$col}", $columns);
+  db_delete("$table")->condition("entity_id", $ids, "IN")->execute();
+
+  $query = db_insert($table)->fields(["delta", "entity_type", "bundle", "deleted", "entity_id", "revision_id", "language", ...$full_columns]);
+  foreach ($entities as $entity) {
+    $inserted_values = [];
+    foreach($entity->$field_name[LANGUAGE_NONE] as $delta => $entry) {
+      $fields = [
+      "entity_type" => $entity_type,
+      "bundle" => $entity->type ?? $entity_type,
+      "deleted" => 0,
+      "entity_id" => $entity->$id_key,
+      "revision_id" => $entity->rid ?? $entity->$id_key,
+      "language" => LANGUAGE_NONE,
+    ];
+    foreach ($columns as $column) {
+      $value = $entry[$column];
+      $fields["{$field_name}_{$column}"] = $value;
+    }
+    $field_set_hash = md5(serialize($fields)); // Use a hash to compare with previously inserted rows
+    // Skip duplicate rows
+      if (in_array($field_set_hash, $inserted_values)) {
+        continue;
+      }
+      $inserted_values[] = $field_set_hash;
+      $fields['delta'] = $delta;
+      $query->values($fields);
+    }
+  }
+  $query->execute();
+}
+
+/**
+ * This function is intended to update/insert node fields on database without calling field_attach_update.
+ * This is needed because field_attach_update performs poorly.
+ */
+function gofast_update_field_database($entities, $field_name) {
+  if (!is_array($entities)) {
+    $entities = [$entities];
+  }
+  $info = field_info_field($field_name);
+  if (!$info) {
+    return;
+  }
+  foreach($entities as $entity) {
+    if(!isset($entity->$field_name[LANGUAGE_NONE])){
+      return;
+    }
+  }
+
+  $table = "field_data_$field_name";
+  $columns = array_keys($info["columns"]);
+  $entity_type = reset(array_keys($info["bundles"]));
+
+  $id_key = entity_get_info($entity_type)['entity keys']["id"];
+  gofast_update_field_database_write($entities, $field_name, $table, $columns, $entity_type, $id_key);
+
+  // Assuming the caller is outside an entity save operation, caches for
+  // the entities must be cleared.
+  foreach($entities as $entity) {
+    entity_get_controller($entity_type)->resetCache([$entity->$id_key]);
+    cache_clear_all("field:$entity_type:{$entity->$id_key}", 'cache_field');
+  }
+}
+
 /**
  * Save a node technically, so the last modifier and the modification date are not modified
  *
  * @param $node
  *  The node to save
- * @return $node
+ * @return object $node
  * the prepared node
  */
 function gofast_prepare_node_save_technically($node){
@@ -542,7 +612,7 @@ function gofast_delete_cookie($name) {
  * @param type $url the URL we want to get its HTTP code
  * @return int the HTTP code
  */
-function gofast_get_http_code($url) {
+function gofast_get_http_code($url, $timeout = 5) {
   $full_url = $url;
   $ch = curl_init();
   global $prevent_check_alfresco_status;
@@ -582,7 +652,7 @@ function gofast_get_http_code($url) {
   curl_setopt($ch, CURLOPT_NOBODY, FALSE);
   curl_setopt($ch, CURLOPT_RETURNTRANSFER, TRUE);
   curl_setopt($ch, CURLOPT_HEADER, TRUE);
-  curl_setopt($ch, CURLOPT_TIMEOUT, 3);
+  curl_setopt($ch, CURLOPT_TIMEOUT, $timeout);
   curl_setopt($ch, CURLOPT_COOKIEFILE, $cookie_name);
   curl_setopt($ch, CURLOPT_COOKIEJAR, $cookie_name);
 
@@ -1818,7 +1888,7 @@ function gofast_resynchro_ldap_membership_one_user($account){
 
     $LdapServer = gofast_ldap_server_load(GOFAST_LDAP_INT_SERVER);
     $all_groups = gofast_og_get_spaces_by_user($account, TRUE, FALSE, FALSE,FALSE);
-    $must_be_manager = false;
+    $must_be_site_manager = false;
     $member_cn = gofast_ldap_user_dn($account);
     $count_public = 0;
     foreach($all_groups as $key=>$space){
@@ -1853,7 +1923,7 @@ function gofast_resynchro_ldap_membership_one_user($account){
         $roles = gofast_og_get_user_roles($gid, $uid);
         $role = array_shift(array_values( $roles));
         if($role == "administrator member" && $space->type != "private_space"){
-            $must_be_manager = true;
+            $must_be_site_manager = true;
         }
         $rid = array_keys($roles)[0];
          //check if the user already have this role into LDAP object
@@ -1914,20 +1984,18 @@ function gofast_resynchro_ldap_membership_one_user($account){
     //check if user is on a space on LDAP but not on Drupal
     gofast_resynchro_ldap_remove_bad_ldap($account);
 
-
-     if($must_be_manager == true){
-        //check if the user has the manager's role
-        if(!gofast_user_is_manager($account)){
-              $role_manager = user_role_load_by_name(GOFAST_ROLE_MANAGER);
-              user_multiple_role_edit(array($account->uid), 'add_role', $role_manager->rid);
-        }
+    if($must_be_site_manager == true){
+      //check if the user has the manager's role
+      if(!gofast_user_is_site_manager($account)){
+            $role_site_manager = user_role_load_by_name(GOFAST_ROLE_MANAGER);
+            user_multiple_role_edit(array($account->uid), 'add_role', $role_site_manager->rid);
+      }
     }else{
-         if(gofast_user_is_manager($account)){
-              $role_manager = user_role_load_by_name(GOFAST_ROLE_MANAGER);
-              user_multiple_role_edit(array($account->uid), 'remove_role', $role_manager->rid);
+        if(gofast_user_is_site_manager($account)){
+              $role_site_manager = user_role_load_by_name(GOFAST_ROLE_MANAGER);
+              user_multiple_role_edit(array($account->uid), 'remove_role', $role_site_manager->rid);
         }
     }
-    
     
     if(gofast_user_is_business_admin($account) || gofast_user_is_adm($account)){
           gofast_og_user_rebuild_base_memberships($account, true);
@@ -2200,7 +2268,7 @@ function gofast_block_users_massively($block = array(), $pass = array(), $except
 
 
 function gofast_is_node_inside_space($node,$gid){
-    $node_groups = $node->{GOFAST_OG_CONTENT_MEMBERSHIP_FIELD}[LANGUAGE_NONE];
+    $node_groups = (array) $node->{GOFAST_OG_CONTENT_MEMBERSHIP_FIELD}[LANGUAGE_NONE];
     if (!empty($node_groups) && count($node_groups) > 0) {
       foreach ($node_groups as $group_array) {
         if ($group_array["target_id"] == $gid) {
@@ -2518,9 +2586,11 @@ function gofast_dashboard_stop_service(){
 
 function gofast_get_soffice_status(){
   $filename = "/var/www/d7/sites/default/files/soffice_status.txt";
-  $file = fopen($filename, "r");
-  $status = fread($file, filesize($filename));
-  fclose($file);
+  if (file_exists($filename)){
+    $file = fopen($filename, "r");
+    $status = fread($file, filesize($filename));
+    fclose($file);
+  }
 
   if(trim($status) == "soffice:OK"){
       return true;
@@ -2539,128 +2609,6 @@ function gofast_check_service_autorestart_activated($service_name){
      }else{
          return true;
      }
-}
-
-/*
- * API to add stamp into a PDF document
- * $_GET["nid"] contains the node id
- * $_GET["stamp_text"] contains the stamp text. use following mask to insert variables :
- * %current_date% => current date
- * TODO : add more if needed
- * $_GET["position"] position to put the stamp. See https://manuals.setasign.com/api-reference/setapdf/c/SetaPDF.Stamper#constant_POSITION_CENTER_BOTTOM
- */
-function gofast_stamp_add(){
-    //first we check if the user is authenticated or not. If not, we only allow this function if the request is made locally ( from Bonitasoft for exemple )
-    global $user;
-    if($user->uid == 0){
-        if($_SERVER["REMOTE_ADDR"] !== "127.0.0.1" && $_SERVER["REMOTE_ADDR"] !== "::1"){
-            drupal_access_denied();
-            exit;
-        }
-    }
-
-    //check if the node param is correct
-    $nid = $_GET["nid"];
-    if(isset($nid)){
-        $node = node_load($nid);
-        if(!isset($node->nid)){
-            drupal_access_denied();
-            exit;
-        }
-       $node_tid = $node->field_format[LANGUAGE_NONE][0]["tid"];
-       $tid_pdf =  gofast_taxonomy_get_taxo_id_from_extension("pdf");
-       $tid_pdf_image = gofast_taxonomy_get_taxo_id_from_extension("pdf_image");
-       if($node_tid != $tid_pdf && $node_tid != $tid_pdf_image){
-            drupal_access_denied();
-            exit;
-       }
-    }
-
-    //get the stamp text
-     require_once(drupal_get_path('module', 'gofast') .'/gofast.pdf_stamper.api.inc');
-    $stamp_text = $_GET["stamp_text"];
-    $stamp_text = str_replace("%current_date%", date("j/m/Y H:i:s"), $stamp_text);
-
-    if(isset($_GET["position"])){
-        //check if the value is correct
-        $string_position = $_GET["position"];
-        switch ($string_position) {
-           case 'POSITION_CENTER_BOTTOM' :
-               $position = SetaPDF_Stamper::POSITION_CENTER_BOTTOM;
-              break;
-           case 'POSITION_CENTER_MIDDLE' :
-               $position = SetaPDF_Stamper::POSITION_CENTER_MIDDLE;
-              break;
-           case 'POSITION_CENTER_TOP' :
-              $position = SetaPDF_Stamper::POSITION_CENTER_TOP;
-              break;
-           case 'POSITION_LEFT_BOTTOM' :
-              $position = SetaPDF_Stamper::POSITION_LEFT_BOTTOM;
-              break;
-           case 'POSITION_LEFT_MIDDLE' :
-               $position = SetaPDF_Stamper::POSITION_LEFT_MIDDLE;
-              break;
-           case 'POSITION_LEFT_TOP' :
-              $position = SetaPDF_Stamper::POSITION_LEFT_TOP;
-              break;
-           case 'POSITION_RIGHT_BOTTOM' :
-              $position = SetaPDF_Stamper::POSITION_RIGHT_BOTTOM;
-              break;
-           case 'POSITION_RIGHT_MIDDLE' :
-               $position = SetaPDF_Stamper::POSITION_RIGHT_MIDDLE;
-              break;
-           case 'POSITION_RIGHT_TOP' :
-               $position = SetaPDF_Stamper::POSITION_RIGHT_TOP;
-            break;
-           default:
-               $position = SetaPDF_Stamper::POSITION_CENTER_BOTTOM;
-           break;
-          }
-        }else{
-            $position = SetaPDF_Stamper::POSITION_CENTER_BOTTOM;
-        }
-
-    if (isset($_GET['showOnPage'])){
-      $string_showOnPage = $_GET['showOnPage'];
-        switch ($string_showOnPage) {
-          case 'PAGES_ALL' :
-            $page_location = SetaPDF_Stamper::PAGES_ALL;
-          break;
-          case 'PAGES_EVEN' :
-            $page_location = SetaPDF_Stamper::PAGES_EVEN;
-          break;
-          case 'PAGES_FIRST' :
-            $page_location = SetaPDF_Stamper::PAGES_FIRST;
-          break;
-          case 'PAGES_LAST' :
-            $page_location = SetaPDF_Stamper::PAGES_LAST;
-          break;
-          case 'PAGES_ODD' :
-            $page_location = SetaPDF_Stamper::PAGES_ODD;
-          break;
-          default :
-            $page_location = SetaPDF_Stamper::PAGES_LAST;
-        break;
-        }
-    }else{
-      $page_location = SetaPDF_Stamper::PAGES_LAST;
-    }
-    if(isset($_GET['textColor'])){
-      $textColor = $_GET['textColor'];
-    }
-    if(isset($_GET['translate_y'])){
-      $translateY = $_GET['translate_y'];
-    }else{
-      $translateY = 0;
-    }
-    $options = array(
-    'position' => $position,
-    'showOnPage' => $page_location,
-    'translateX' => -60,
-    'translateY' => $translateY,
-    );
-    $return = gofast_pdf_stamper_apply_stamp($node, $stamp_text, $options, $textColor);
-
 }
 
 function gofast_get_user_status_from_uid($uid){
@@ -2921,6 +2869,57 @@ function gofast_get_node_type($nid, $machine_type = FALSE){
   return $return_type;
 }
 
+
+function gofast_get_node_type_multiple($nids, $machine_type = false){
+  $query = db_select('node', 'n')
+            ->fields('n', array('nid', 'type'))
+            ->condition('nid', (array)$nids, "IN")
+            ->execute();
+  $results = $query->fetchAll();
+  $node_types = array();
+  foreach($results as $result){
+    $nid = $result->nid;
+    if($machine_type){
+      $node_types[$nid] = $result->type;
+      continue;
+    }
+
+    switch($result->type){
+      case 'alfresco_item':
+        $node_types[$nid] = "Document";
+        break;
+      case 'article':
+        $node_types[$nid] = "Article";
+        break;
+      case 'group':
+        $node_types[$nid] = "Group";
+        break;
+      case 'forum':
+        $node_types[$nid] = "Forum";
+        break;
+      case 'webform':
+        $node_types[$nid] = "Web Form";
+        break;
+      case 'organisation':
+        $node_types[$nid] = "Organisation";
+        break;
+      case 'extranet':
+        $node_types[$nid] = "Extranet";
+        break;
+      case 'public':
+        $node_types[$nid] = "Public";
+        break;
+      case 'private_space':
+        $node_types[$nid] = "Personal Space";
+        break;
+      default:
+        $node_types[$nid] = $result->type;
+        break;
+    }
+  }
+  return $node_types;
+}
+
 /*
  * Helper function to get space defaults
  */
@@ -2931,6 +2930,7 @@ function gofast_admin_get_space_defaults(){
       'create_sub_space' => FALSE,
       'group_add_external_user' => TRUE,
       'organization_add_external_user' => TRUE,
+      'field_classification' => "_none",
   );
   return variable_get("spaces_defaults", $default_spaces_configuration);
 }
@@ -2983,7 +2983,7 @@ function gofast_node_get_icon($node){
       $icon_class = "fas fa-video";
       break;
     case 'webform':
-      $icon_class = "far fa-list-alt";
+      $icon_class = "far fa-file-signature";
       break;
     case 'forum':
       $icon_class = "far fa-comments";
@@ -3213,6 +3213,10 @@ function gofast_xss_clean($str, $is_image = FALSE, $forbidden_tags = array("ifra
     return $str;
   }
 
+  if (is_bool($str)) {
+    return $str;
+  }
+  
   $str = remove_invisible_characters($str);
 
   // If a word is abnormally long, there may be some too heavy base64-encoded data: remove it
@@ -3710,4 +3714,138 @@ function gofast_node_has_extranet_location($node) {
   $ancestors = gofast_og_get_ancestors($node, full: true, flat: true);
   $ancestors_types = array_map(fn ($n) => $n->type, $ancestors);
   return in_array('extranet', $ancestors_types, strict: true);
+}
+
+/**
+ * Checks if any item of an iterable value satisfies the given predicate.
+ *
+ * If no predicate is given, a default "always true" predicate is used.
+ * This will return true if the iterable yields at least one item, or false if
+ * it yields nothing (empty array, generator, etc)
+ *
+ * @template TValue Iterable value type
+ * @template TKey Iterable key type
+ * @param iterable<TKey,TValue> $iterable An iterable object on which to run the predicate.
+ * @param ?callable(TValue,TKey):bool $predicate The predicate function to run on every element of
+ *  the given iterable. The element's value and key are given to the predicate
+ *  function (in that order).
+ * @return bool true if any element matched the predicate (the predicate
+ *  function returned true), false otherwise (no elements matched the predicate)
+ */
+function gofast_iterable_any($iterable, $predicate = null) {
+  $predicate = isset($predicate) ? $predicate : fn() => true;
+  foreach($iterable as $key => $value) {
+    if($predicate($value, $key)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * @var string Max date time value according to MySQL's documentation as of 2024-05-24
+ * @see https://dev.mysql.com/doc/refman/8.0/en/datetime.html
+ */
+const MYSQL_MAX_DATETIME_VALUE = '9999-12-31 23:59:59';
+
+/**
+ * @var string Date time column format according to MySQL's documentation
+ * @see https://dev.mysql.com/doc/refman/8.0/en/datetime.html
+ */
+const MYSQL_DATETIME_FORMAT = 'Y-m-d H:i:s';
+
+/**
+ * Make an html menu to show more spaces as popup when there is too many spaces to display
+ */
+function gofast_get_show_more_space_template($gids) {
+  global $user;
+
+  $displayed_spaces_count = $_GET["display_count"] ?? TAGS_DISPLAY_AMOUNT;
+  $spaces_list_popup = "";
+  // $gids = array_filter($gids, function($gid) use($user) {
+  //   $node_access = (og_get_membership('node', $gid, 'user', $user->uid) != FALSE) || gofast_userlist_og_is_user_member_of_space($gid) || $user->uid === 1;
+  //   return $node_access;
+  // });
+
+  $gids = array_values($gids);
+  $more_gids = array_slice($gids, $displayed_spaces_count);
+  foreach ($more_gids as $gid) {
+    $space_node = node_load($gid);
+    if(!$space_node){
+      continue;
+    }
+    $space_path = str_replace("/Sites", "",gofast_cmis_space_get_webdav_path($gid));
+    $space_has_parent = gofast_og_get_parent($space_node);
+    $group_node_title = gofast_get_node_title($gid, array(), true);
+    $group_icon = gofast_taxonomy_icon_filename($space_node->field_format[LANGUAGE_NONE][0]['tid']);
+    if($space_has_parent){
+      $group_node_title = ".../{$group_node_title}";
+    }
+    $spaces_list_popup .= "<li class='navi-item'><a href=/node/" . $gid . " title='" . $space_path . "' class='navi-link'><span class='navi-icon'><i class='fas " . $group_icon . "'></i></span><span class='navi-text'>" . $group_node_title . "</span></a></li>";
+  }
+
+  $count_more = count($gids) - $displayed_spaces_count;
+  $button_text = $count_more . " " . t("more", array(), array("context" => "gofast:gofast_activity_feed")) . "...";
+  $more_spaces_list = theme('gofast_activity_table_more_spaces', array('popover_content' => $spaces_list_popup, 'button_text' => $button_text));
+  if($_GET["isAjax"] && $_GET["isAjax"] == true){
+    echo $more_spaces_list;
+    exit;
+  }
+  
+  return $more_spaces_list;
+}
+
+function gofast_get_node_bundle_label($node_type, $prevent_translation = TRUE) {
+  if($prevent_translation){
+    $bundles = array(
+      'group' => 'Group',
+      'organisation' => 'Organisation',
+      'private_space' =>'Personal Space',
+      'extranet' => 'Extranet',
+      'public' => 'Public',
+      'alfresco_item' => 'Content',
+      'article' => 'Wiki article',
+      'webform' => 'Webform',
+      'forum' => 'Forum',
+    );
+  }else{
+    $lang = $GLOBALS['user']->language;
+    $bundles = array(
+      'group' => t('Group', array(), array('langcode' => $lang, 'context' => 'gofast')),
+      'organisation' => t('Organisation', array(), array('langcode' => $lang, 'context' => 'gofast')),
+      'private_space' => t('Personal Space', array(), array('langcode' => $lang, 'context' => 'gofast')),
+      'extranet' => t('Extranet', array(), array('langcode' => $lang, 'context' => 'gofast')),
+      'public' => t('Public', array(), array('langcode' => $lang, 'context' => 'gofast')),
+      'alfresco_item' => t('Content', array(), array('langcode' => $lang, 'context' => 'gofast')),
+      'article' => t('Wiki article', array(), array('langcode' => $lang, 'context' => 'gofast')),
+      'webform' => t('Webform', array(), array('langcode' => $lang, 'context' => 'gofast')),
+      'forum' => t('Forum', array(), array('langcode' => $lang, 'context' => 'gofast')),
+    );
+  }
+  return $bundles[$node_type];
+}
+
+/**
+ * Get templated explorer tree
+ * @param array $tree
+ * @return string HTML string of templated explorer tree
+ */
+function gofast_get_explorer_tree_template($tree, $tab_id, $node_type = null){
+  $items = "";
+
+  foreach ($tree as $root_item) {
+    $items .= theme('gofast_side_file_browser_element', ['item' => $root_item, 'depth' => 0]);
+  }
+  $items_output = theme('gofast_side_file_browser', ['items' => $items, "tab_id" => $tab_id, "node_type" => $node_type]);
+  return $items_output;
+}
+
+/**
+ * Get the list of allowed no-cors requests
+ * 
+ */
+function gofast_get_allowed_no_cors_requests(){
+  return [
+    '/api/webform/get_image',
+  ];
 }

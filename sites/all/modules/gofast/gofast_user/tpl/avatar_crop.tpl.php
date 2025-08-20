@@ -7,9 +7,9 @@
   <div class="row">
     <div class="col-lg-9" style="background-color: #f7f7f7;">
       <div class="img-container card-body" id="img-cropper" style="max-width: 95%;">
-        <img id="image" src="<?php print $avatar ?>" />
+        <img data-done-event="avatarChange" data-target-endpoint="/gofast/save/avatar" data-body-attributes="<?= base64_encode(json_encode(["uid" => $uid]))?>" data-redirect-url="/user/<?= $uid ?>" id="image" src="<?php print $avatar ?>" />
       </div>
-      <?= theme("gofast_cropper_buttons", array("id_attribute" => "uid='$uid'")) ?>
+      <?= theme("gofast_cropper_buttons") ?>
     </div>
     <div class="col-lg-3" id="gofast_crop_avatar">
       <h5 class="text-muted mb-3"><?= t("Cropped image") ?></h5>

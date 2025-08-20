@@ -19,10 +19,11 @@
         Drupal.t("Public") +
         '</option></select>',
         '',
-        '<div class="d-flex"><input type="text" name="ac-list-tags-total-members" class="form-control form-control-tags js-tagify filter-field-directory-spaces" data-user placeholder="' + Drupal.t("Filter by member name") + '" /></div>',
-        '<div class="d-flex"><input type="text" name="ac-list-tags-total-administrators" class="form-control form-control-tags js-tagify filter-field-directory-spaces" data-user placeholder="' + Drupal.t("Filter by administrator name") + '" /></div>',
-        '<div class="d-flex"><input type="text" name="ac-list-tags-total-pending-members" class="form-control form-control-tags js-tagify filter-field-directory-spaces" data-user placeholder="' + Drupal.t("Filter by member name") + '" /></div>',
-        '<div class="GofastDirectoryFilterButtons d-flex ml-auto mt-auto align-items-center" style="gap: .5rem; transform: translate(.5rem, -.5rem);"><button type="submit" class="btn btn-xs btn-primary btn-icon m-0">' +
+        '<div class="d-flex align-self-start"><input type="text" name="ac-list-tags-total-members" class="form-control form-control-tags js-tagify filter-field-directory-spaces tagify-filter-container" data-dropdown-class data-user data-userlist placeholder="' + Drupal.t("Filter by member name") + '" /></div>',
+        '<div class="d-flex align-self-start"><input type="text" name="ac-list-tags-total-administrators" class="form-control form-control-tags js-tagify filter-field-directory-spaces tagify-filter-container" data-dropdown-class data-user data-userlist placeholder="' + Drupal.t("Filter by administrator name") + '" /></div>',
+        '<div class="d-flex align-self-start"><input type="text" name="ac-list-tags-total-pending-members" class="form-control form-control-tags js-tagify filter-field-directory-spaces tagify-filter-container" data-dropdown-class data-user data-userlist placeholder="' + Drupal.t("Filter by member name") + '" /></div>',
+        '<input type="text" name="path" class="form-control GofastDirectorySpacesFilter__path"  placeholder="' + Drupal.t("Filter by space path", {}, {context: 'gofast:gofast_directory'}) + '" />',
+        '<div class="GofastDirectoryFilterButtons d-flex ml-auto align-items-center align-self-center" style="gap: .5rem;"><button type="submit" class="btn btn-xs btn-primary btn-icon m-0">' +
         '<i class="fas fa-search" style="font-size: 12px !important;"></i>' +
         '</button><button type="reset" class="btn btn-xs btn-light btn-icon m-0">' +
         '<i class="fas fa-undo" style="font-size: 12px !important;"></i>' +
@@ -31,35 +32,39 @@
 
     Drupal.behaviors.gofastDirectorySpaces = {
         attach: function(context, settings){
-            if(document.querySelector('#gofastDirectorySpacesTable') != null){
-                if(!document.querySelector('#gofastDirectorySpacesTable').classList.contains('processed')){
-                    let table = document.querySelector('#gofastDirectorySpacesTable')
-                    table.classList.add('processed')
-                    GofastDirectoryTable.init(table)
-                    if (typeof ResizeObserver != "undefined") {
-                        const directoryResizeObserver = new ResizeObserver(function(entries) {
-                            GofastRefreshKDataTableSubheader("gofastDirectorySpacesTable", "DirectorySpacesFilterForm");
-                        });
-                        directoryResizeObserver.observe(document.querySelector("#gofastDirectorySpacesTable"));
-                        $("#gofastDirectorySpacesTable").on("datatable-on-destroy", function(){
-                            directoryResizeObserver.disconnect();
-                        });
-                    }
-                    $("#gofastDirectorySpacesTable").on("datatable-on-layout-updated", function(){
-                        GofastAddKDataTableSubheader("gofastDirectorySpacesTable", "DirectorySpacesFilterForm", DirectorySpacesTableSubheaderElements);
+            const table = document.querySelector('#gofastDirectorySpacesTable')
+
+            if(table == null){
+                return;
+            }
+
+            if(!table.classList.contains('processed')) {
+                table.classList.add('processed')
+
+                GofastDirectoryTable.init(table)
+                if (typeof ResizeObserver != "undefined") {
+                    const directoryResizeObserver = new ResizeObserver(function(entries) {
+                        GofastRefreshKDataTableSubheader("gofastDirectorySpacesTable", "DirectorySpacesFilterForm");
                     });
-                    $("#gofastDirectorySpacesTable").on("datatable-on-init", function(){
-                        const pagerTitleInterval = setInterval(function(){
-                            if (!$(".datatable-pager-info button").length) {
-                                return;
-                            }
-                            $(".datatable-pager-info button").attr("title", Drupal.t('Select page size'));
-                            clearInterval(pagerTitleInterval);
-                        }, 500);
+                    directoryResizeObserver.observe(table);
+                    $(table).on("datatable-on-destroy", function(){
+                        directoryResizeObserver.disconnect();
                     });
                 }
-                $('.admin_popover[data-toggle="popover"]').on('shown.bs.popover', function(){$('.popover').addClass('adminPopover');});
+                $(table).on("datatable-on-layout-updated", function(){
+                    GofastAddKDataTableSubheader("gofastDirectorySpacesTable", "DirectorySpacesFilterForm", DirectorySpacesTableSubheaderElements);
+                });
+                $(table).on("datatable-on-init", function(){
+                    const pagerTitleInterval = setInterval(function(){
+                        if (!$(".datatable-pager-info button").length) {
+                            return;
+                        }
+                        $(".datatable-pager-info button").attr("title", Drupal.t('Select page size'));
+                        clearInterval(pagerTitleInterval);
+                    }, 500);
+                });
             }
+            $('.admin_popover[data-toggle="popover"]').on('shown.bs.popover', function(){$('.popover').addClass('adminPopover');});
         }
     };
 
@@ -205,7 +210,7 @@
                         title: '',
                         autoHide: false,
                         overflow: 'visible',
-                        width: 35,
+                        width: 70,
                         sortable: false,
                         template: function(data) {
                             let name = data.name
@@ -288,18 +293,29 @@
                         textAlign: 'center'
                     },
                     {
+                        field: "path",
+                        title: _columns.path,
+                        overflow: 'visible',
+                        autoHide: false,
+                        width: 300,
+                        textAlign: 'left',
+                        template: function(data) {
+                            return `<span>${data.breadcrumb.replaceAll("\n", "").replaceAll("\"", "'")}</span>`
+                        }
+                    },
+                    {
                         field: 'buttons',
                         title: "",
                         overflow: 'visible',
                         autoHide: false,
-                        width: 100,
+                        width: 30,
                         textAlign: 'left',
                         sortable: false,
                     },
                     {
                         field: 'actions',
                         title: "",
-                        width: 40,
+                        width: 0,
                         autoHide: false,
                         sortable: false,
                         template: function(data) {
@@ -320,87 +336,77 @@
             });
             
             $("#gofastDirectorySpacesTable").on("datatable-on-check", function(event,args){
-                var selected_records = _table.getSelectedRecords();
-                _selection = "";
-                let has_public = false;
-                selected_records.each(function( index, element ) {
-                   if (element.dataset.type == "public") {
-                      has_public = true;
-                   }
-                   var gid = $(this).find(".gid_span").html();                
-                   _selection += gid+"-";  
-               });
-                $("#container-selected-items .navi-item .ctools-use-modal").each(function(index){
-                      let naviItem = $(this).closest(".navi-item");
-                      if (has_public) {
-                        naviItem.addClass("disabled");
-                        naviItem.attr("title", Drupal.t("Public spaces members are the members of the Public userlist", {}, {context: 'gofast:gofast_userlist'}));
-                        naviItem.attr("data-trigger", "hover");
-                        naviItem.attr("data-placement", "bottom");
-                        naviItem.attr("data-toggle", "tooltip");
-                      } else {
-                        naviItem.removeClass("disabled");
-                        naviItem.removeAttr("title");
-                        naviItem.removeAttr("data-toggle");
-                      }
-                      var href = $(this).attr('href');
-                      var array_href = href.split('/');
-                      if (array_href.includes('contact') && array_href.includes('admins')) {
-                        array_href[array_href.length - 3] = _selection;
-                      } else if ($(this).attr('id') === 'bookmark-link' ||
-                        $(this).attr('id') === 'unbookmark-link' ||
-                        $(this).attr('id') === 'archive-link') {
-                          array_href[array_href.length - 2] = _selection;
-                      } else {
-                        array_href[array_href.length - 1] = _selection;
-                      }
-                      var new_href = array_href.join('/');
-                      $(this).attr('href', new_href);
-                      $(this).removeClass('ctools-use-modal-processed');
-                      $(this).off('click');
-                });
+              $("#gofastDirectorySpacesTable #container-selected-items").removeClass("processed");
+              var selected_records = _table.getSelectedRecords();
+              _GofastKDataTableSelectCounter(selected_records.length, "gofastDirectorySpacesTable");
+              _selection = "";
+              selected_records.each(function( index, element ) {
+                  var gid = $(this).find(".gid_span").html();                
+                  _selection += gid+"-";  
+              });
 
-                GofastTriggerKDataTableMegaDropdown(selected_records,"gofastDirectorySpacesTable");
+              const $targetContainer =  $("#gofastDirectorySpacesTable thead tr:first-of-type th:nth-of-type(2)");
+              // If the dropdown does not exist, get the dropdown from the spaces hidden dropdown
+              if($targetContainer.find("> #container-selected-items").length == 0){
+                const $dropdownContainer = $("#gofastDirectorySpacesTable tr[data-row='0'] [data-field='actions'] .contextual-actions-container");
+                let $dropdownContainerClone = $dropdownContainer.clone(true);
+                $dropdownContainerClone = $("<div id='container-selected-items'></div>").html($dropdownContainerClone);
+                // Put the dropdown menu next to the 'check all' button
+                $targetContainer.html($dropdownContainerClone)
+              }
+              
+              $("#gofastDirectorySpacesTable #container-selected-items > .contextual-actions-container >.dropdown").show()
+              $("#gofastDirectorySpacesTable #container-selected-items > .contextual-actions-container >.dropdown").once("directory-dropdown").on("show.bs.dropdown", (event) => {
+                // Prevent reload dropdown menu if the selection didn't change
+                if($("#gofastDirectorySpacesTable #container-selected-items").hasClass("processed")){
+                  return;
+                }
+                $("#gofastDirectorySpacesTable #container-selected-items").addClass("processed")
+                let selected_records = _table.getSelectedRecords();
+                let nids = [];
+                selected_records.find(".gid_span").each((i, el) => {
+                  nids.push($(el).html());
+                })
+                $("#gofastDirectorySpacesTable #container-selected-items > .contextual-actions-container > .dropdown > .dropdown-menu").html($('<div class="loader-activity-menu-active"></div>'))
+
+                $.get("/directory/spaces_get_actions", {nids: nids}, (data) => {
+                  let dropdownContent = $(data).find(".contextual-actions-container >.dropdown > .dropdown-menu").html();
+                  $(event.target).find("> .dropdown-menu").html(dropdownContent)
+                  // If there is only one space selected, don't convert href to bulk actions
+                  if(nids.length == 1){
+                    Drupal.behaviors.ZZCToolsModal.attach();
+                    return;
+                  }
+                  $("#container-selected-items .navi-item .ctools-use-modal").each(function(index){
+                    var href = $(this).attr('href');
+                    var array_href = href.split('/');
+                    if (array_href.includes('contact') && array_href.includes('admins')) {
+                      array_href[array_href.length - 3] = _selection;
+                    } else if ($(this).attr('id') === 'bookmark-link' ||
+                      $(this).attr('id') === 'unbookmark-link' ||
+                      $(this).attr('id') === 'archive-link') {
+                        array_href[array_href.length - 2] = _selection;
+                    } else {
+                      array_href[array_href.length - 1] = _selection;
+                    }
+                    var new_href = array_href.join('/');
+                    $(this).attr('href', new_href);
+                    $(this).removeClass('ctools-use-modal-processed');
+                    $(this).off('click');
+                  });
+
+                  Drupal.behaviors.ZZCToolsModal.attach();
+                })
+              })
             });
                   
             $("#gofastDirectorySpacesTable").on("datatable-on-uncheck", function(event,args){
-                var selected_records = _table.getSelectedRecords();
-                _selection = "";
-                let has_public = false;
-                selected_records.each(function( index, element ) {
-                    if (element.dataset.type == "public") {
-                      has_public = true;
-                    }
-                    var gid = $(this).find(".gid_span").html();
-                    _selection += gid+"-";
-                });
-                $("#container-selected-items .navi-item .ctools-use-modal").each(function(index){
-                      let naviItem = $(this).closest(".navi-item");
-                      if (has_public) {
-                        naviItem.addClass("disabled");
-                        naviItem.attr("title", Drupal.t("Public spaces members are the members of the Public userlist", {}, {context: 'gofast:gofast_userlist'}));
-                        naviItem.attr("data-placement", "bottom");
-                        naviItem.attr("data-toggle", "tooltip");
-                        naviItem.attr("data-toggle", "tooltip");
-                      } else {
-                        naviItem.removeClass("disabled");
-                        naviItem.removeAttr("title");
-                        naviItem.removeAttr("data-toggle");
-                      }
-                      var href = $(this).attr("href");
-                      var array_href = href.split("/");
-                      if($(this).attr('id') === 'archive-link') {
-                        array_href[array_href.length - 2] = _selection;
-                      }else{
-                        array_href[array_href.length - 1] = _selection;
-                      }
-                      var new_href = array_href.join("/");
-                      $(this).attr("href", new_href);
-                      $(this).removeClass("ctools-use-modal-processed"); 
-                      $(this).off( "click");
-                });
-
-                GofastTriggerKDataTableMegaDropdown(selected_records,"gofastDirectorySpacesTable");
+              $("#gofastDirectorySpacesTable #container-selected-items").removeClass("processed");
+              var selected_records = _table.getSelectedRecords();
+              _GofastKDataTableSelectCounter(selected_records.length, "gofastDirectorySpacesTable");
+              if(selected_records.length == 0){
+                $("#gofastDirectorySpacesTable #container-selected-items > .contextual-actions-container >.dropdown").hide()
+              }
             });
 
             const interferringEvents = ["datatable-on-ajax-done", "datatable-on-goto-page", "datatable-on-update-perpage"];
@@ -469,26 +475,7 @@
                     return;
                 }
             
-                $('#DirectorySpacesFilterForm').on('submit', function(e){
-                    e.preventDefault()
-                    _table.spinnerCallback(true)
-                    let filterArr = $(this).serializeArray()
-                    let filter = Object.create({})
-
-                    filterArr.forEach(fil => {
-                        if(!!fil.value){
-                            let att = fil.name
-                            filter[att] = fil.value
-                        }
-                    })
-
-                    if($(".datatable-pager-link[data-page='1']:not('.database-pager-link-inactive')").length){
-                        $(".datatable-pager-link[data-page='1']:not('.database-pager-link-inactive')")[0].click();
-                    }
-
-                    _table.setDataSourceParam("query", filter)
-                    _table.load()
-                })
+                $('#DirectorySpacesFilterForm').off('submit').on('submit', e => window.GofastKDataTableFormSubmit(e, _table));
 
                 $('#DirectorySpacesFilterForm').on('reset', function(e){
                     var inputElms = $('input[name^="ac-list-tags"]');

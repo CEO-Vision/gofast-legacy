@@ -320,3 +320,125 @@ function gofast_api_user_invite($params) {
   }
   gofast_api_success("OK");
 }
+
+/*
+ * Implements gofast_api_RESSOURCE_ACTION
+ * @ressource user
+ * @action status
+ * @methods GET, POST
+ */
+function gofast_api_user_status($params)
+{
+  switch ($params['method']) {
+    case 'GET':
+      gofast_api_get_user_status($params);
+      break;
+    case 'POST':
+      gofast_api_post_user_status($params);
+      break;
+    default:
+      gofast_api_not_implemented("This method");
+      break;
+  }
+}
+
+/*
+ * Implements sub call of gofast_api_RESSOURCE_ACTION
+ * @ressource user
+ * @action status
+ * @method GET
+ */
+function gofast_api_get_user_status($params)
+{
+  //Check authentication
+  global $user;
+  if ($user->uid == 0) {
+    gofast_api_not_authorized("Unavailable ressource for anonymous user");
+  }
+  
+  //Check if we have a uid or name param and try to load the user
+  if (isset($params["uid"])) {
+    $identifier = $params["uid"];
+    $target_user = user_load($identifier, TRUE);
+  } else if(isset($params["name"])) {
+    $identifier = $params["name"];
+    $target_user = user_load_by_name($identifier, TRUE);
+  } else{
+    gofast_api_mandatory_parameter("uid or name");
+  }
+  
+  if(!is_object($target_user)){
+    gofast_api_not_found("Unable to find user " . $identifier);
+  }
+  
+  //Check if our current user have permission to see the other user
+  $access = gofast_user_view_access($target_user);
+  
+  if(!$access){
+    gofast_api_not_found("Unable to find user " . $identifier);
+  }
+  
+  //Check user status and return the result
+  $status = !gofast_user_is_left($target_user) && $target_user->status != 0;
+  gofast_api_success(['uid' => $target_user->uid, 'user_status' => (int) $status]);
+}
+
+/*
+ * Implements sub call of gofast_api_RESSOURCE_ACTION
+ * @ressource user
+ * @action status
+ * @method POST
+ */
+function gofast_api_post_user_status($params){
+  //Check authentication
+  global $user;
+  if ($user->uid == 0) {
+    gofast_api_not_authorized("Unavailable ressource for anonymous user");
+  }
+  
+  //Check if the requesting user is business admin
+  $is_business_admin = gofast_user_is_business_admin();
+  if(!$is_business_admin){
+    gofast_api_forbidden("You don't have permission to update users");
+  }
+  
+  //Check if we have a uid or name param and try to load the user
+  if (isset($params["uid"])) {
+    $identifier = $params["uid"];
+    $target_user = user_load($identifier, TRUE);
+  } else if(isset($params["name"])) {
+    $identifier = $params["name"];
+    $target_user = user_load_by_name($identifier, TRUE);
+  } else{
+    gofast_api_mandatory_parameter("uid or name");
+  }
+  
+  if(!is_object($target_user)){
+    gofast_api_not_found("Unable to find user " . $identifier);
+  }
+  
+  //Check if we have a status param
+  if (isset($params["status"])) {
+    $status = $params["status"];
+  } else{
+    gofast_api_mandatory_parameter("status");
+  }
+  
+  //Check if passed status is a boolean
+  if(!is_bool($status) && $status != 0 && $status != 1){
+    gofast_api_mandatory_parameter("boolean status");
+  }
+  $status = (bool) $status;
+  
+  //Check if our current user have permission to see the other user
+  $access = gofast_user_view_access($target_user);
+  
+  if(!$access){
+    gofast_api_not_found("Unable to find user " . $identifier);
+  }
+  
+  //Edit status
+  $status == TRUE ? gofast_user_unleave_user($target_user->uid) : gofast_user_leave_user($target_user->uid);
+  
+  gofast_api_success(['uid' => $target_user->uid, 'user_status' => (int) $status]);
+}

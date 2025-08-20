@@ -286,7 +286,6 @@
       return;
     }
     loadPage("filter");
-    console.log('############# Reload Activity');
   }
 
   function getPagination(spaces, states, types, actors){

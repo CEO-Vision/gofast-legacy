@@ -86,6 +86,12 @@ function gofast_message_ext_split_node($node){
   if(isset($node->field_current_version['und'][0]['value'])){ $version = $node->field_current_version['und'][0]['value']; }
   else{ $version = NULL; }
 
+  if(isset($node->field_classification['und']['0']['tid'])){ $classification = $node->field_classification['und']['0']['tid']; }
+  else{ $classification = NULL; }
+  
+  if(isset($node->field_custom_date['und']['0']['value'])){ $custom_date = strtotime($node->field_custom_date['und']['0']['value']); }
+  else{ $custom_date = NULL; }
+
   //_______________________________________________________________________________________________________________________
 
 
@@ -120,7 +126,9 @@ function gofast_message_ext_split_node($node){
       'changed'                 => $changed,  // Changed timestamp
       'author'                  => $author,   // Custom field author
       $document_reference_label => $document_reference,   // Custom field author
-      'version'                 => $version   // Version of the document
+      'version'                 => $version,   // Version of the document
+      'classification'          => $classification,   // Classification
+      'custom_date'             => $custom_date, // Custom date
   );
 
 
@@ -585,7 +593,12 @@ function gofast_message_ext_api_get_last_event2($nid, $enforced_timestamp = FALS
     //Get all the field modifications recorded by the most recent message
     $edited_fields_array = gofast_message_ext_api_get_updated_fields($message_data);
     foreach($edited_fields_array as $k=>$v){ //Translate
-      $edited_fields_array[$k] = t($v, array(), array('context' => 'gofast:last_event'));
+      $args = array();
+      if($v == "custom_date"){
+        $v = "the field @date_label";
+        $args["@date_label"] = GOFAST_METADATA_CUSTOM_DATE_LABEL;
+      }
+      $edited_fields_array[$k] = t($v, $args, array('context' => 'gofast:last_event'));
     }
     $edited_fields = implode(", ", $edited_fields_array);
     //Get all edited values
@@ -682,7 +695,7 @@ function gofast_message_ext_api_get_last_event2($nid, $enforced_timestamp = FALS
 
     switch($event){
       case 'NCON':
-        $result['message'] = "<span class='font-weight-bolder text-primary'>".t("New content. ", array(), array('context' => 'gofast'))."</span>".t("Created by @user on @date.", array('@user' => $user_name, '@date' => $date), array('context' => 'gofast'));
+        $result['message'] = "<span class='font-weight-bolder text-primary'>".t("New content. ", array(), array('context' => 'gofast'))."</span>".t("Created by @user @date.", array('@user' => $user_name, '@date' => $date), array('context' => 'gofast'));
         $result['event'] = $event;
         break;
       case 'ECON':
@@ -696,7 +709,7 @@ function gofast_message_ext_api_get_last_event2($nid, $enforced_timestamp = FALS
         $result['event'] = $event;
         $result['title'] = $message_data['title']['value'];
         $result['body'] = $message_data['body']['value'];
-        $result['message'] = "<span class='font-weight-bolder text-primary'>".t("New comment. ", array(), array('contexy' => 'gofast'))."</span>".t(" added by @user on @date.", array('@user' => $user_name, '@date' => $date), array('context' => 'gofast'));
+        $result['message'] = "<span class='font-weight-bolder text-primary'>".t("New comment. ", array(), array('contexy' => 'gofast'))."</span>".t(" added by @user @date.", array('@user' => $user_name, '@date' => $date), array('context' => 'gofast'));
         break;
       case 'ECOM':
         $result['event'] = $event;
@@ -836,7 +849,12 @@ function gofast_message_ext_api_get_last_event($nid){
     //Get all the field modifications recorded by the most recent message
     $edited_fields_array = gofast_message_ext_api_get_updated_fields($message_data);
     foreach($edited_fields_array as $k=>$v){ //Translate
-      $edited_fields_array[$k] = t($v, array(), array('context' => 'gofast:last_event'));
+      $args = array();
+      if($v == "custom_date"){
+        $v = "the field @date_label";
+        $args["@date_label"] = GOFAST_METADATA_CUSTOM_DATE_LABEL;
+      }
+      $edited_fields_array[$k] = t($v, $args, array('context' => 'gofast:last_event'));
     }
     $edited_fields = implode(", ", $edited_fields_array);
     //Get all edited values
@@ -895,7 +913,7 @@ function gofast_message_ext_api_get_last_event($nid){
     }
     switch($event){
       case 'NCON':
-        $result['message'] = "<span style='color:red'>".t("New content. ", array(), array('context' => 'gofast'))."</span>".t("Created by @user on @date.", array('@user' => $user_name, '@date' => $date), array('context' => 'gofast'));
+        $result['message'] = "<span style='color:red'>".t("New content. ", array(), array('context' => 'gofast'))."</span>".t("Created by @user @date.", array('@user' => $user_name, '@date' => $date), array('context' => 'gofast'));
         $result['event'] = $event;
         break;
       case 'ECON':
@@ -909,7 +927,7 @@ function gofast_message_ext_api_get_last_event($nid){
         $result['event'] = $event;
         $result['title'] = $message_data['title']['value'];
         $result['body'] = $message_data['body']['value'];
-        $result['message'] = "<span style='color:red'>".t("New comment. ", array(), array('contexy' => 'gofast'))."</span>".t(" added by @user on @date.", array('@user' => $user_name, '@date' => $date), array('context' => 'gofast'));
+        $result['message'] = "<span style='color:red'>".t("New comment. ", array(), array('contexy' => 'gofast'))."</span>".t(" added by @user @date.", array('@user' => $user_name, '@date' => $date), array('context' => 'gofast'));
         break;
       case 'ECOM':
         $result['event'] = $event;
@@ -1063,6 +1081,10 @@ function gofast_message_ext_api_render_event($event){
                 case 'ECON':
                 case 'NREV':
                 case 'ETDL':
+                case 'convert_node':
+                  if($event['event'] == "convert_node") {
+                    $edition['field'] = "conversion";
+                  }
                   $info = gofast_message_ext_api_get_info_field($edition,$myformat,$l);
                   $from = $info['from'];
                   $to = $info['to'];
@@ -1075,7 +1097,7 @@ function gofast_message_ext_api_render_event($event){
                     if ($edition['field']=='URLs'){
                       $edit_card .= '<span>'.t('External links', array(), array('context' => 'gofast')).'</span>';
                     }else{
-                      $edit_card .= '<span>'.t(ucfirst(str_replace('_', ' ', $edition['field'])), array(), array('context' => 'gofast')).'</span>';
+                      $edit_card .= '<span>'.t(gofast_message_ext_api_get_name_by_field($edition['field']), array(), array('context' => 'gofast')).'</span>';
                     }
                     
                     if($edition['field'] == 'body' || $edition['field'] == 'summary'){
@@ -1098,7 +1120,7 @@ function gofast_message_ext_api_render_event($event){
                     if ($edition['field']=='URLs'){
                       $title_card .= '<span>'.t('External links', array(), array('context' => 'gofast')).'</span>';
                     }else{
-                      $title_card = '<span>' . t(ucfirst(str_replace('_', ' ', $edition['field'])), array(), array('context' => 'gofast')) . "</span>";
+                      $title_card = '<span>' . t(gofast_message_ext_api_get_name_by_field($edition['field']), array(), array('context' => 'gofast')) . "</span>";
                     } 
                     if($edition['field'] == 'body' || $edition['field'] == 'summary'){
                       $content_card = $from;
@@ -1125,13 +1147,13 @@ function gofast_message_ext_api_render_event($event){
                       $edition['field'] = gofast_kanban_get_readable_name_specific_fields($edition['field'], false);
                     }
                     if(strpos($edition["field"], "Global") !== false){
-                      $title_card = '<span>' . t(ucfirst(str_replace('_', ' ', $edition['field'])), array(), array('context' => 'gofast')) . "</span>";
+                      $title_card = '<span>' . t(gofast_message_ext_api_get_name_by_field($edition['field']), array(), array('context' => 'gofast')) . "</span>";
                       $fraction = $to;
                       $attribut = gofast_message_ext_api_get_progress_percentage($fraction);
                       $edit_content .= '<div class="progress position-relative"><div class="progress-bar" style="width:'.$attribut.'%!important" role="progressbar" aria-valuenow="100" aria-valuemin="0" aria-valuemax="100">'.$attribut.'%</div></div>';
                     }else{
                     // Title configuration for Edition Card
-                      $title_card = '<span>' . t(ucfirst(str_replace('_', ' ', $edition['field'])), array(), array('context' => 'gofast')) . "</span>";
+                      $title_card = '<span>' . t(gofast_message_ext_api_get_name_by_field($edition['field']), array(), array('context' => 'gofast')) . "</span>";
                       if($edition['field'] =='ruid'){
                         $title_card = '<span>' . t("Revision identifier") . "</span>";
                       }else if ($edition['field']=='URLs'){
@@ -1540,6 +1562,16 @@ function gofast_message_ext_api_get_progress_percentage($fraction) {
 }
 
 /**
+ * Given a "technical" message field (e.g. personal_in_charge), gives the
+ * human-readable (and translatable) field name
+ */
+function gofast_message_ext_api_get_name_by_field($string) {
+    $string = str_replace('_', ' ', $string); // replace underscores with spaces
+    $string = ucwords($string); // capitalize first letter
+    return $string;
+}
+
+/**
  * Retrieves formatted information from the edition field based on the field type.
  *
  * @param array $edition The edition data.
@@ -1549,11 +1581,12 @@ function gofast_message_ext_api_get_progress_percentage($fraction) {
  * @return array An associative array with formatted information from the field.
  */
 function gofast_message_ext_api_get_info_field($edition, $myformat, $l) {
-  $isTaxoTerm = $edition['field'] == "criticity" || $edition['field'] == "state" || $edition['field'] == "criticity" || $edition['field'] == "category" || $edition['field'] == "tags"  || $edition['field'] == "task_column";
+  $isTaxoTerm = $edition['field'] == "criticity" || $edition['field'] == "state" || $edition['field'] == "classification" || $edition['field'] == "category" || $edition['field'] == "tags"  || $edition['field'] == "task_column";
   $isNodeRef = $edition['field'] == "targets" || $edition['field'] == "groups";
   $isUserTerm = $edition['field'] == "members" || $edition['field'] == "person_in_charge" || strpos($edition['field'], "assignee") !== false;
-  $isDateTerm = strpos($edition['field'], "deadline") !== false;
+  $isDateTerm = strpos($edition['field'], "deadline") !== false || $edition['field'] == "custom_date" ;
   $isTDLStatusTerm = strpos($edition['field'], "status") !== false;
+  $isConversion = strpos($edition['field'], "conversion") !== false;
 
   if ($isTaxoTerm) { //Translating ids in name
     $from = gofast_message_ext_api_get_term($edition['from']);
@@ -1572,6 +1605,9 @@ function gofast_message_ext_api_get_info_field($edition, $myformat, $l) {
     $to_themed_status = $edition['to'] == 0 ? t("Todo", array(), $l) : t("Done", array(), $l);
     $from = $from_themed_status;
     $to = $to_themed_status;
+  } else if ($isConversion) {
+    $from = strtoupper(end(explode(".", $edition["from"])));
+    $to = strtoupper(end(explode(".", $edition["to"])));
   } else {
     $from = $edition['from'];
     $to = $edition['to'];

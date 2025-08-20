@@ -12,4 +12,3 @@ var __webpack_exports__ = {};
 
 /******/ })()
 ;
-//# sourceMappingURL=tinymce.bundle.js.map

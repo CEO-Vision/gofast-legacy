@@ -112,10 +112,20 @@
     
     // Load the overriding css file right after the ithit css is loaded
     // And modify body's css to prevent the unexpected flickers.
-    $('head').on('DOMNodeInserted', 'style', function(e) {
-      if (e.target.textContent.indexOf('ui-mobile') >= 0) {
-        $('head').append('<link rel="stylesheet" href="/sites/all/modules/gofast/gofast_mobile/css/override_ajax_file_browser_mobile.css?'+Date.now() + '" />');
-      }
+    const uiMobileStyleObserver = new MutationObserver(function(mutationsList, observer) {
+      mutationsList.forEach(function(mutation) {
+          if (mutation.type === 'childList' && mutation.addedNodes.length > 0) {
+              mutation.addedNodes.forEach(function(node) {
+                  if (node.nodeName === 'STYLE' && node.textContent.indexOf('ui-mobile') >= 0) {
+                      $('head').append('<link rel="stylesheet" href="/sites/all/modules/gofast/gofast_mobile/css/override_ajax_file_browser_mobile.css?' + Date.now() + '" />');
+                  }
+              });
+          }
+      });
+    });
+    uiMobileStyleObserver.observe(document.head, {
+      childList: true,
+      subtree: false,
     });
     
     $(document).on('click', '.ui-checkbox, .ui-btn:not("> .item-arrow, .iconFolders, .iconUp, .button-item, .button-cancel, [data-overwriteaction=\"rewrite\"], [data-overwriteaction=\"rewrite_all\"], [data-overwriteaction=\"skip\"], [data-overwriteaction=\"skip_all\"], [data-overwriteaction=\"cancel\"], .iconRefresh, .iconDelete, .iconCut, .iconCopy, .iconPaste, .iconUpload"), .dialog-simpleForm .button-accept', function(e) {

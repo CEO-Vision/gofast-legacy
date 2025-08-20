@@ -1,4 +1,9 @@
   <div class="d-flex h-100 w-100 flex-column">
+    <?php if (isset($messages)) { ?>
+      <div class="d-flex flex-column w-100">
+        <?php foreach ($messages as $message) { echo $message; } ?>
+      </div>
+    <?php } ?>
     <div class="d-flex py-6">
       <div class="input-icon w-100">
         <input type="text" class="form-control " placeholder="<?php echo t('Search...', array(), array('context' => 'gofast')); ?>" id="kt_datatable_search_query" />

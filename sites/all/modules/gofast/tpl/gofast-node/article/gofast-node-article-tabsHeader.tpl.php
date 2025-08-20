@@ -26,7 +26,7 @@ if (count(module_implements("extra_metadata")) >= 1) {
         <span class="nav-text"><?php print t('Informations', [], ['context' => 'gofast']); ?></span>
       </a>
       <div class="dropdown-menu">
-        <a class="dropdown-item" data-toggle="tab" href="#document__infotab">
+        <a class="dropdown-item" data-toggle="tab" href="#article__infotab">
           <?php print t('Informations', [], ['context' => 'gofast']); ?>
         </a>
         <?php foreach($extra_datas as $extra_data) : ?>
@@ -38,7 +38,7 @@ if (count(module_implements("extra_metadata")) >= 1) {
     </li>
   <?php } else { ?>
     <li class="nav-item ">
-      <a class="nav-link px-2 d-flex justify-content-center h-100 active" data-toggle="tab" href="#document__infotab">
+      <a class="nav-link px-2 d-flex justify-content-center h-100 active" data-toggle="tab" href="#article__infotab">
         <span class="nav-icon"><i class="fas fa-info-circle icon-nm"></i></span>
         <span class="nav-text"><?php print t('Informations', [], ['context' => 'gofast']); ?></span>
       </a>
@@ -49,17 +49,17 @@ if (count(module_implements("extra_metadata")) >= 1) {
     <a class="nav-link px-2 d-flex justify-content-center h-100 dropdown-toggle" data-toggle="dropdown" href="#" role="button" aria-haspopup="true" aria-expanded="false">
     </a>
     <div class="dropdown-menu">
-      <a class="dropdown-item" data-toggle="tab" href="#document__commentstab">
+      <a class="dropdown-item" data-toggle="tab" href="#article__commentstab">
         <span class="nav-text"><?php print t('Comments', [], ['context' => 'gofast']); ?></span>
         <?php if (isset($count_notif['count_comment_notif']) && $count_notif['count_comment_notif'] > 0) { ?>
         <span id="gofast-comment-notifiation" class="label label-danger ml-2"><?php echo $count_notif['count_comment_notif'] ?></span>
         <?php } ?>
       </a>
-      <a class="dropdown-item" data-toggle="tab" href="#document__historytab">
+      <a class="dropdown-item" data-toggle="tab" href="#article__historytab">
         <span class="nav-text"><?php print t('Versions', [], ['context' => 'gofast']); ?></span>
       </a>
       <?php if (gofast_audit_access("node", $node->nid)) { ?>
-        <a class="dropdown-item" data-toggle="tab" href="#document__audittab">
+        <a class="dropdown-item" data-toggle="tab" href="#article__audittab">
           <span class="nav-text"><?php print t('Audit', [], ['context' => 'gofast']); ?></span>
         </a>
       <?php } ?>
@@ -75,7 +75,7 @@ if (count(module_implements("extra_metadata")) >= 1) {
         <span class="nav-text"><?php print t('Informations', [], ['context' => 'gofast']); ?></span>
       </a>
       <div class="dropdown-menu">
-        <a class="dropdown-item" data-toggle="tab" href="#document__infotab">
+        <a class="dropdown-item" data-toggle="tab" href="#article__infotab">
           <?php print t('Informations', [], ['context' => 'gofast']); ?>
         </a>
         <?php foreach($extra_datas as $extra_data) : ?>
@@ -87,7 +87,7 @@ if (count(module_implements("extra_metadata")) >= 1) {
     </li>
   <?php } else { ?>
     <li class="nav-item ">
-      <a class="nav-link px-2 d-flex justify-content-center h-100 active" data-toggle="tab" href="#document__infotab">
+      <a class="nav-link px-2 d-flex justify-content-center h-100 active" data-toggle="tab" href="#article__infotab">
         <span class="nav-icon"><i class="fas fa-info-circle icon-nm"></i></span>
         <span class="nav-text"><?php print t('Informations', [], ['context' => 'gofast']); ?></span>
       </a>
@@ -101,14 +101,14 @@ if (count(module_implements("extra_metadata")) >= 1) {
       </span>
     </a>
     <div class="dropdown-menu">
-      <a class="dropdown-item" data-toggle="tab" href="#document__commentstab">
+      <a class="dropdown-item" data-toggle="tab" href="#article__commentstab">
         <span class="nav-text"><?php print t('Comments', [], ['context' => 'gofast']); ?></span>      
       </a>
-      <a class="dropdown-item" data-toggle="tab" href="#document__historytab">
+      <a class="dropdown-item" data-toggle="tab" href="#article__historytab">
         <span class="nav-text"><?php print t('Versions', [], ['context' => 'gofast']); ?></span>
       </a>
       <?php if (gofast_audit_access("node", $node->nid)) { ?>
-        <a class="dropdown-item" data-toggle="tab" href="#document__audittab">
+        <a class="dropdown-item" data-toggle="tab" href="#article__audittab">
           <span class="nav-text"><?php print t('Audit', [], ['context' => 'gofast']); ?></span>
         </a>
       <?php } ?>
@@ -124,7 +124,7 @@ if (count(module_implements("extra_metadata")) >= 1) {
         <span class="nav-text"><?php print t('Info.', [], ['context' => 'gofast']); ?></span>
       </a>
       <div class="dropdown-menu">
-        <a class="dropdown-item" data-toggle="tab" href="#document__infotab">
+        <a class="dropdown-item" data-toggle="tab" href="#article__infotab">
           <?php print t('Informations', [], ['context' => 'gofast']); ?>
         </a>
         <?php foreach($extra_datas as $extra_data) : ?>
@@ -136,7 +136,7 @@ if (count(module_implements("extra_metadata")) >= 1) {
     </li>
   <?php } else { ?>
     <li class="nav-item ">
-      <a class="nav-link px-2 d-flex justify-content-center h-100 active" data-toggle="tab" href="#document__infotab">
+      <a class="nav-link px-2 d-flex justify-content-center h-100 active" data-toggle="tab" href="#article__infotab">
         <span class="nav-icon"><i class="fas fa-info-circle icon-nm"></i></span>
         <span class="nav-text"><?php print t('Info.', [], ['context' => 'gofast']); ?></span>
       </a>
@@ -145,7 +145,7 @@ if (count(module_implements("extra_metadata")) >= 1) {
 
  <li class="nav-item dropdown">
      <li class="nav-item ">
-    <a class="nav-link px-2 d-flex justify-content-center h-100 <?php echo ($node_type == 'forum') ? 'disabled' : ''; ?>" data-toggle="tab" href="#document__commentstab">
+    <a class="nav-link px-2 d-flex justify-content-center h-100 <?php echo ($node_type == 'forum') ? 'disabled' : ''; ?>" data-toggle="tab" href="#article__commentstab">
       <span class="nav-icon"><i class="fas fa-comments icon-nm"></i></span>
       <span class="nav-text"><?php print t('Comment.', [], ['context' => 'gofast']); ?></span>
         <?php if (isset($count_notif['count_comment_notif']) && $count_notif['count_comment_notif'] > 0) { ?>
@@ -155,7 +155,7 @@ if (count(module_implements("extra_metadata")) >= 1) {
   </li>
   <?php if (!gofast_audit_access("node", $node->nid)) : ?>
     <li class="nav-item ">
-      <a class="nav-link px-2 d-flex justify-content-center h-100" data-toggle="tab" href="#document__historytab">
+      <a class="nav-link px-2 d-flex justify-content-center h-100" data-toggle="tab" href="#article__historytab">
         <span class="nav-icon"><i class="fas fa-history icon-nm"></i></span>
         <span class="nav-text"><?php print t('Vers.', [], ['context' => 'gofast']); ?></span>
       </a>
@@ -166,10 +166,10 @@ if (count(module_implements("extra_metadata")) >= 1) {
       <span class="nav-text"><?php print t('More', [], ['context' => 'gofast']); ?></span>
     </a>
     <div class="dropdown-menu">
-      <a class="dropdown-item" data-toggle="tab" href="#document__historytab">
+      <a class="dropdown-item" data-toggle="tab" href="#article__historytab">
         <span class="nav-text"><?php print t('Versions', [], ['context' => 'gofast']); ?></span>
       </a>
-      <a class="dropdown-item" data-toggle="tab" href="#document__audittab">
+      <a class="dropdown-item" data-toggle="tab" href="#article__audittab">
         <span class="nav-text"><?php print t('Audit', [], ['context' => 'gofast']); ?></span>
       </a>
     </div>
@@ -186,7 +186,7 @@ if (count(module_implements("extra_metadata")) >= 1) {
         <span class="nav-text"><?php print t('Informations', [], ['context' => 'gofast']); ?></span>
       </a>
       <div class="dropdown-menu">
-        <a class="dropdown-item" data-toggle="tab" href="#document__infotab">
+        <a class="dropdown-item" data-toggle="tab" href="#article__infotab">
           <?php print t('Informations', [], ['context' => 'gofast']); ?>
         </a>
         <?php foreach($extra_datas as $extra_data) : ?>
@@ -198,7 +198,7 @@ if (count(module_implements("extra_metadata")) >= 1) {
     </li>
   <?php } else { ?>
     <li class="nav-item" style="margin-right:0;">
-      <a class="nav-link px-2 d-flex justify-content-center h-100 active" data-toggle="tab" href="#document__infotab">
+      <a class="nav-link px-2 d-flex justify-content-center h-100 active" data-toggle="tab" href="#article__infotab">
         <span class="nav-icon"><i class="fas fa-info-circle icon-nm"></i></span>
         <span class="nav-text"><?php print t('Informations', [], ['context' => 'gofast']); ?></span>
       </a>
@@ -206,7 +206,7 @@ if (count(module_implements("extra_metadata")) >= 1) {
   <?php } ?>
 
   <li class="nav-item ">
-    <a class="nav-link px-2 d-flex justify-content-center h-100 <?php echo ($node_type == 'forum') ? 'disabled' : ''; ?>" data-toggle="tab" href="#document__commentstab">
+    <a class="nav-link px-2 d-flex justify-content-center h-100 <?php echo ($node_type == 'forum') ? 'disabled' : ''; ?>" data-toggle="tab" href="#article__commentstab">
       <span class="nav-icon"><i class="fas fa-comments icon-nm"></i></span>
       <span class="nav-text"><?php print t('Comments', [], ['context' => 'gofast']); ?></span>
         <?php if (isset($count_notif['count_comment_notif']) && $count_notif['count_comment_notif'] > 0) { ?>
@@ -216,7 +216,7 @@ if (count(module_implements("extra_metadata")) >= 1) {
   </li>
   <?php if (!gofast_audit_access("node", $node->nid)) : ?>
     <li class="nav-item ">
-      <a class="nav-link px-2 d-flex justify-content-center h-100" data-toggle="tab" href="#document__historytab">
+      <a class="nav-link px-2 d-flex justify-content-center h-100" data-toggle="tab" href="#article__historytab">
         <span class="nav-icon"><i class="fas fa-history icon-nm"></i></span>
         <span class="nav-text"><?php print t('Versions.', [], ['context' => 'gofast']); ?></span>
       </a>
@@ -227,10 +227,10 @@ if (count(module_implements("extra_metadata")) >= 1) {
       <span class="nav-text"><?php print t('More', [], ['context' => 'gofast']); ?></span>
     </a>
     <div class="dropdown-menu">
-      <a class="dropdown-item" data-toggle="tab" href="#document__historytab">
+      <a class="dropdown-item" data-toggle="tab" href="#article__historytab">
         <span class="nav-text"><?php print t('Versions', [], ['context' => 'gofast']); ?></span>
       </a>
-      <a class="dropdown-item" data-toggle="tab" href="#document__audittab">
+      <a class="dropdown-item" data-toggle="tab" href="#article__audittab">
         <span class="nav-text"><?php print t('Audit', [], ['context' => 'gofast']); ?></span>
       </a>
     </div>
@@ -248,7 +248,7 @@ if (count(module_implements("extra_metadata")) >= 1) {
         <span class="nav-text"><?php print t('Informations', [], ['context' => 'gofast']); ?></span>
       </a>
       <div class="dropdown-menu">
-        <a class="dropdown-item" data-toggle="tab" href="#document__infotab">
+        <a class="dropdown-item" data-toggle="tab" href="#article__infotab">
           <?php print t('Informations', [], ['context' => 'gofast']); ?>
         </a>
         <?php foreach($extra_datas as $extra_data) : ?>
@@ -260,7 +260,7 @@ if (count(module_implements("extra_metadata")) >= 1) {
     </li>
   <?php } else { ?>
     <li class="nav-item" style="margin-right:0;">
-      <a class="nav-link px-2 d-flex justify-content-center h-100 active" data-toggle="tab" href="#document__infotab">
+      <a class="nav-link px-2 d-flex justify-content-center h-100 active" data-toggle="tab" href="#article__infotab">
         <span class="nav-icon"><i class="fas fa-info-circle icon-nm"></i></span>
         <span class="nav-text"><?php print t('Informations', [], ['context' => 'gofast']); ?></span>
       </a>
@@ -268,7 +268,7 @@ if (count(module_implements("extra_metadata")) >= 1) {
   <?php } ?>
 
   <li class="nav-item ">
-    <a class="nav-link px-2 d-flex justify-content-center h-100 <?php echo ($node_type == 'forum') ? 'disabled' : ''; ?>" data-toggle="tab" href="#document__commentstab">
+    <a class="nav-link px-2 d-flex justify-content-center h-100 <?php echo ($node_type == 'forum') ? 'disabled' : ''; ?>" data-toggle="tab" href="#article__commentstab">
       <span class="nav-icon"><i class="fas fa-comments icon-nm"></i></span>
       <span class="nav-text"><?php print t('Comments', [], ['context' => 'gofast']); ?></span>
         <?php if (isset($count_notif['count_comment_notif']) && $count_notif['count_comment_notif'] > 0) { ?>
@@ -277,14 +277,14 @@ if (count(module_implements("extra_metadata")) >= 1) {
     </a>
   </li>
   <li class="nav-item ">
-    <a class="nav-link px-2 d-flex justify-content-center h-100" data-toggle="tab" href="#document__historytab">
+    <a class="nav-link px-2 d-flex justify-content-center h-100" data-toggle="tab" href="#article__historytab">
       <span class="nav-icon"><i class="fas fa-history icon-nm"></i></span>
       <span class="nav-text"><?php print t('Versions', [], ['context' => 'gofast']); ?></span>
     </a>
   </li>
   <?php if (gofast_audit_access("node", $node->nid)) { ?>
     <li class="nav-item ">
-      <a class="nav-link px-2 d-flex justify-content-center h-100" data-toggle="tab" href="#document__audittab">
+      <a class="nav-link px-2 d-flex justify-content-center h-100" data-toggle="tab" href="#article__audittab">
         <span class="nav-icon"><i class="flaticon2-paperplane"></i></span>
         <span class="nav-text"><?php print t('Audit', [], ['context' => 'gofast']); ?></span>
       </a>

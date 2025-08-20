@@ -248,6 +248,15 @@ function gofast_features_global_user_default_permissions() {
     'module' => 'book',
   );
 
+  // Exported permission: 'administer entities configuration'.
+  $permissions['administer entities configuration'] = array(
+    'name' => 'administer entities configuration',
+    'roles' => array(
+      'business administrator' => 'business administrator',
+    ),
+    'module' => 'gofast',
+  );
+
   // Exported permission: 'administer categories configuration'.
   $permissions['administer categories configuration'] = array(
     'name' => 'administer categories configuration',
@@ -520,6 +529,15 @@ function gofast_features_global_user_default_permissions() {
     'name' => 'administer retention configuration',
     'roles' => array(
       'business administrator' => 'business administrator',
+    ),
+    'module' => 'gofast',
+  );
+
+  // Exported permission: 'administer ai configuration'.
+  $permissions['administer ai configuration'] = array(
+    'name' => 'administer ai configuration',
+    'roles' => array(
+      'administrator' => 'administrator',
     ),
     'module' => 'gofast',
   );

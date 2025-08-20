@@ -13,7 +13,7 @@
 ?>
 
 <!-- Modal-->
-<div class="modal" id="gofast_basicModal" role="dialog" aria-labelledby="gofastBasicModal" aria-hidden="true">
+<div class="modal" data-resizable="true" id="gofast_basicModal" role="dialog" aria-labelledby="gofastBasicModal" aria-hidden="true">
     <div class="modal-dialog modal-lg modal-dialog-scrollable modal-dialog-centered" role="document">
         <div class="modal-content min-h-500px">
             <div class="modal-header">

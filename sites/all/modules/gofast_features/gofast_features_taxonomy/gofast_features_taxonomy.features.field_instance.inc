@@ -265,13 +265,91 @@ function gofast_features_taxonomy_field_default_field_instances() {
     ),
   );
 
+  // Exported field_instance: 'taxonomy_term-tags-field_tags_bundle'.
+  $field_instances['taxonomy_term-tags-field_tags_bundle'] = array(
+    'bundle' => 'tags',
+    'default_value' => array(
+      0 => array(
+        'value' => 'alfresco_item',
+      ),
+    ),
+    'deleted' => 0,
+    'description' => '',
+    'display' => array(
+      'default' => array(
+        'label' => 'above',
+        'module' => 'text',
+        'settings' => array(),
+        'type' => 'text_default',
+        'weight' => 0,
+      ),
+    ),
+    'entity_type' => 'taxonomy_term',
+    'field_name' => 'field_tags_bundle',
+    'label' => 'bundle',
+    'required' => 0,
+    'settings' => array(
+      'text_processing' => 0,
+      'user_register_form' => FALSE,
+    ),
+    'widget' => array(
+      'active' => 1,
+      'module' => 'ldap_user',
+      'settings' => array(),
+      'type' => 'ldap_user_hidden',
+      'weight' => 1,
+    ),
+  );
+
+  // Exported field_instance: 'taxonomy_term-tags-field_tags_gid'.
+  $field_instances['taxonomy_term-tags-field_tags_gid'] = array(
+    'bundle' => 'tags',
+    'default_value' => NULL,
+    'deleted' => 0,
+    'description' => '',
+    'display' => array(
+      'default' => array(
+        'label' => 'above',
+        'module' => 'number',
+        'settings' => array(
+          'decimal_separator' => '.',
+          'prefix_suffix' => TRUE,
+          'scale' => 0,
+          'thousand_separator' => '',
+        ),
+        'type' => 'number_integer',
+        'weight' => 1,
+      ),
+    ),
+    'entity_type' => 'taxonomy_term',
+    'field_name' => 'field_tags_gid',
+    'label' => 'gid',
+    'required' => 0,
+    'settings' => array(
+      'max' => '',
+      'min' => '',
+      'prefix' => '',
+      'suffix' => '',
+      'user_register_form' => FALSE,
+    ),
+    'widget' => array(
+      'active' => 0,
+      'module' => 'number',
+      'settings' => array(),
+      'type' => 'number',
+      'weight' => 2,
+    ),
+  );
+
   // Translatables
   // Included for use with string extractors like potx.
   t('Criticity');
   t('category_criticity');
   t('Flag to define if taxonomy is a term standard Gofast, and cannot be modify/delete by GF users');
   t('Type');
+  t('bundle');
   t('extensions');
+  t('gid');
   t('icone');
   t('standard_gf');
 
