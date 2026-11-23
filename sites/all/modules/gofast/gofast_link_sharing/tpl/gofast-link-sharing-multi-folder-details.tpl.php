@@ -11,13 +11,11 @@
                 <?php print theme('gofast_link_sharing_share_folder_contents',
                     array('nodes_description' => [$folder_contents], 'showTitle' => false))
                 ?>
-                <div class="d-flex align-items-center justify-content-center my-4" style="gap: 2rem;">
-                <button class=" btn-warning gofast_link_sharing_button btn" type="button" id="edit-submit" name="op" ><?= t('Download') ?></button>
+                <div class="d-flex align-items-center justify-content-center my-4 auto-refresh" style="gap: 2rem;">
+                  <button class=" btn-warning gofast_link_sharing_button btn" type="button" id="edit-submit" name="op" ><?= t('Download', array(), array("context" => 'gofast')) ?></button>
                     <?php if ($user->uid == '0') { ?>
                         <span class="h3"><?php print strtoupper(t("OR", array(), array("context" => "gofast"))) ?></span>
-                        <a class="btn btn-primary " href="<?php if (!empty($hash)) {
-                                                                                        print "/multi_sharing/logged_in/" . $hash;
-                        } ?>" role="button"><?php print t('Login', array(), array("context" => 'gofast')) ?></a>
+                        <a class="btn btn-primary " href="<?= !empty($hash) ? '/sharing/logged_in/'.$hash : '' ?>" role="button"><?php print t('Login', array(), array("context" => 'gofast')) ?></a>
                     <?php } ?>
                 </div>
             </div>

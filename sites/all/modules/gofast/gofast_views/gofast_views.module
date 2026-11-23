@@ -344,10 +344,6 @@ function gofast_views_theme() {
             'template' => 'theme/gofast-download-link', // template file called theme/gofast-download-link.tpl.php
             'arguments' => array('node' => NULL),
         ),
-         'gofast_duplicate_file' => array(
-            'template' => 'theme/gofast-duplicate-file', // template file called theme/gofast-duplicate-file.tpl.php
-            'arguments' => array('node' => NULL),
-        ),
         'gofast_link_edit_mode' => array(
             'template' => 'theme/gofast-link-edit-mode', // template file called theme/gofast-link-edit-mode.tpl.php
             'arguments' => array('node' => NULL , 'disabled' => ''),
@@ -1240,18 +1236,6 @@ function template_preprocess_gofast_download_link(&$variables)
       }
     $variables['text'] = t('Download', array(), array('context' => 'gofast'));
   }
-}
-
-function template_preprocess_gofast_duplicate_file(&$variables){
-    $node = $variables['node'];
-
-    if ($node->type == "alfresco_item") {
-      if (module_exists('gofast_cmis')) {
-        $variables['onclick'] = 'Gofast.ITHit.duplicate(\''.$node->nid.'\')';
-      }
-
-      $variables['text'] = t('Duplicate this file', array(), array('context' => 'gofast'));
-    }
 }
 
 function template_preprocess_gofast_space_add_riot_room(&$variables) {
@@ -2837,6 +2821,7 @@ function gofast_dropdown_link($label, $href = '', $link_id = '', $link_class = '
       'link_class' => implode(' ', $attr['class']),
       'icon_class' => $icon_class,
       'disabled' => true,
+      'title' => $title,
     ));
   } else {
     $link = theme('gofast_link_generic', array(
@@ -3249,24 +3234,26 @@ function gofast_views_modal_user_delete($js, $uid)
   ctools_include('modal');
   ctools_include('ajax');
 
+  if (strpos($uid, '-') !== false) {
+    $uid = explode('-', $uid);
+  }
   $form_state = array(
     'ajax' => TRUE,
     'build_info' => array(
       'args' => array($uid)
     ),
-    'title' => t('Delete this user', array(), array('context' => 'gofast'))
+    'title' => is_array($uid)?t('Delete these users', array(), array('context' => 'gofast')) : t('Delete this user', array(), array('context' => 'gofast'))
   );
 
   $commands = ctools_modal_form_wrapper($form_id, $form_state);
 
   if($form_state['submitted']) {// async the delete 
+    $commands[] = ctools_modal_command_dismiss();
+    $commands[] = gofast_command_processAjax('directory/users');
+    $toaster_message = is_array($uid) ? t("The users are being deleted", array(), array('context' => 'gofast:gofast_views')) : t("The user is being deleted", array(), array('context' => 'gofast:gofast_views'));
+    $commands[] = gofast_command_toast_message($toaster_message, "success");
     print ajax_render($commands);
     fastcgi_finish_request();
-  }   
-  if ($form_state['executed']) {
-    $commands[] = gofast_command_processAjax('directory/users');
-    $commands[] = gofast_command_toast_message(t("The user has been deleted", array(), array('context' => 'gofast:gofast_views')));
-    $commands[] = ctools_modal_command_dismiss();
   }
 
   print ajax_render($commands);
@@ -3608,7 +3595,7 @@ function template_preprocess_gofast_link_publication(&$variables)
 
 function template_preprocess_gofast_link_edit_onlyoffice(&$variables)
 {
-  $variables['text'] = t('Co-edit with onlyoffice', array(), array('context' => 'gofast'));
+  $variables['text'] = t('Co-edit with OnlyOffice', array(), array('context' => 'gofast'));
   $variables['path'] = '/onlyoffice/editor/' . $variables['node']->nid;
 
   //check if we must display warning or not when clicking on link

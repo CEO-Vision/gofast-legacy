@@ -27605,8 +27605,10 @@ var ButtonWidgetAnnotation = /*#__PURE__*/function (_WidgetAnnotation2) {
     key: "_processPushButton",
     value: function _processPushButton(params) {
       if (!params.dict.has("A") && !params.dict.has("AA") && !this.data.alternativeText) {
-        (0, _util.warn)("Push buttons without action dictionaries are not supported");
-        return;
+        // Begin Patch CEO-Vision: Ensure Yousign signatures display in annotation mode
+        (0, _util.warn)("Push buttons without action dictionaries are not supported (CEOV: But will be displayed anyway because YouSign signatures need it)");
+        // return;
+        // End Patch CEO-Vision: Ensure Yousign signatures display in annotation mode
       }
 
       this.data.isTooltipOnly = !params.dict.has("A") && !params.dict.has("AA");

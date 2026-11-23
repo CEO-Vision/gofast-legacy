@@ -58,4 +58,3 @@ window.BalloonEditor = __webpack_require__(/*! @ckeditor/ckeditor5-build-balloon
 
 /******/ })()
 ;
-//# sourceMappingURL=ckeditor-balloon.bundle.js.map

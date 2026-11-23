@@ -190,10 +190,12 @@ $unread_favorites_count = '';
 $rss = [
 'id' => 'gofast_aggregator',
 'id_toggle' => 'go-navbar-menu-rss-item',
-'title' => 'Flux RSS',
+'title' => t('RSS Feeds', [], ['context' => 'gofast']),
 'icon' => 'fas fa-rss',
 'count' => $unread_rss_count,
-'desktop_only' => TRUE
+'desktop_only' => TRUE,
+'disabled' => !gofast_menu_has_rss_feeds(),
+'disabled_title' => t('No RSS feed configured', [], ['context' => 'gofast'])
 ];
 
 $menus[] = $rss;
@@ -396,6 +398,16 @@ function gofast_menu_get_last_recenlty_read($size = 10) {
  */
 function gofast_menu_get_favorites() {
   print theme('gofast_menu_topbar_favorites');
+}
+
+/**
+ * Checks whether at least one RSS feed is configured.
+ *
+ * @return bool
+ *   TRUE if the aggregator has at least one feed, FALSE otherwise.
+ */
+function gofast_menu_has_rss_feeds() {
+  return (bool) db_query_range("SELECT 1 FROM {aggregator_feed}", 0, 1)->fetchField();
 }
 
 function gofast_menu_get_rssFeed() {

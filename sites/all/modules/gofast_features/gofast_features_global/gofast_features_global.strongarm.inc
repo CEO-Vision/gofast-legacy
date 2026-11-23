@@ -726,81 +726,6 @@ function gofast_features_global_strongarm() {
   $strongarm = new stdClass();
   $strongarm->disabled = FALSE; /* Edit this to true to make a default strongarm disabled initially */
   $strongarm->api_version = 1;
-  $strongarm->name = 'ckeditor_link_autocomplete_menus';
-  $strongarm->value = array(
-    '- any -' => 0,
-    'devel' => 0,
-    'main-menu' => 0,
-    'management' => 0,
-    'menu-mobile-menu' => 0,
-    'navigation' => 0,
-    'user-menu' => 0,
-  );
-  $export['ckeditor_link_autocomplete_menus'] = $strongarm;
-
-  $strongarm = new stdClass();
-  $strongarm->disabled = FALSE; /* Edit this to true to make a default strongarm disabled initially */
-  $strongarm->api_version = 1;
-  $strongarm->name = 'ckeditor_link_autocomplete_node_types';
-  $strongarm->value = array(
-    '- any -' => '- any -',
-    'article' => 0,
-    'page' => 0,
-    'book' => 0,
-    'alfresco_item' => 0,
-    'extranet' => 0,
-    'forum' => 0,
-    'group' => 0,
-    'organisation' => 0,
-    'private_space' => 0,
-    'public' => 0,
-    'webform' => 0,
-  );
-  $export['ckeditor_link_autocomplete_node_types'] = $strongarm;
-
-  $strongarm = new stdClass();
-  $strongarm->disabled = FALSE; /* Edit this to true to make a default strongarm disabled initially */
-  $strongarm->api_version = 1;
-  $strongarm->name = 'ckeditor_link_autocomplete_vocabularies';
-  $strongarm->value = array(
-    '- any -' => 0,
-    1 => 0,
-    3 => 0,
-    10 => 0,
-    4 => 0,
-    5 => 0,
-    6 => 0,
-    7 => 0,
-    8 => 0,
-    9 => 0,
-    2 => 0,
-  );
-  $export['ckeditor_link_autocomplete_vocabularies'] = $strongarm;
-
-  $strongarm = new stdClass();
-  $strongarm->disabled = FALSE; /* Edit this to true to make a default strongarm disabled initially */
-  $strongarm->api_version = 1;
-  $strongarm->name = 'ckeditor_link_limit';
-  $strongarm->value = '10';
-  $export['ckeditor_link_limit'] = $strongarm;
-
-  $strongarm = new stdClass();
-  $strongarm->disabled = FALSE; /* Edit this to true to make a default strongarm disabled initially */
-  $strongarm->api_version = 1;
-  $strongarm->name = 'ckeditor_link_type_name';
-  $strongarm->value = 'Internal path';
-  $export['ckeditor_link_type_name'] = $strongarm;
-
-  $strongarm = new stdClass();
-  $strongarm->disabled = FALSE; /* Edit this to true to make a default strongarm disabled initially */
-  $strongarm->api_version = 1;
-  $strongarm->name = 'ckeditor_link_type_selected';
-  $strongarm->value = 1;
-  $export['ckeditor_link_type_selected'] = $strongarm;
-
-  $strongarm = new stdClass();
-  $strongarm->disabled = FALSE; /* Edit this to true to make a default strongarm disabled initially */
-  $strongarm->api_version = 1;
   $strongarm->name = 'clean_url';
   $strongarm->value = 1;
   $export['clean_url'] = $strongarm;
@@ -2971,7 +2896,7 @@ Please give your approval to sucessfully organize this event at [event_calendar:
   $strongarm->disabled = FALSE; /* Edit this to true to make a default strongarm disabled initially */
   $strongarm->api_version = 1;
   $strongarm->name = 'gofast_carousel_name';
-  $strongarm->value = 'gofast_4.4.0';
+  $strongarm->value = 'gofast_4.5.0';
   $export['gofast_carousel_name'] = $strongarm;
 
   $strongarm = new stdClass();
@@ -3215,62 +3140,6 @@ Please give your approval to sucessfully organize this event at [event_calendar:
   $strongarm->name = 'i18n_string_source_language';
   $strongarm->value = 'en';
   $export['i18n_string_source_language'] = $strongarm;
-
-  $strongarm = new stdClass();
-  $strongarm->disabled = FALSE; /* Edit this to true to make a default strongarm disabled initially */
-  $strongarm->api_version = 1;
-  $strongarm->name = 'jquery_update_compression_type';
-  $strongarm->value = 'min';
-  $export['jquery_update_compression_type'] = $strongarm;
-
-  $strongarm = new stdClass();
-  $strongarm->disabled = FALSE; /* Edit this to true to make a default strongarm disabled initially */
-  $strongarm->api_version = 1;
-  $strongarm->name = 'jquery_update_jquery_cdn';
-  $strongarm->value = 'none';
-  $export['jquery_update_jquery_cdn'] = $strongarm;
-
-  $strongarm = new stdClass();
-  $strongarm->disabled = FALSE; /* Edit this to true to make a default strongarm disabled initially */
-  $strongarm->api_version = 1;
-  $strongarm->name = 'jquery_update_jquery_migrate_cdn';
-  $strongarm->value = 'none';
-  $export['jquery_update_jquery_migrate_cdn'] = $strongarm;
-
-  $strongarm = new stdClass();
-  $strongarm->disabled = FALSE; /* Edit this to true to make a default strongarm disabled initially */
-  $strongarm->api_version = 1;
-  $strongarm->name = 'jquery_update_jquery_migrate_enable';
-  $strongarm->value = 1;
-  $export['jquery_update_jquery_migrate_enable'] = $strongarm;
-
-  $strongarm = new stdClass();
-  $strongarm->disabled = FALSE; /* Edit this to true to make a default strongarm disabled initially */
-  $strongarm->api_version = 1;
-  $strongarm->name = 'jquery_update_jquery_migrate_trace';
-  $strongarm->value = 0;
-  $export['jquery_update_jquery_migrate_trace'] = $strongarm;
-
-  $strongarm = new stdClass();
-  $strongarm->disabled = FALSE; /* Edit this to true to make a default strongarm disabled initially */
-  $strongarm->api_version = 1;
-  $strongarm->name = 'jquery_update_jquery_migrate_warnings';
-  $strongarm->value = 0;
-  $export['jquery_update_jquery_migrate_warnings'] = $strongarm;
-
-  $strongarm = new stdClass();
-  $strongarm->disabled = FALSE; /* Edit this to true to make a default strongarm disabled initially */
-  $strongarm->api_version = 1;
-  $strongarm->name = 'jquery_update_jquery_version';
-  $strongarm->value = '3.5';
-  $export['jquery_update_jquery_version'] = $strongarm;
-
-  $strongarm = new stdClass();
-  $strongarm->disabled = FALSE; /* Edit this to true to make a default strongarm disabled initially */
-  $strongarm->api_version = 1;
-  $strongarm->name = 'jquery_update__active_tab';
-  $strongarm->value = 'edit-jquery-migrate';
-  $export['jquery_update__active_tab'] = $strongarm;
 
   $strongarm = new stdClass();
   $strongarm->disabled = FALSE; /* Edit this to true to make a default strongarm disabled initially */
@@ -4523,14 +4392,14 @@ Please give your approval to sucessfully organize this event at [event_calendar:
   $strongarm->disabled = FALSE; /* Edit this to true to make a default strongarm disabled initially */
   $strongarm->api_version = 1;
   $strongarm->name = 'saml_sp__cert_location';
-  $strongarm->value = '/var/www/d7/sites/default/files/gofastx509.crt';
+  $strongarm->value = '/var/www/private/saml/gofastx509.crt';
   $export['saml_sp__cert_location'] = $strongarm;
 
   $strongarm = new stdClass();
   $strongarm->disabled = FALSE; /* Edit this to true to make a default strongarm disabled initially */
   $strongarm->api_version = 1;
   $strongarm->name = 'saml_sp__key_location';
-  $strongarm->value = '/var/www/d7/sites/default/files/gofastx509.key';
+  $strongarm->value = '/var/www/private/saml/gofastx509.key';
   $export['saml_sp__key_location'] = $strongarm;
 
   $strongarm = new stdClass();
@@ -4588,6 +4457,76 @@ Please give your approval to sucessfully organize this event at [event_calendar:
   $strongarm->name = 'smtp_on';
   $strongarm->value = 1;
   $export['smtp_on'] = $strongarm;
+
+  $strongarm = new stdClass();
+  $strongarm->disabled = FALSE; /* Edit this to true to make a default strongarm disabled initially */
+  $strongarm->api_version = 1;
+  $strongarm->name = 'tag1d7es_jquery_update_check_latest_versions';
+  $strongarm->value = 0;
+  $export['tag1d7es_jquery_update_check_latest_versions'] = $strongarm;
+
+  $strongarm = new stdClass();
+  $strongarm->disabled = FALSE; /* Edit this to true to make a default strongarm disabled initially */
+  $strongarm->api_version = 1;
+  $strongarm->name = 'tag1d7es_jquery_update_compression_type';
+  $strongarm->value = 'min';
+  $export['tag1d7es_jquery_update_compression_type'] = $strongarm;
+
+  $strongarm = new stdClass();
+  $strongarm->disabled = FALSE; /* Edit this to true to make a default strongarm disabled initially */
+  $strongarm->api_version = 1;
+  $strongarm->name = 'tag1d7es_jquery_update_jquery_cdn';
+  $strongarm->value = 'none';
+  $export['tag1d7es_jquery_update_jquery_cdn'] = $strongarm;
+
+  $strongarm = new stdClass();
+  $strongarm->disabled = FALSE; /* Edit this to true to make a default strongarm disabled initially */
+  $strongarm->api_version = 1;
+  $strongarm->name = 'tag1d7es_jquery_update_jquery_migrate_cdn';
+  $strongarm->value = 'none';
+  $export['tag1d7es_jquery_update_jquery_migrate_cdn'] = $strongarm;
+
+  $strongarm = new stdClass();
+  $strongarm->disabled = FALSE; /* Edit this to true to make a default strongarm disabled initially */
+  $strongarm->api_version = 1;
+  $strongarm->name = 'tag1d7es_jquery_update_jquery_migrate_enable';
+  $strongarm->value = 1;
+  $export['tag1d7es_jquery_update_jquery_migrate_enable'] = $strongarm;
+
+  $strongarm = new stdClass();
+  $strongarm->disabled = FALSE; /* Edit this to true to make a default strongarm disabled initially */
+  $strongarm->api_version = 1;
+  $strongarm->name = 'tag1d7es_jquery_update_jquery_migrate_trace';
+  $strongarm->value = 0;
+  $export['tag1d7es_jquery_update_jquery_migrate_trace'] = $strongarm;
+
+  $strongarm = new stdClass();
+  $strongarm->disabled = FALSE; /* Edit this to true to make a default strongarm disabled initially */
+  $strongarm->api_version = 1;
+  $strongarm->name = 'tag1d7es_jquery_update_jquery_migrate_warnings';
+  $strongarm->value = 0;
+  $export['tag1d7es_jquery_update_jquery_migrate_warnings'] = $strongarm;
+
+  $strongarm = new stdClass();
+  $strongarm->disabled = FALSE; /* Edit this to true to make a default strongarm disabled initially */
+  $strongarm->api_version = 1;
+  $strongarm->name = 'tag1d7es_jquery_update_jquery_ui_enable';
+  $strongarm->value = '1.14.0';
+  $export['tag1d7es_jquery_update_jquery_ui_enable'] = $strongarm;
+
+  $strongarm = new stdClass();
+  $strongarm->disabled = FALSE; /* Edit this to true to make a default strongarm disabled initially */
+  $strongarm->api_version = 1;
+  $strongarm->name = 'tag1d7es_jquery_update_jquery_version';
+  $strongarm->value = '3.7.1';
+  $export['tag1d7es_jquery_update_jquery_version'] = $strongarm;
+
+  $strongarm = new stdClass();
+  $strongarm->disabled = FALSE; /* Edit this to true to make a default strongarm disabled initially */
+  $strongarm->api_version = 1;
+  $strongarm->name = 'tag1d7es_jquery_update_warning_available_update';
+  $strongarm->value = 0;
+  $export['tag1d7es_jquery_update_warning_available_update'] = $strongarm;
 
   $strongarm = new stdClass();
   $strongarm->disabled = FALSE; /* Edit this to true to make a default strongarm disabled initially */
@@ -4689,7 +4628,6 @@ Please give your approval to sucessfully organize this event at [event_calendar:
     'bootstrap_cdn_provider_import_data' => '',
     'bootstrap_cdn_jsdelivr_version' => '3.4.0',
     'bootstrap_cdn_jsdelivr_theme' => 'bootstrap',
-    'jquery_update_jquery_version' => '3.5',
   );
   // GOFAST-8145 - keep this deactivated to prevent client customizations being reset at each features deployment
   // $export['theme_bootstrap_keen_settings'] = $strongarm;

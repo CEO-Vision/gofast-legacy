@@ -27,6 +27,7 @@ function gofast_breadcrumb_handle_alfresco_item($node, &$options = []){
     $locations = array_unique(array_merge($main_location, $other_locations));
   }
   $options["editable"] = gofast_contextual_menu_get_action_access("rename", $node);
+  $options["metadata_editable"] = gofast_metadata_can_edit_metadata($node);
   if($options['remove_extension']){
     $node->title = pathinfo($node->title)['filename'];
   }

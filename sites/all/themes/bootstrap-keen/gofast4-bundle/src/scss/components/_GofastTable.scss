@@ -155,8 +155,13 @@
       font-weight: 400;
       letter-spacing: 0px;
     }
-    &[data-field=date], &[data-field=filters], &[data-field=query]{
+    &[data-field=date], &[data-field=filters], &[data-field=query], &[data-field=globalOperator]{
       padding: 0 !important;
+    }
+  }
+  & > tbody > tr > td { 
+    &[data-field=filters], &[data-field=query], &[data-field=globalOperator]{
+      display: none !important;
     }
   }
 }

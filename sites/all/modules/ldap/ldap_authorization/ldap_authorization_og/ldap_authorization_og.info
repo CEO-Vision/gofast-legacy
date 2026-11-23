@@ -12,3 +12,7 @@ files[] = ldap_authorization_og.inc
 
 
 core = "7.x"
+
+version = 7.x-2.7
+project = ldap
+datestamp = 1775066467

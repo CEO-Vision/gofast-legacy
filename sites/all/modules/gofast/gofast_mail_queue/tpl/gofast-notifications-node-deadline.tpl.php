@@ -111,7 +111,7 @@
     </table>
 </div>
 <!--[if mso | IE]></td></tr></table><table align="center" border="0" cellpadding="0" cellspacing="0" class="" role="presentation" style="width:992px;" width="992" bgcolor="white" ><tr><td style="line-height:0px;font-size:0px;mso-line-height-rule:exactly;"><![endif]-->
-<div style="background:white;background-color:white;margin:0px auto;max-width:992px;">
+<div style="background:white;background-color:white;margin:0px auto;max-width:992px;border-radius: 0 0 10px 10px;padding-bottom: 10px;">
     <table align="center" border="0" cellpadding="0" cellspacing="0" role="presentation" style="background:white;background-color:white;width:100%;">
         <tbody>
             <tr>
@@ -141,20 +141,18 @@
         </tbody>
     </table>
 </div>
-<!--[if mso | IE]></td></tr></table><table align="center" border="0" cellpadding="0" cellspacing="0" class="" role="presentation" style="width:992px;" width="992" bgcolor="white" ><tr><td style="line-height:0px;font-size:0px;mso-line-height-rule:exactly;"><![endif]-->
-<div style="background:white;background-color:white;margin:0px auto;border-radius:0 0 10px 10px;max-width:992px;">
-    <table align="center" border="0" cellpadding="0" cellspacing="0" role="presentation" style="background:white;background-color:white;width:100%;border-radius:0 0 10px 10px;">
+<div style="margin:0px auto;max-width:992px;">
+    <table align="center" border="0" cellpadding="0" cellspacing="0" role="presentation" style="width:100%;">
         <tbody>
             <tr>
-                <td style="direction:ltr;font-size:0px;padding:0;padding-bottom:10px;padding-left:10px;padding-top:10px;text-align:center;">
+                <td style="direction:ltr;font-size:0px;padding:0;padding-left:10px;padding-top:10px;text-align:center;">
                     <!--[if mso | IE]><table role="presentation" border="0" cellpadding="0" cellspacing="0"><tr><td class="" style="vertical-align:top;width:883.8px;" ><![endif]-->
                     <div class="mj-column-per-90 mj-outlook-group-fix" style="font-size:0px;text-align:left;direction:ltr;display:inline-block;vertical-align:top;width:100%;">
                         <table border="0" cellpadding="0" cellspacing="0" role="presentation" style="vertical-align:top;" width="100%">
                             <tbody>
                                 <tr>
-                                    <td align="left" style="font-size:0px;padding:0;padding-bottom:5px;word-break:break-word;">
-                                    </td>
-                                </tr>
+                                <?= $table ?>
+                                </tr>  
                             </tbody>
                         </table>
                     </div>
@@ -164,113 +162,3 @@
         </tbody>
     </table>
 </div>
-<?php foreach ($nodes as $index => $node_array) :
-    if (empty($node_array)) {
-        continue;
-    }
-    $section_title = t("Documents", array(), $l);
-    $section_icon = "other";
-    if ($index == 1) {
-        $section_title = t("Cards and tasks", array(), $l);
-        $section_icon = "trello";
-    }
-    if ($index == 0) {
-        $section_title = t("Conferences", array(), $l);
-        $section_icon = "conference";
-    }
-?>
-    <!--[if mso | IE]></td></tr></table><![endif]-->
-    <!-- Deadline -->
-    <!--[if mso | IE]><table align="center" border="0" cellpadding="0" cellspacing="0" class="" role="presentation" style="width:992px;" width="992" bgcolor="transparent" ><tr><td style="line-height:0px;font-size:0px;mso-line-height-rule:exactly;"><![endif]-->
-    <div style="background:transparent;background-color:transparent;margin:0px auto;max-width:992px;">
-        <table align="center" border="0" cellpadding="0" cellspacing="0" role="presentation" style="background:transparent;background-color:transparent;width:100%;">
-            <tbody>
-                <tr>
-                    <td style="direction:ltr;font-size:0px;padding:20px 0;padding-bottom:10px;padding-top:10px;text-align:center;">
-                        <!--[if mso | IE]><table role="presentation" border="0" cellpadding="0" cellspacing="0"><tr></tr></table><![endif]-->
-                    </td>
-                </tr>
-            </tbody>
-        </table>
-    </div>
-    <!--[if mso | IE]></td></tr></table><table align="center" border="0" cellpadding="0" cellspacing="0" class="" role="presentation" style="width:992px;" width="992" bgcolor="white" ><tr><td style="line-height:0px;font-size:0px;mso-line-height-rule:exactly;"><![endif]-->
-    <div style="background:white;background-color:white;margin:0px auto;border-radius:10px 10px 0 0;max-width:992px;">
-        <table align="center" border="0" cellpadding="0" cellspacing="0" role="presentation" style="background:white;background-color:white;width:100%;border-radius:10px 10px 0 0;">
-            <tbody>
-                <tr>
-                    <td style="direction:ltr;font-size:0px;padding:0;text-align:center;">
-                        <!--[if mso | IE]><table role="presentation" border="0" cellpadding="0" cellspacing="0"><tr><td class="" style="vertical-align:top;width:992px;" ><![endif]-->
-                        <div class="mj-column-per-100 mj-outlook-group-fix" style="font-size:0px;text-align:left;direction:ltr;display:inline-block;vertical-align:top;width:100%;">
-                            <table border="0" cellpadding="0" cellspacing="0" role="presentation" width="100%">
-                                <tbody>
-                                    <tr>
-                                        <td style="background-color:#337ab7;border-radius:10px 10px 0 0;vertical-align:top;padding-left:10px;">
-                                            <table border="0" cellpadding="0" cellspacing="0" role="presentation" style="" width="100%">
-                                                <tbody>
-                                                    <tr>
-                                                        <td align="left" style="font-size:0px;padding:10px 25px;word-break:break-word;">
-                                                            <div style="font-family:Poppins, Candara, Helvetica, Arial, sans-serif;font-size:18px;font-weight:600;line-height:1;text-align:left;color:white;">
-                                                                <table border="0" cellpadding="0" cellspacing="0" role="presentation" style="vertical-align:middle;">
-                                                                    <tbody>
-                                                                        <tr>
-                                                                            <td>
-                                                                                <img src="<?= $base_url . '/' . drupal_get_path('module', 'gofast_mail_queue') . '/icon/' . $section_icon . '-white.png' ?>" width="18">
-                                                                            <td><span style="color: #FFFFFF; font-size: 18px; font-weight: 600;">&nbsp;<?= $section_title ?></span></td>
-                                                                            <td><span style="color: #FFFFFF; font-size: 14px; font-weight: 400;">&nbsp;(<?= format_plural(count($node_array), "1 item", "@nb items", array('@nb' => count($node_array)), $l) ?>)</span></td>
-                                                                        </tr>
-                                                                    </tbody>
-                                                                </table>
-                                                            </div>
-                                                        </td>
-                                                    </tr>
-                                                </tbody>
-                                            </table>
-                                        </td>
-                                    </tr>
-                                </tbody>
-                            </table>
-                        </div>
-                        <!--[if mso | IE]></td></tr></table><![endif]-->
-                    </td>
-                </tr>
-            </tbody>
-        </table>
-    </div>
-    <?php foreach ($node_array as $node) {
-        $last = next($node) === FALSE;
-        $node_link = $base_url . '/node/' . $node->nid;
-        $node_icon = str_replace('<span>', '<span style="display:none;">', theme('node_title', array('node' => $node, 'link' => FALSE)));
-        $document_pic = gofast_mail_queue_fa_png($node_icon, "18");
-        $item_labels = NULL;
-        if (!empty($node->items)) {
-            $labels = [];
-            foreach($node->items as $item) {
-                $labels[] = $item["item_label"];
-            }
-            $item_labels = implode(", ", $labels);
-            
-        }
-        echo theme('gofast-notifications-node-deadline-element', array(
-            'node_link' => $node_link,
-            'node_icon' => $document_pic,
-            'node_title' => $node->title,
-            'item_labels' => $item_labels,
-            'responsible' => isset($node->responsible) ? $node->responsible : NULL,
-            'parent_space' => isset($node->parent_space) ? $node->parent_space : t("None", array(), $l),
-            'last' => $last,
-            'l' => $l,
-        ));
-    } ?>
-<?php endforeach ?>
-<div style="background:transparent;background-color:transparent;margin:0px auto;max-width:992px;">
-    <table align="center" border="0" cellpadding="0" cellspacing="0" role="presentation" style="background:transparent;background-color:transparent;width:100%;">
-        <tbody>
-            <tr>
-                <td style="direction:ltr;font-size:0px;padding:20px 0;padding-bottom:10px;padding-top:10px;text-align:center;">
-                    <!--[if mso | IE]><table role="presentation" border="0" cellpadding="0" cellspacing="0"><tr></tr></table><![endif]-->
-                </td>
-            </tr>
-        </tbody>
-    </table>
-</div>
-<!--[if mso | IE]></td></tr></table><![endif]-->

@@ -1,0 +1,7 @@
+<webscript>
+    <shortname>Check folder descendants shareability</shortname>
+    <description>Check if any descendant document is multi-filed or any descendant folder is non-trivially mirrored, to determine if the folder can be shared. Returns { hasMultifiedDocuments, hasMirroredFolders }.</description>
+    <url>/get/check_folder_descendants_shareable?reference={reference}</url>
+    <format default="html"/>
+    <authentication>admin</authentication>
+</webscript>

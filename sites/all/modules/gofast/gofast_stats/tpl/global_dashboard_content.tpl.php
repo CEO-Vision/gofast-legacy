@@ -80,8 +80,9 @@
                             </div>
                           </div>
                           <div class="card card-custom shadow-sm">
-                            <div class="card-header">
+                            <div class="card-header d-flex align-items-center">
                               <h3 class="card-title"><?= t("Users activity") ?></h3>
+                              <i id="indexation-info-tooltip" class="fas fa-info-circle fa-lg" data-toggle="tooltip" data-placement="top" data-original-title="<?php print t('Active users are allowed users who have logged into the platform within the last 3 months'); ?>"></i>
                             </div>
                             <div id="users_doughnut_active_container" class="w-100 d-flex align-items-center justify-content-center">
                               <div class="stats-loader-container">
@@ -142,7 +143,7 @@
                   <div id="documents_doughnuts_container" class="d-flex justify-content-between gutter-b">
                     <div id="documents_doughnut_storage_container" class="card card-custom shadow-sm col-6 mr-4 px-0">
                       <div class="card-header">
-                        <h2 class="card-title"><?php print t("Storage") ?></h2>
+                        <h2 class="card-title"><?php print t("All data storage") ?></h2>
                       </div>
                       <div class="documents-doughnuts-box">
                         <div class="stats-loader-container">
@@ -152,8 +153,9 @@
                       </div>
                     </div>
                     <div id="documents_doughnut_indexation_container" class="card card-custom shadow-sm flex-grow-1">
-                      <div class="card-header">
+                      <div class="card-header d-flex align-items-center">
                         <h2 class="card-title"><?php print t("Indexing") ?></h2>
+                        <i id="indexation-info-tooltip" class="fas fa-info-circle fa-lg" data-toggle="tooltip" data-placement="top" data-original-title="<?php print t('Deleted contents remain indexed and are included in these statistics', array(), array('context' => 'gofast:gofast_stats')); ?>"></i>
                       </div>
                       <div class="documents-doughnuts-box">
                         <div class="stats-loader-container">

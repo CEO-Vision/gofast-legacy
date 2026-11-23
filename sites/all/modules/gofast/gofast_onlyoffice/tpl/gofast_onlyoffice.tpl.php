@@ -120,7 +120,7 @@
 
   <?= theme("gofast_user_atatus_script", ["atatus_tag" => "onlyoffice"]) ?>
     <script type="text/javascript" src="<?php print DOC_SERV_API_URL ?>"></script>
-    <script type="text/javascript" src="/sites/all/modules/jquery_update/replace/jquery/3.1/jquery.min.js"></script>
+    <script type="text/javascript" src="/sites/all/modules/tag1d7es_jquery_update/replace/jquery/3.7.1/jquery.min.js"></script>
 
     <script type="text/javascript">
       // Anonymous problem. CF : http://dev.onlyoffice.org/viewtopic.php?t=6855&p=9456
@@ -184,6 +184,7 @@
         const referenceDataPayload = {
           fileType: docConfig.document.fileType,
           path,
+          key: referenceDataLink + "-" + new Date().getTime(),
           referenceData,
           url,
         }

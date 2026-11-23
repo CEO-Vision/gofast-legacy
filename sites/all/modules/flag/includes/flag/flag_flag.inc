@@ -38,6 +38,7 @@
  * that can't be found, the special handler flag_broken. Finally, this calls
  * $flag->construct() on the new handler object.
  */
+#[AllowDynamicProperties]
 class flag_flag {
 
   /**
@@ -196,6 +197,10 @@ class flag_flag {
       // hook_flag_link_type_info().
       'link_type' => 'toggle',
       'weight' => 0,
+      // Flood control settings.
+      'flood_control_active' => FALSE,
+      'flood_control_limit' => 0,
+      'flood_control_window' => 0,
     );
 
     // Merge in options from the current link type.
@@ -339,15 +344,15 @@ class flag_flag {
    * Fetches, possibly from some cache, an entity this flag works with.
    */
   function fetch_entity($entity_id, $object_to_remember = NULL) {
-    static $cache = array();
+    $cache = &drupal_static(__FUNCTION__, []);
     if (isset($object_to_remember)) {
-      $cache[$entity_id] = $object_to_remember;
+      $cache[$this->entity_type][$entity_id] = $object_to_remember;
     }
-    if (!array_key_exists($entity_id, $cache)) {
+    if (empty($cache[$this->entity_type][$entity_id])) {
       $entity = $this->_load_entity($entity_id);
-      $cache[$entity_id] = $entity ? $entity : NULL;
+      $cache[$this->entity_type][$entity_id] = $entity ? $entity : NULL;
     }
-    return $cache[$entity_id];
+    return $cache[$this->entity_type][$entity_id];
   }
 
   /**
@@ -515,6 +520,31 @@ class flag_flag {
     }
 
     return $access;
+  }
+
+  /**
+   * Checks whether the current user is allowed to flag based on flood control.
+   *
+   * @param stdClass $account
+   *   (optional) The user account to check. Defaults to the current user.
+   *
+   * @return bool
+   *   TRUE if the user is allowed to flag, FALSE if flood control blocks it.
+   */
+  function flood_control_access($account = NULL) {
+    if (!isset($account)) {
+      $account = $GLOBALS['user'];
+    }
+    // Flood control is inactive, always allow.
+    if (empty($this->flood_control_active)) {
+      return TRUE;
+    }
+    // User can bypass flood control.
+    if (user_access('bypass flagging flood control', $account)) {
+      return TRUE;
+    }
+    $identifier = $account->uid . '-' . $this->name;
+    return flood_is_allowed('flag.flagging', $this->flood_control_limit, $this->flood_control_window, $identifier);
   }
 
   /**
@@ -847,6 +877,12 @@ class flag_flag {
     // Invoke Rules event.
     if (module_exists('rules')) {
       $this->invoke_rules_event('flag', $flagging, $entity_id, $account);
+    }
+
+    // Register flood event for this flagging.
+    if (!empty($this->flood_control_active)) {
+      $identifier = $account->uid . '-' . $this->name;
+      flood_register_event('flag.flagging', $this->flood_control_window, $identifier);
     }
   }
 

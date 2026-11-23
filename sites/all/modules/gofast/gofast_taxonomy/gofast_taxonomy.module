@@ -51,6 +51,47 @@ define('GOFAST_VID_INTERESTS', variable_get('gofast_vocabulary_interests', 0));
 define('GOFAST_TAXONOMY_FORMAT_FIELD', 'field_format');
 define('GOFAST_TAXONOMY_CATEGORY_MEMBERSHIP_FIELD', 'og_taxonomy_category_group');
 
+/**
+ * Name of the folder at the root of spaces where broadcasted/shared documents land.
+ */
+define('GOFAST_TAXONOMY_BROADCAST_INBOX_FOLDER_NAME', 'BROADCAST');
+
+/** Name of field to indicate a content requires anyone accessing it to have confidential clearance */
+define('GOFAST_TAXONOMY_CONFIDENTIALITY_FIELD', 'field_confidentiality');
+
+/** Internal classification level for unclassified content */
+define('GOFAST_TAXONOMY_CLASSIFICATION_LEVEL_UNCLASSIFIED', 'unclassified');
+/** Internal classification level for internal content */
+define('GOFAST_TAXONOMY_CLASSIFICATION_LEVEL_INTERNAL', 'internal');
+/** Internal classification level for restricted content */
+define('GOFAST_TAXONOMY_CLASSIFICATION_LEVEL_RESTRICTED', 'restricted');
+/** Internal classification level for confidential content */
+define('GOFAST_TAXONOMY_CLASSIFICATION_LEVEL_CONFIDENTIAL', 'confidential');
+/** Internal classification level for top secret content */
+define('GOFAST_TAXONOMY_CLASSIFICATION_LEVEL_TOP_SECRET', 'top_secret');
+
+/** Name of "Civil Organization" classification type term */
+define('GOFAST_TAXONOMY_CLASSIFICATION_TYPE_CIVIL_ORGANIZATION_NAME', 'Civil Organization');
+
+/**
+ * @phpstan-type GFTaxonomyInternalClassificationLevel
+ *  GOFAST_TAXONOMY_CLASSIFICATION_LEVEL_UNCLASSIFIED
+ *  | GOFAST_TAXONOMY_CLASSIFICATION_LEVEL_INTERNAL
+ *  | GOFAST_TAXONOMY_CLASSIFICATION_LEVEL_RESTRICTED
+ *  | GOFAST_TAXONOMY_CLASSIFICATION_LEVEL_CONFIDENTIAL
+ *  | GOFAST_TAXONOMY_CLASSIFICATION_LEVEL_TOP_SECRET
+ *  Enumeration of internal level name values.
+ */
+
+/**
+ * @phpstan-type GFTaxonomyClassificationTypeNames
+ *  'Civil Organization'
+ *  | 'French Military'
+ *  | 'CIS TLP'
+ *  | 'EUCI'
+ *  Known classification type term names.
+ */
+
 /*
  * Includes to other files
 */
@@ -465,6 +506,93 @@ function gofast_taxonomy_theme() {
 }
 
 /**
+ * Implements hook_preprocess_HOOK for gofast_taxonomy_manage_location_progression.
+ */
+function gofast_taxonomy_preprocess_gofast_taxonomy_manage_location_progression(&$variables) {
+  // Alias to already present variables
+  $type = &$variables['type'];
+  $locations = &$variables['locations'];
+
+  // Add variables we will compute the value of
+  $locations_a = &$variables['locations_a'];
+  $locations_a = [];
+  $locations_display = &$variables['locations_display'];
+  $locations_display = [];
+  $locations_gids = &$variables['locations_gids'];
+  $locations_gids = [];
+
+  // FIXME? This couples business logic with display logic, ideally it should
+  // not be in a preprocess hook
+  $is_article = isset($type) && $type == "article";
+  foreach ($locations as $location) {
+    // Each location item defines two things: the id of the parent group (node)
+    // and the actual path at which the item will be placed (may contain folders).
+    $location_path = NULL;
+    $location_gid = NULL;
+
+    if (is_array($location)) {
+      if ($location['type'] === 'broadcast') {
+        $location_path = gofast_cmis_space_get_webdav_path($location['gid'])
+          . '/'
+          . GOFAST_TAXONOMY_BROADCAST_INBOX_FOLDER_NAME;
+        $location_gid = $location['gid'];
+      }
+    } elseif (is_numeric($location)) {
+      $location_path = gofast_cmis_space_get_webdav_path($location);
+      $location_gid = $location;
+    } else {
+      $location_path = $location;
+      $location_gid = gofast_og_get_group_id_from_title($location, TRUE);
+    }
+
+    // Each location has a displayed text representation based on the path.
+    $location_display = $location_path;
+    if ($is_article) {
+      $location_display .= "/Wikis";
+    }
+
+    $locations_display[] = $location_display;
+    $locations_a[] = $location_path;
+    $locations_gids[] = $location_gid;
+  }
+}
+
+/**
+ * Implements hook_preprocess_HOOK for gofast_taxonomy_manage_folders_location_progression.
+ */
+function gofast_taxonomy_preprocess_gofast_taxonomy_manage_folders_location_progression(&$variables) {
+  // Alias to already present variables
+  $locations = &$variables['locations'];
+
+  // Add variables we will compute the value of
+  $locations_a = &$variables['locations_a'];
+  $locations_a = [];
+  $locations_display = &$variables['locations_display'];
+  $locations_display = [];
+
+  foreach ($locations as $location) {
+    // filter out '/Sites'
+    if ($location === '/Sites') {
+      continue;
+    }
+    $location_path = NULL;
+    if (is_array($location)) {
+      if ($location['type'] === 'broadcast') {
+        $location_path = gofast_cmis_space_get_webdav_path($location['gid'])
+          . '/'
+          . GOFAST_TAXONOMY_BROADCAST_INBOX_FOLDER_NAME;
+      }
+    } elseif (is_numeric($location)) {
+      $location_path = gofast_cmis_space_get_webdav_path($location);
+    } else {
+      $location_path = $location;
+    }
+    $locations_display[] = $location_path;
+    $locations_a[] = $location_path;
+  }
+}
+
+/**
  * Returns HTML for a node format icon.
  *
  * @param $variables
@@ -524,6 +652,89 @@ function gofast_node_extension($entity) {
 }
 
 /**
+ * Alter gofast_taxonomy_manage_taxonomy form to set node properties _at upload time_.
+ */
+function gofast_taxonomy_form_gofast_taxonomy_manage_taxonomy_form_alter(&$form, &$form_state, $form_id) {
+  if (!$_GET["upload"]) {
+    return;
+  }
+  unset($form['selected_items']);
+
+  $field_custom_date = array(
+    '#title' => GOFAST_METADATA_CUSTOM_DATE_LABEL,
+    '#type' => 'textfield',
+    '#prefix' => '<div class="col-2">',
+    '#suffix' => '</div>',
+    "#label_attributes" => array(
+      "class" => array("d-block", "text-truncate"),
+      "title" => GOFAST_METADATA_CUSTOM_DATE_LABEL,
+    ),
+    '#attributes' => array(
+      'class' => array('gofastDatepicker'),
+      'data-toggle' => array('datepicker')
+    ),
+  );
+  if (!strlen(trim(GOFAST_METADATA_CUSTOM_DATE_LABEL))) {
+    $field_custom_date["#type"] = "hidden";
+    $field_custom_date["#prefix"] = '';
+    $field_custom_date["#suffix"] = '';
+  }
+  $field_document_reference = array(
+    '#title' => GOFAST_METADATA_DOCUMENT_REFERENCE_LABEL,
+    '#type' => 'textfield',
+    '#prefix' => '<div class="col-2">',
+    '#suffix' => '</div>',
+    "#label_attributes" => array(
+      "class" => array("d-block", "text-truncate"),
+      "title" => GOFAST_METADATA_DOCUMENT_REFERENCE_LABEL,
+    ),
+  );
+  if (!strlen(trim(GOFAST_METADATA_DOCUMENT_REFERENCE_LABEL))) {
+    $field_document_reference["#type"] = "hidden";
+    $field_document_reference["#prefix"] = '';
+    $field_document_reference["#suffix"] = '';
+  }
+  $form["second_row"]["keywords"]["#prefix"] = "<div class='col-5'>";
+  $form["second_row"]["field_custom_date"] = $field_custom_date;
+  $form["second_row"]["field_document_reference"] = $field_document_reference;
+
+  if ($_GET["page"] && module_exists("gofast_mistral")) {
+    // If on document page, preselect AI suggestion.
+    $nid = gofast_xss_clean($_GET["upload"]);
+    $tracking_entry = reset(gofast_mistral_get_process_tracking("taxonomy", $nid));
+    $should_confirm = $tracking_entry->status == "ready";
+    if ($should_confirm) {
+      $cat = json_decode($tracking_entry->data)->Category;
+      $cat_name = $cat->name;
+      $form["first_row"]["category"]["#default_value"] = $cat_name;
+    }
+  } elseif (!$_GET["page"]) {
+    $form['before_submit'] = array(
+      '#type' => 'hidden',
+      '#value' => 'Gofast.ITHit._processMultiUploadSubmit',
+    );
+    $form["ajax_map"] = array(
+      '#type' => 'hidden',
+      '#value' => json_encode([
+      "category" => "category",
+      "classification" => "classification",
+      "criticity" => "criticity",
+      "state" => "state",
+      "ac-list-tags-field-keywords" => "tags",
+        "language" => "language",
+        "field_date" => "dueDate",
+        "field_custom_date" => "date",
+        "field_document_reference" => "document_reference",
+      ]),
+    );
+    $form ['upload_warning'] = [
+      '#type' => 'markup',
+      '#markup' => "<div class='alert alert-custom alert-notice alert-light-warning fade show' role='alert'><div class='alert-icon'><i class='flaticon-warning'></i></div><div class='alert-text m-0'><span class='font-weight-bold'>" . t("If you trigger new uploads before the current ones are finished, the values chosen here will be applied to the newer uploads as well.", [], ["context" => "gofast:gofast_taxonomy"]) . "</span></div></div>"
+    ];
+  }
+}
+
+/**
  * This form allow to set some metadata of selected items from ITHit.
  * @param type $form
  * @param array $form_state
@@ -533,13 +744,13 @@ function gofast_taxonomy_manage_taxonomy_form($form, &$form_state) {
 
   $selected_items_json = array();
   global $user;
-  if(variable_get("ithit_bulk_".$user->uid, NULL)){
+  if(!$_GET["upload"] && variable_get("ithit_bulk_".$user->uid, NULL)){
       $selected_items_json = json_decode(rawurldecode(variable_get("ithit_bulk_".$user->uid, NULL)));
       variable_del("ithit_bulk_".$user->uid);
   }
 
   //Add the functionnality in the cart
-  if(variable_get("ithit_bulk_cart_".$user->uid, NULL)){
+  if(!$_GET["upload"] && variable_get("ithit_bulk_cart_".$user->uid, NULL)){
 
       //Get all nid node in the cart
       $selected_items_json = json_decode(rawurldecode(variable_get("ithit_bulk_cart_".$user->uid, NULL)));
@@ -581,8 +792,9 @@ function gofast_taxonomy_manage_taxonomy_form($form, &$form_state) {
 
   $keywords = array(
     '#title' => t('Labels', array(), array('context' => 'gofast')),
+    "#label_attributes" => array("class" => array("d-block")),
     '#type' => 'textfield',
-    '#prefix' => '<div class="col-md-9">',
+    '#prefix' => '<div class="col-9">',
     '#suffix' => '</div>',
     '#default_value' => '',
     '#maxlength' => '', // no maxlength
@@ -593,6 +805,7 @@ function gofast_taxonomy_manage_taxonomy_form($form, &$form_state) {
 
   $field_date = array(
     '#title' => t('Deadline', array(), array('context' => 'gofast')),
+    "#label_attributes" => array("class" => array("d-block")),
     '#type' => 'textfield',
     '#prefix' => '<div class="col">',
     '#suffix' => '</div>',
@@ -603,20 +816,35 @@ function gofast_taxonomy_manage_taxonomy_form($form, &$form_state) {
   );
 
   $allowed_taxonomy_state = taxonomy_allowed_values(field_info_field('field_state'));
+  $allowed_taxonomy_state_values = [];
   foreach ($allowed_taxonomy_state as $tid => $term){
     if($term == "Archived"){
         unset($allowed_taxonomy_state[$tid]);
     }
-    $localized_term = i18n_taxonomy_localize_terms(taxonomy_term_load($tid));
-    $allowed_taxonomy_state[$localized_term->tid] = $localized_term->name;
+    $term = taxonomy_term_load($tid);
+    $localized_term = i18n_taxonomy_localize_terms($term);
+    $term_key = $_GET["upload"] ? $term->name : $localized_term->tid;
+    $allowed_taxonomy_state_values[$term_key] = $localized_term->name;
   }
 
+  $state_options = array(-1 => t('None', array(), array('context' => 'gofast'))) + $allowed_taxonomy_state_values;
+  $default_value = -1;
+  if(!$_GET["upload"]){
+    $state_options[0] = t('No change', array(), array('context' => 'gofast'));
+    $default_value = 0;
+  }
+  
   $state = array(
     '#title' => t('State', array(), array('context' => 'gofast')),
+    "#label_attributes" => array("class" => array("d-block")),
     '#type' => 'select',
     '#prefix' => '<div class="col">',
     '#suffix' => '</div>',
-    '#options' => array(0 => t('No change', array(), array('context' => 'gofast')), -1 => t('None', array(), array('context' => 'gofast'))) + $allowed_taxonomy_state,
+    '#attributes' => array(
+      'style' => array('width: 100%;')
+    ),
+    '#options' => $state_options,
+    '#default_value' => $default_value,
   );
 
   $categories_standard = array();
@@ -626,19 +854,28 @@ function gofast_taxonomy_manage_taxonomy_form($form, &$form_state) {
 
   //sort form table
     usort($terms, function ($a, $b) {
-      return (i18n_taxonomy_localize_terms($a)->name < i18n_taxonomy_localize_terms($b)->name) ? -1 : 1;
-    });
+    return (i18n_taxonomy_localize_terms($a)->name < i18n_taxonomy_localize_terms($b)->name) ? -1 : 1;
+  });
 
+  $target_gid = FALSE;
+  if ($_GET["upload"]) {
+    $target_gid = (int) gofast_xss_clean($_GET["upload"]);
+  }
   foreach ($terms as $term) {
-
-    $allowed_term = gofast_taxonomy_category_allowed($term, $nodes_cart);
+    $allowed_term = FALSE;
+    if ($target_gid) {
+      $allowed_term = gofast_taxonomy_categories_is_category_allowed_in_all_spaces($term->tid) ? TRUE : gofast_taxonomy_categories_is_category_allowed_in_space($term->tid, $target_gid, FALSE);
+    } else {
+      $allowed_term = gofast_taxonomy_category_allowed($term, $nodes_cart);
+    }
 
     if($allowed_term) {
       $localized_term = i18n_taxonomy_localize_terms($term);
+      $term_key = $_GET["upload"] ? $term->name : $localized_term->tid;
       if($term->field_standard_gf[LANGUAGE_NONE][0]['value'] == 1){
-        $categories_standard[$localized_term->tid] = $localized_term->name;
+        $categories_standard[$term_key] = $localized_term->name;
       }else{
-        $categories_custom[$localized_term->tid] = $localized_term->name;
+        $categories_custom[$term_key] = $localized_term->name;
       }
     }
   }
@@ -646,50 +883,97 @@ function gofast_taxonomy_manage_taxonomy_form($form, &$form_state) {
   $categories[t('Standard', array(), array('context' => 'gofast'))] = $categories_standard;
   $categories[t("@site_name's categories", array('@site_name' => variable_get('site_name') ), array('context' => 'gofast'))] = $categories_custom;
 
+  $category_options = array(-1 => t('None', array(), array('context' => 'gofast'))) + $categories;
+  $default_value = -1;
+  if(!$_GET["upload"]){
+    $category_options[0] = t('No change', array(), array('context' => 'gofast'));
+    $default_value = 0;
+  }
   $category = array(
     '#title' => t('Category', array(), array('context' => 'gofast')),
+    "#label_attributes" => array("class" => array("d-block")),
     '#type' => 'select',
     '#prefix' => '<div class="col">',
-    '#suffix' => '</div>',
-    '#options' => array(0 => t('No change', array(), array('context' => 'gofast')), -1 => t('None', array(), array('context' => 'gofast'))) + $categories,
-  );
-
-  $language = array(
-    '#title' => t('Language', array(), array('context' => 'gofast')),
-    '#type' => 'select',
-    '#prefix' => '<div class="col-md-3">',
     '#suffix' => '</div>',
     '#attributes' => array(
       'style' => array('width: 100%;')
     ),
-    '#options' => array(0 => t('No change', array(), array('context' => 'gofast'))) + array_merge(array(LANGUAGE_NONE => t("Language neutral")), locale_language_list('name', TRUE)),
+    '#options' => $category_options,
+    '#default_value' => $default_value,
   );
 
-  $allowed_taxonomy_state = taxonomy_allowed_values(field_info_field('field_criticity'));
-  foreach ($allowed_taxonomy_state as $tid => $term){
-    $localized_term = i18n_taxonomy_localize_terms(taxonomy_term_load($tid));
-    $allowed_taxonomy_state[$localized_term->tid] = $localized_term->name;
+  $language_options = array_merge(array(LANGUAGE_NONE => t("Language neutral")), locale_language_list('name', TRUE));
+  $default_value = LANGUAGE_NONE; 
+  if(!$_GET["upload"]){
+    $language_options[0] = t('No change', array(), array('context' => 'gofast'));
+    $default_value = 0;
   }
+  $language = array(
+    '#title' => t('Language', array(), array('context' => 'gofast')),
+    "#label_attributes" => array("class" => array("d-block")),
+    '#type' => 'select',
+    '#prefix' => '<div class="col-3">',
+    '#suffix' => '</div>',
+    '#attributes' => array(
+      'style' => array('width: 100%;')
+    ),
+    '#options' => $language_options,
+    '#default_value' => $default_value,
+  );
 
+  $allowed_taxonomy_criticity = taxonomy_allowed_values(field_info_field('field_criticity'));
+  $allowed_taxonomy_criticity_values = [];
+  foreach ($allowed_taxonomy_criticity as $tid => $term){
+    $term = taxonomy_term_load($tid);
+    $localized_term = i18n_taxonomy_localize_terms($term);
+    $term_key = $_GET["upload"] ? $term->name : $localized_term->tid;
+    $allowed_taxonomy_criticity_values[$term_key] = $localized_term->name;
+  }
+  
+  $criticity_options = array(-1 => t('None', array(), array('context' => 'gofast'))) + $allowed_taxonomy_criticity_values;
+  $default_value = -1;
+  if(!$_GET["upload"]){
+    $criticity_options[0] = t('No change', array(), array('context' => 'gofast'));
+    $default_value = 0;
+  }
   $criticity = array(
     '#title' => t('Criticity', array(), array('context' => 'gofast')),
+    "#label_attributes" => array("class" => array("d-block")),
     '#prefix' => '<div class="col">',
     '#suffix' => '</div>',
     '#type' => 'select',
-    '#options' => array(0 => t('No change', array(), array('context' => 'gofast')), -1 => t('None', array(), array('context' => 'gofast'))) + $allowed_taxonomy_state,
+    '#attributes' => array(
+      'style' => array('width: 100%;')
+    ),
+    '#options' => $criticity_options,
+    '#default_value' => $default_value,
   );
 
   $allowed_taxonomy_classification = taxonomy_allowed_values(field_info_field('field_classification'));
+  $allowed_taxonomy_classification_values = [];
   foreach ($allowed_taxonomy_classification as $tid => $term){
-    $localized_term = i18n_taxonomy_localize_terms(taxonomy_term_load($tid));
-    $allowed_taxonomy_classification[$localized_term->tid] = $localized_term->name;
+    $term = taxonomy_term_load($tid);
+    $localized_term = i18n_taxonomy_localize_terms($term);
+    $term_key = $_GET["upload"] ? $term->name : $localized_term->tid;
+    $allowed_taxonomy_classification_values[$term_key] = $localized_term->name;
+  }
+  $classification_options = array(-1 => t('None', array(), array('context' => 'gofast'))) + $allowed_taxonomy_classification_values;
+  $default_value = -1; 
+  if(!$_GET["upload"]){
+    $classification_options[0] = t('No change', array(), array('context' => 'gofast'));
+    $default_value = 0;
   }
   $classification = array(
-    "#title" => t("Classification", array(), array("context" => "gofast")),
+    "#title" => GOFAST_METADATA_CLASSIFICATION_LABEL,
+    "#label_attributes" => array("class" => array("d-block")),
     "#prefix" => '<div class="col">',
     "#suffix" => '</div>',
     "#type" => 'select',
-    "#options" => array(0 => t('No change', array(), array('context' => 'gofast')), -1 => t('None', array(), array('context' => 'gofast'))) + $allowed_taxonomy_classification,
+    '#attributes' => array(
+      'style' => array('width: 100%;')
+    ),
+    "#options" => $classification_options,
+    '#default_value' => $default_value,
   );
 
   $form['first_row'] = array(
@@ -738,9 +1022,11 @@ function gofast_taxonomy_manage_taxonomy_form($form, &$form_state) {
     );
   $form['selected_item_by_type']['#attributes']['class'][] = "gofast_display_none";
 
-  $rendered_items = '<h2>' . t('Folders and documents concerned by this modification:', array(), array('context' => 'gofast:gofast_taxonomy')) . '</h2>';
-  foreach ($items_by_type as $key => $items) {
-    $rendered_items .= '<ul><li>' .  str_replace("/_", "/", str_replace("/Sites", "", str_replace("/alfresco/webdav", "", implode('</li><li>', $items)))) . '</li></ul>';
+  if (!$_GET["upload"]) {
+    $rendered_items = '<h2>' . t('Folders and documents concerned by this modification:', array(), array('context' => 'gofast:gofast_taxonomy')) . '</h2>';
+    foreach ($items_by_type as $key => $items) {
+      $rendered_items .= '<ul><li>' .  str_replace("/_", "/", str_replace("/Sites", "", str_replace("/alfresco/webdav", "", implode('</li><li>', $items)))) . '</li></ul>';
+    }
   }
 
   $form['selected_items'] = array(
@@ -762,7 +1048,9 @@ function gofast_taxonomy_manage_taxonomy_form($form, &$form_state) {
  * @param array $form_state
  */
 function gofast_taxonomy_manage_taxonomy_form_validate($form, &$form_state){
-
+  if ($_GET["upload"] && !$_GET["page"]) {
+    return;
+  }
   $json_keyword_values = (array) json_decode($form_state['input']['ac-list-tags-field-keywords']);
   $keywords_mixed = array_map(function($element) {
     if(is_object($element)) {
@@ -776,13 +1064,177 @@ function gofast_taxonomy_manage_taxonomy_form_validate($form, &$form_state){
 }
 
 /**
+ * Updates a node with taxonomy terms and other form state values.
+ *
+ * This function processes the form state values to update the taxonomy terms
+ * and other fields of a given node. It handles keywords, language, taxonomy
+ * terms, and date fields.
+ *
+ * @param int $nid
+ *   The node ID of the node to be updated.
+ * @param array $form_state
+ *   The form state array containing the values to be processed.
+ */
+function gofast_taxonomy_manage_taxonomy_form_state_to_node($nid, $form_state) {
+  $commands = [];
+  $node = node_load($nid);
+
+  // Process text fields.
+  foreach(["field_document_reference"] as $field) {
+    $node->$field[LANGUAGE_NONE] = [["value" => $form_state["values"][$field]]];
+  }
+
+  // Process keywords.
+  $keywords = explode(',', $form_state['values']['keywords']);
+  [$new_keywords, $merged_keywords] = gofast_taxonomy_manage_taxonomy_parse_keywords($node, $keywords);
+  if ($new_keywords > 0) {
+    // Update the node's tags field with the merged keywords.
+    $node->field_tags[LANGUAGE_NONE] = $merged_keywords;
+  }
+
+  // Set the node's language if specified in the form state.
+  if ($form_state["values"]["language"] !== "0") {
+    $node->language = $form_state["values"]["language"];
+  }
+
+  // Process taxonomy terms.
+  foreach(["category", "state", "criticity", "classification"] as $taxo) {
+    if($form_state['values'][$taxo] === '0') {
+      // Skip if the taxonomy term is not set.
+      continue;
+    }
+    $field = "field_{$taxo}";
+    if ($form_state["values"][$taxo] === "-1") {
+      // Clear the taxonomy field if the value is -1.
+      $node->$field[LANGUAGE_NONE] = [];
+      continue;
+    }
+    // Get the taxonomy term by name.
+    if(is_numeric($form_state["values"][$taxo])) {
+      $term = taxonomy_term_load($form_state["values"][$taxo]);
+    } else {
+      $term = reset(taxonomy_get_term_by_name($form_state["values"][$taxo], $taxo));
+    }
+    // Update the node's taxonomy field with the term ID.
+    if ($taxo == "category") {
+      // Handle naming rules
+      $has_naming_rule = gofast_naming_rules_category_has_naming_rule($term->tid);
+      if ($has_naming_rule) {
+        $ruled_value = gofast_naming_rule_get_node_ruled_value($node, $term, TRUE, FALSE);
+      }
+      if (isset($ruled_value) && !$ruled_value["has_all_metadata"]) {
+        $commands[] = gofast_command_toast_message(t("All the fields required by the naming rule are not filled. They will be replaced by empty strings.", [], ["context" => "gofast:gofast_naming_rules"]), "warning");
+      }
+      if (isset($ruled_value) && !strlen($ruled_value["value"])) {
+        $commands[] = gofast_command_toast_message(t("The naming rule results in an empty title and therefore it will not be applied.", [], ["context" => "gofast:gofast_naming_rules"]), "warning");
+        continue;
+      }
+      if (module_exists("gofast_mistral")) {
+        // Update AI tracking data (so validation of AI suggestion is not asked again).
+        $data = ["Category" => ["tid" => $term->tid, "vid" => $term->vid, "name" => $term->name], "State" => false];
+        gofast_mistral_process_tracking_update("taxonomy", $node->nid, TRUE, time(), $data, "done");
+      }
+    }
+    $node->$field[LANGUAGE_NONE] = [["tid" => $term->tid]];
+  }
+
+  global $user;
+  // Process date fields.
+  foreach(["field_date", "field_custom_date"] as $date) {
+    if ($form_state["values"][$date] == "") {
+      // Clear the date field if the value is empty.
+      $node->$date[LANGUAGE_NONE] = [];
+      continue;
+    }
+    $format = system_date_format_locale($user->language, "short_without_hours");
+    $formatted_date = DateTime::createFromFormat($format, $form_state["values"][$date]);
+    $node->$date[LANGUAGE_NONE] = [["value" => $formatted_date->format("Y-m-d")]];
+  }
+
+  // Save the updated node.
+  node_save($node);
+
+  return $commands;
+}
+
+/**
+
+ * This function processes an array of keywords
+ * and retrieves the corresponding taxonomy terms.
+ *
+ * @param object $node
+ *   The node object to be updated.
+ * @param array $keywords
+ *   An array of keywords to be processed.
+ *
+ * @return array
+ *   An array containing two elements:
+ *   - An array of new keyword term IDs.
+ *   - An array of merged keyword terms (existing and new).
+ */
+function gofast_taxonomy_manage_taxonomy_parse_keywords($node, $keywords) {
+  if ($keywords[0] == "") {
+    unset($keywords[0]);
+    $keywords = array_values($keywords);
+  }
+
+  $keywords_terms = gofast_xeditable_terms_get_from_array(GOFAST_VID_TAGS, $keywords);
+
+  $new_keywords = array();
+  $node_new_keywords = array();
+  $node_keywords = array();
+
+  // Map terms to their term IDs.
+  $map_tid = function($element) {
+    if (is_array($element)) {
+      return $element['tid'];
+    } else {
+      return $element->tid;
+    }
+  };
+
+  // Check if the node already has taxonomy terms.
+  if (isset($node->{'field_tags'}[LANGUAGE_NONE])) {
+    $node_keywords = $node->{'field_tags'}[LANGUAGE_NONE];
+    // Find new keyword term IDs that are not already in the node.
+    $new_keywords = array_diff(array_map($map_tid, $keywords_terms), array_map($map_tid, $node_keywords));
+  } else {
+    // If the node has no existing terms, all keywords are new.
+    $new_keywords = array_map($map_tid, $keywords_terms);
+  }
+
+  // Prepare the new keywords for addition to the node.
+  foreach ($new_keywords as $new_keyword_tid) {
+    $node_new_keywords[]['tid'] = $new_keyword_tid;
+  }
+
+  // Merge the existing and new keywords.
+  $merged_keywords = array_merge($node_keywords, $node_new_keywords);
+
+  return [$new_keywords, $merged_keywords];
+}
+
+/**
  * Hook form submit (for manage_taxonomy_form)
  * @param type $form
  * @param type $form_state
  */
 function gofast_taxonomy_manage_taxonomy_form_submit($form, &$form_state) {
+  if ($_GET["upload"] && !$_GET["page"]) {
+    return; // will add relevant data directly to ITHit queue
+  }
+  if ($_GET["page"]) {
+    $nid = (int) gofast_xss_clean($_GET["upload"]);
+    $commands = gofast_taxonomy_manage_taxonomy_form_state_to_node($nid, $form_state);
+    $commands[] = gofast_command_toast_message(t("Metadata was added", array(), array('context' => 'gofast')), "info");
+    // Immediately try to update the metadata panel with new metadata.
+    $commands[] = ajax_command_html('#document__infotab[data-nid="' . $nid . '"]', gofast_metadata_get_node_infos_async($nid, FALSE));
+    $commands[] = ctools_modal_command_dismiss();
+    print ajax_render($commands);
+    exit;
+  }
   $updated_nids = array();
-  //Insert a general progress bar for mass taxonom
+  //Insert a general progress bar for mass taxonomy
   $html = "";
   // If there is other form_submit, append progess bars to existing ones
   if(isset($form_state["render_html"])){
@@ -843,35 +1295,7 @@ function gofast_taxonomy_manage_taxonomy_form_submit($form, &$form_state) {
       }
 
       $keywords = explode(',', $form_state['values']['keywords']);
-      if($keywords[0] == ""){
-        unset($keywords[0]);
-        $keywords = array_values($keywords);
-      }
-      $keywords_terms = gofast_xeditable_terms_get_from_array(GOFAST_VID_TAGS, $keywords);
-      $new_keywords = array();
-      $node_new_keywords = array();
-      $node_keywords = array();
-      $map_tid = function($element) {
-        if (is_array($element)) {
-          return $element['tid'];
-        }
-        else {
-          return $element->tid;
-        }
-      };
-      if(isset($node->{'field_tags'}[LANGUAGE_NONE])) {
-        $node_keywords = $node->{'field_tags'}[LANGUAGE_NONE];
-        $new_keywords = array_diff(array_map($map_tid, $keywords_terms), array_map($map_tid, $node_keywords));
-      } else {
-        $new_keywords = array_map($map_tid, $keywords_terms);
-      }
-
-      foreach($new_keywords as $new_keyword_tid) {
-        $node_new_keywords[]['tid'] = $new_keyword_tid;
-      }
-
-      $merged_keywords = array_merge($node_keywords, $node_new_keywords);
-
+      [$new_keywords, $merged_keywords] = gofast_taxonomy_manage_taxonomy_parse_keywords($node, $keywords);
       if(count($new_keywords) > 0) {
         $html .= theme('gofast_taxonomy_manage_taxonomy_progression', array('nid' => $nid, 'title' => $title, 'field' => 'field_tags', 'value' => $merged_keywords, 'vid' => GOFAST_VID_TAGS));
       }
@@ -1164,40 +1588,21 @@ function gofast_taxonomy_add_locations_form($form, &$form_state)
     $public => "/Sites/_Public",
   );
 
-  $is_internal = isset($node->field_criticity['und'][0]['tid']) && taxonomy_term_load($node->field_criticity['und'][0]['tid'])->name == "Internal Distribution";
-  $is_confidential = isset($node->field_criticity['und'][0]['tid']) && taxonomy_term_load($node->field_criticity['und'][0]['tid'])->name == "Confidential Data";
-
   $is_internal = false;
-  $is_confidential = false;
 
   foreach (array_keys($selected_nids) as $nid) {
     $node = node_load($nid);
-    if (isset($node->field_criticity['und'][0]['tid']) && taxonomy_term_load($node->field_criticity['und'][0]['tid'])->name == "Internal Distribution") {
+    if (gofast_taxonomy_is_node_internal($node)) {
       $is_internal = true;
-    }
-    if (isset($node->field_criticity['und'][0]['tid']) && taxonomy_term_load($node->field_criticity['und'][0]['tid'])->name == "Confidential Data") {
-      $is_confidential = true;
     }
   }
 
   $form[GOFAST_CMIS_LOCATIONS_FIELD]['#multiple'] = TRUE;
   $form[GOFAST_CMIS_LOCATIONS_FIELD]['#title'] = t("Select locations where your selected documents will be added", array(), array('context' => 'gofast'));
 
-  if ($is_internal && $is_confidential) {
-    $form[GOFAST_CMIS_LOCATIONS_FIELD]['#description'] = '<p class="text-danger" role="alert">' .
-    t("Extranets Spaces not available: document for Internal Distribution only (level of importance)", array(), array('context' => 'gofast'))
-    . '</p>
-     <p class="text-danger" role="alert">' .
-    t("Public Spaces not available: confidential document (level of importance)", array(), array('context' => 'gofast'))
-    . '</p>';
-    $form[GOFAST_CMIS_LOCATIONS_FIELD]["#attributes"]["class"][] = "gofast_is_internal_document_form";
-    $form[GOFAST_CMIS_LOCATIONS_FIELD]["#attributes"]["class"][] = "gofast_is_confidential_document_form";
-  }elseif ($is_internal) {
+  if ($is_internal) {
     $form[GOFAST_CMIS_LOCATIONS_FIELD]['#description'] = '<p class="text-danger" role="alert">' . t("Extranets Spaces not available: document for Internal Distribution only (level of importance)", array(), array('context' => 'gofast')) . '</p>';
     $form[GOFAST_CMIS_LOCATIONS_FIELD]["#attributes"]["class"][] = "gofast_is_internal_document_form";
-  } elseif ($is_confidential) {
-    $form[GOFAST_CMIS_LOCATIONS_FIELD]['#description'] = '<p class="text-danger" role="alert">' . t("Public Spaces not available: confidential document (level of importance)", array(), array('context' => 'gofast')) . '</p>';
-    $form[GOFAST_CMIS_LOCATIONS_FIELD]["#attributes"]["class"][] = "gofast_is_confidential_document_form";
   }
 
   $form[GOFAST_CMIS_LOCATIONS_FIELD]['#required'] = FALSE;
@@ -1269,21 +1674,24 @@ function gofast_taxonomy_add_locations_form_submit($form, &$form_state) {
   $broadcast_values = $form_state['input']['ac-list-tags-broadcast'];
   $broadcast_array = json_decode(trim($broadcast_values));
   if(count((array) $broadcast_array) > 0 && $broadcast_array[0] != ""){
-	global $cmis_as_publisher;
-	global $cmis_sudo_admin;
-	$cmis_as_publisher = true;
-	$cmis_sudo_admin = true;
-	foreach($broadcast_array as $key => $broadcast_object){
-    if($broadcast_object->type == "user"){
-      $private_gid = gofast_og_get_user_private_space(user_load($broadcast_object->value), FALSE);
-      $form_state['input']["og_group_content_ref"][] = array("target_id" => $private_gid, "field_mode" => "default");
-      $form_state['input']["field_emplacement"][] = $private_gid;
-    }else{
-      $form_state['input']["og_group_content_ref"][] = array("target_id" => $broadcast_object->value, "field_mode" => "default");
-      $form_state['input']["field_emplacement"][] = $broadcast_object->value;
+    global $cmis_as_publisher;
+    global $cmis_sudo_admin;
+    $cmis_as_publisher = true;
+    $cmis_sudo_admin = true;
+    foreach($broadcast_array as $key => $broadcast_object){
+      if($broadcast_object->type == "user"){
+        $private_gid = gofast_og_get_user_private_space(user_load($broadcast_object->value), FALSE);
+        $form_state['input']["og_group_content_ref"][] = array("target_id" => $private_gid, "field_mode" => "default");
+        $broadcast_object->value = $private_gid;
+      }else{
+        $form_state['input']["og_group_content_ref"][] = array("target_id" => $broadcast_object->value, "field_mode" => "default");
+      }
+      $location_path = gofast_cmis_space_get_webdav_path($broadcast_object->value)
+        . '/'
+        . GOFAST_TAXONOMY_BROADCAST_INBOX_FOLDER_NAME;
+      $form_state['input']["field_emplacement"][] = $location_path;
     }
   }
-    }
 
     $selected_locations = $form_state['input']['field_emplacement'];
     $selected_nids = json_decode($form['selected_nids']['#value'], true);
@@ -1292,14 +1700,14 @@ function gofast_taxonomy_add_locations_form_submit($form, &$form_state) {
     if(!empty($selected_nids)){
         $progress_bar = theme('gofast_progress_bar');
         $html .= $progress_bar;
-	foreach($selected_nids as $nid) {
-	    $title = gofast_get_node_title($nid);
-	    if(empty($title)){
-	      $title = array_pop(explode("/",  urldecode($_SESSION['selected_file_path'][$nid])));
-	      $nid = NULL;
-	    }
-	    $html .= theme('gofast_taxonomy_add_location_progression', array('nid' => $nid, 'title' => $title, 'locations' => $selected_locations, "is_broadcast" => $cmis_as_publisher));
-	}
+      foreach($selected_nids as $nid) {
+          $title = gofast_get_node_title($nid);
+          if(empty($title)){
+            $title = array_pop(explode("/",  urldecode($_SESSION['selected_file_path'][$nid])));
+            $nid = NULL;
+          }
+          $html .= theme('gofast_taxonomy_add_location_progression', array('nid' => $nid, 'title' => $title, 'locations' => $selected_locations, "is_broadcast" => $cmis_as_publisher));
+      }
     }
 
     $commands = array();
@@ -1319,14 +1727,26 @@ function gofast_taxonomy_add_locations_process(){
     $nid = $_POST['process_nid'];
     $locations = json_decode($_POST['process_locations']);
     $is_broadcast = $_POST['broadcast'];
+    $node = node_load($nid);
     ## treat broadcast
     if($is_broadcast == 1){
         global $cmis_as_publisher;
         global $cmis_sudo_admin;
         $cmis_as_publisher = true;
-        $cmis_sudo_admin = true;
+        gofast_taxonomy_sync_node_main_location_with_alfresco($node);
+        // Make sure the BROADCAST_INBOX folder exists for paths that require it.
+        foreach ($locations as $location) {
+        if (strpos($location, GOFAST_TAXONOMY_BROADCAST_INBOX_FOLDER_NAME) !== FALSE) {
+          $location_gid = gofast_og_get_group_id_from_title(str_replace("/" . GOFAST_TAXONOMY_BROADCAST_INBOX_FOLDER_NAME, "", $location), TRUE);
+          gofast_taxonomy_get_broadcast_inbox_folder_reference($location_gid, TRUE);
+        } 
+        }
     }
-    $node = node_load($nid);
+    
+    if(gofast_taxonomy_is_node_confidential($node)) {
+      drupal_json_output(['error' => t("This document is confidential", array(), array('context' => 'gofast:gofast_cmis'))]);
+      exit;
+    }
 
     $parents_formatted = array();
     $parent = gofast_cmis_item_get_parent($node->{GOFAST_CMIS_REFERENCE_FIELD}[LANGUAGE_NONE][0]['value']);
@@ -1608,8 +2028,8 @@ function gofast_taxonomy_manage_locations_form($form, &$form_state) {
   $all_paths = $user_available_paths + $selected_paths + $selected_locations;
   array_unique($all_paths);
 
-  $is_internal = isset($node->field_criticity['und'][0]['tid']) && taxonomy_term_load($node->field_criticity['und'][0]['tid'])->name == "Internal distribution";
-  $is_confidential = isset($node->field_criticity['und'][0]['tid']) && taxonomy_term_load($node->field_criticity['und'][0]['tid'])->name == "Confidential Data";
+  $is_internal = gofast_taxonomy_is_node_internal($node);
+  $is_confidential = gofast_taxonomy_is_node_confidential($node);
 
   $form[GOFAST_CMIS_LOCATIONS_FIELD]['#multiple'] = ($node->type != "article"); // TRUE only if current node is not a wiki article
   $form[GOFAST_CMIS_LOCATIONS_FIELD]['#title'] = t("Select locations where your selected documents will be multi-filed", array(), array('context' => 'gofast'));
@@ -1736,10 +2156,10 @@ function gofast_taxonomy_manage_locations_form_submit($form, &$form_state) {
            if($broadcast_object->type == "user"){
              $private_gid = gofast_og_get_user_private_space(user_load($broadcast_object->value), FALSE);
              $form_state['input']["og_group_content_ref"][] = array("target_id" => $private_gid, "field_mode" => "default");
-             $form_state['input']["field_emplacement"][] = $private_gid;
+             $form_state['input']["field_emplacement"][] = ['type' => 'broadcast', 'gid' => $private_gid];
            }else{
              $form_state['input']["og_group_content_ref"][] = array("target_id" => $broadcast_object->value, "field_mode" => "default");
-             $form_state['input']["field_emplacement"][] = $broadcast_object->value;
+             $form_state['input']["field_emplacement"][] = ['type' => 'broadcast', 'gid' => $broadcast_object->value];
            }
          }
      }
@@ -1759,7 +2179,13 @@ function gofast_taxonomy_manage_locations_form_submit($form, &$form_state) {
           $title = array_pop(explode("/",  urldecode($_SESSION['selected_file_path'][$selected_nid])));
           $nid = NULL;
         }
-        $html .= theme('gofast_taxonomy_manage_location_progression', array('nid' => $selected_nid, 'title' => $title, 'type' => $type, 'locations' => $selected_locations, "is_broadcast" => $cmis_as_publisher));
+        $html .= theme('gofast_taxonomy_manage_location_progression', array(
+          'nid' => $selected_nid,
+          'title' => $title,
+          'type' => $type,
+          'locations' => $selected_locations,
+          "is_broadcast" => $cmis_as_publisher,
+        ));
 
         $commands = array();
         $commands[] = ctools_modal_command_dismiss();
@@ -1779,7 +2205,12 @@ function gofast_taxonomy_manage_locations_form_submit($form, &$form_state) {
             $title = array_pop(explode("/",  urldecode($_SESSION['selected_file_path'][$nid])));
             $nid = NULL;
           }
-          $html .= theme('gofast_taxonomy_manage_location_progression', array('nid' => $nid, 'title' => $title, 'locations' => $selected_locations, "is_broadcast" => $cmis_as_publisher));
+          $html .= theme('gofast_taxonomy_manage_location_progression', array(
+            'nid' => $nid,
+            'title' => $title,
+            'locations' => $selected_locations,
+            "is_broadcast" => $cmis_as_publisher,
+          ));
         }
 
         $commands = array();
@@ -1799,6 +2230,7 @@ function gofast_taxonomy_manage_locations_process(){
     ## retrieve informations
     $nid = $_POST['process_nid'];
     $locations = json_decode($_POST['process_locations']);
+    $locations_gids = json_decode($_POST['process_locations_gids']);
     $is_broadcast = $_POST['broadcast'];
     ## treat broadcast
     if($is_broadcast == 1){
@@ -1913,6 +2345,16 @@ function gofast_taxonomy_manage_locations_process(){
             }
         }
     }else{
+        // ensure node main location is in sync with Alfresco
+        gofast_taxonomy_sync_node_main_location_with_alfresco($node);
+
+        // Make sure the BROADCAST_INBOX folder exists for paths that require it.
+        foreach (array_map(NULL, $locations, $locations_gids) as [$location, $location_gid]) {
+          if (strpos($location, GOFAST_TAXONOMY_BROADCAST_INBOX_FOLDER_NAME) !== FALSE) {
+            gofast_taxonomy_get_broadcast_inbox_folder_reference($location_gid, TRUE);
+          }
+        }
+
         ## update location of the node
         unset($_POST);
         $_POST["value"] = $locations;
@@ -1930,6 +2372,101 @@ function gofast_taxonomy_manage_locations_process(){
 
     print(json_encode($parents_formatted));
     exit;
+}
+
+/**
+ * Ensure the given node's main location is synchronised between Drupal and Alfresco.
+ *
+ * If the value differs, Alfresco's value is taken as the source of truth and
+ * the Drupal node is updated accordingly.
+ *
+ * Calls Alfresco's REST API and maybe updates DB and caches.
+ *
+ * @param object $node Loaded node object, the main location field value may be
+ *  updated. Other values should not change.
+ * @return string The synchronised node main location path.
+ */
+function gofast_taxonomy_sync_node_main_location_with_alfresco(&$node) {
+  $node_id = $node->nid;
+  $alfresco_primary_parent = gofast_cmis_alfresco_api_get_primary_parent(
+    $node->{GOFAST_CMIS_REFERENCE_FIELD}[LANGUAGE_NONE][0]['value'],
+    TRUE,
+  );
+  $node_main_location = &$node->{GOFAST_CMIS_MAIN_LOCATION_FIELD}[LANGUAGE_NONE][0]['value'];
+
+  if ($node_main_location === $alfresco_primary_parent->path) {
+    // main location is in sync with Alfresco
+    return $node_main_location;
+  }
+
+  // main location is desynchronised from Alfresco, update value on Drupal
+  // side to match Alfresco's
+  gofast_taxonomy_update_node_main_location_immediate($node, $alfresco_primary_parent->path);
+
+  return $node_main_location;
+}
+
+/**
+ * Updates and immediately saves the node main location field in the database.
+ *
+ * The field caches and node_load cache are reset to ensure subsequent node_load
+ * calls get the updated value.
+ *
+ * Only the main location field value is changed on the passed (by reference) node.
+ *
+ * @param object $node The loaded node object
+ * @param string $new_main_location The new main location value to assign
+ * @return object The reloaded node
+ */
+function gofast_taxonomy_update_node_main_location_immediate(&$node, $new_main_location) {
+  $node_id = $node->nid;
+  $node->{GOFAST_CMIS_MAIN_LOCATION_FIELD}[LANGUAGE_NONE][0]['value'] = $new_main_location;
+  // Update field directly in DB immediately
+  $update_query = db_update('field_data_' . GOFAST_CMIS_MAIN_LOCATION_FIELD);
+  $update_query->condition('entity_id', $node_id)
+    ->condition('bundle', $node->type)
+    ->condition('entity_type', 'node');
+  $update_query->fields([
+    GOFAST_CMIS_MAIN_LOCATION_FIELD . '_value' => $new_main_location,
+  ]);
+  $update_query->execute();
+
+  return gofast_taxonomy_invalidate_node_field_cache_and_load($node_id);
+}
+
+/**
+ * Invalidates the node's field cache and reloads while resetting the node_load cache
+ *
+ * @param numeric $node_id The ID of the node.
+ * @return object The newly loaded node.
+ */
+function gofast_taxonomy_invalidate_node_field_cache_and_load($node_id) {
+  cache_clear_all("field:node:$node_id", 'cache_field', TRUE);
+  return node_load($node_id, NULL, TRUE);
+}
+
+/**
+ * Retrieve the CMIS item reference of the BROADCAST_INBOX folder at the root of the given space.
+ *
+ * Optionally can create the folder if it is missing.
+ * @param numeric $gid Node id of the space to get the folder reference from
+ * @param bool $create Whether to create the folder if missing.
+ * @param bool $as_admin Whether to get the folder as an admin user.
+ * @return string The folder item reference.
+ */
+function gofast_taxonomy_get_broadcast_inbox_folder_reference($gid, $create = FALSE, $as_admin = FALSE) {
+  $gid_reference = node_load($gid)->field_folder_reference['und'][0]['value'];
+  $location_path = gofast_cmis_space_get_webdav_path($gid);
+  $broadcast_inbox_folder_reference = gofast_ajax_file_browser_get_reference_from_href(
+    $location_path . '/' . GOFAST_TAXONOMY_BROADCAST_INBOX_FOLDER_NAME,
+    $as_admin,
+  );
+  // Create BROADCAST_INBOX folder if it doesn't exist
+  if (!$broadcast_inbox_folder_reference && $create) {
+    $broadcast_inbox_folder = gofast_cmis_item_folder_insert(GOFAST_TAXONOMY_BROADCAST_INBOX_FOLDER_NAME, $gid_reference, TRUE);
+    $broadcast_inbox_folder_reference = $broadcast_inbox_folder->properties['alfcmis:nodeRef'];
+  }
+  return $broadcast_inbox_folder_reference;
 }
 
 function gofast_taxonomy_manage_folder_locations_form($form, &$form_state){
@@ -1967,13 +2504,22 @@ function gofast_taxonomy_manage_folder_locations_form($form, &$form_state){
     // Get parent type (folder or space)
     $item_nid = $item->properties['gofast:nid'];
 
-    // In case of space(private space, orga,group,extranet or public)
-    if(!empty($item_nid)){
+    if(empty($item_nid)){ // case of folder
+      $space_path = gofast_get_space_path_from_folder_path($parent_path);
+      $space_id = gofast_ajax_file_browser_get_nid_from_href($space_path, true);
+      // Only set the space name of the unaccessible item, preventing displaying restricted folder name in tree
+      if(!og_user_access('node', $space_id, 'create alfresco_item content')){
+        $map_id_locations[$space_path] = $space_id;
+        $selected_folders_parents_gids[$space_id] = $space_id;
+        unset($parents_paths[$key]);
+        $parents_paths[$space_path] = $space_path;
+      } else {
+        $parent_is_folder = TRUE;
+        $map_id_locations[$parent_path] = $parent_path;
+      }
+    } else { // In case of space(private space, orga,group,extranet or public)
       $map_id_locations[$parent_path] = $item_nid;
       $selected_folders_parents_gids[$item_nid] = $item_nid;
-    }else{ // case of folder
-      $parent_is_folder = TRUE;
-      $map_id_locations[$parent_path] = $parent_path;
     }
   }
 
@@ -2132,15 +2678,17 @@ function gofast_taxonomy_manage_folder_locations_form_validate($form, &$form_sta
   $selected_locations = $form_state['input']['field_emplacement'];
   $broadcast_values = $form_state['input']['ac-list-tags-broadcast'];
   $broadcast_array = json_decode(trim($broadcast_values));
-
-  if (count($selected_locations) == 0 && count($broadcast_array) == 0 && $broadcast_array[0] == "") {
-    $commands = array();
-    $commands[] = gofast_command_toast_message(t("You need to select at least 1 location", array(), array('context' => 'gofast')), "warning");
-    print ajax_render($commands);
-    exit;
+  if(isset($selected_locations) && count($selected_locations) >= 1){
+    return;
+  }
+  if(isset($broadcast_array) && count($broadcast_array) >= 1){
+    return;
   }
 
-  $form_state['selected_locations'] = $selected_locations;
+  $commands = array();
+  $commands[] = gofast_command_toast_message(t("You need to select at least 1 location", array(), array('context' => 'gofast')), "warning");
+  print ajax_render($commands);
+  exit;
 }
 
 /**
@@ -2162,10 +2710,10 @@ function gofast_taxonomy_manage_folder_locations_form_submit($form, &$form_state
          if($broadcast_object->type == "user"){
            $private_gid = gofast_og_get_user_private_space(user_load($broadcast_object->value), FALSE);
            $form_state['input']["og_group_content_ref"][] = array("target_id" => $private_gid, "field_mode" => "default");
-           $form_state['input']["field_emplacement"][] = $private_gid;
+           $form_state['input']["field_emplacement"][] = ['type' => 'broadcast', 'gid' => $private_gid];
          }else{
            $form_state['input']["og_group_content_ref"][] = array("target_id" => $broadcast_object->value, "field_mode" => "default");
-           $form_state['input']["field_emplacement"][] = $broadcast_object->value;
+           $form_state['input']["field_emplacement"][] = ['type' => 'broadcast', 'gid' => $broadcast_object->value];
          }
        }
    }
@@ -2213,6 +2761,16 @@ function gofast_taxonomy_manage_folders_locations_process()
   $added_locations = array_diff($diff_reference, $old_parents_ref);
   ## we take care not removing added locations (e. g. when two mirrored folders are in the same location)
   $removed_locations = array_diff($old_parents_ref, $diff_reference, $added_locations);
+
+  // Make sure the BROADCAST_INBOX folder exists in the added locations that need it.
+  foreach ($added_locations as $added_location => &$ref) {
+    if (strpos($added_location, GOFAST_TAXONOMY_BROADCAST_INBOX_FOLDER_NAME) === FALSE) {
+      continue;
+    }
+    $nid = gofast_og_get_group_id_from_title_2($added_location, TRUE);
+    $ref = gofast_taxonomy_get_broadcast_inbox_folder_reference($nid, TRUE, TRUE);
+  }
+  unset($ref);
 
   ## make a diff beetween old parents and new. If some are no longer in the new list then they are removed from the missing location
   if (!empty($removed_locations)) {
@@ -2272,6 +2830,15 @@ function gofast_taxonomy_manage_folders_locations_process()
       $parents_formatted[strval($key)] = "alreadyExist";
   }
   }
+  
+  ## make a diff beetween old parents and new. If some are no longer in the new list then they are removed from the missing location
+  if (!empty($removed_locations)) {
+    foreach ($removed_locations as $key => $removed_location) {
+      ## api to remove multifile a folder from a location
+      gofast_cmis_webservice_remove_multifile_folder(trim($folder_ref), trim($removed_location));
+    }
+  }
+
   ## get emplacements of the folder in order to assign folder permissions
   $folders = gofast_cmis_webservice_get_node_parents($folder_ref);
   foreach($folders as $folder){
@@ -2280,7 +2847,6 @@ function gofast_taxonomy_manage_folders_locations_process()
   }
   
   $parents_formatted_backup = $parents_formatted;
-  $parents_formatted = gofast_cmis_webservice_get_node_parents($folder_ref);
   
   ## update locations of all node multifiled
   $descendants = gofast_cmis_webservice_item_get_descendants($folder_ref, 'documents');
@@ -2296,20 +2862,10 @@ function gofast_taxonomy_manage_folders_locations_process()
     } else {
     }
   }
-  foreach ($parents_formatted as $parent_formatted) {
-    $node_parent_nid = gofast_og_get_group_id_from_title_2($parent_formatted, TRUE, TRUE);
-    $node_parent = node_load($node_parent_nid);
-    $space_dn = rawurlencode(gofast_ldap_space_cn($node_parent));
-    if (gofast_og_is_user_private_space($node_parent)) {
-      $private_space[] = $space_dn;
-    }
-    else {
-      $groups[] = $space_dn;
-    }
-  }
   ## update permissions for all folders
-  if (!empty($groups) || !empty($private_space)) {
-    gofast_cmis_webservice_item_assign_permissions($folder_ref, $groups, $private_space);
+  $spaces = gofast_cmis_webservice_item_get_spaces_for_permissions($folder_ref);
+  if (!empty($spaces['groups']) || !empty($spaces['private_spaces'])) {
+    gofast_cmis_webservice_item_assign_permissions($folder_ref, $spaces['groups'], $spaces['private_spaces']);
   }
 
   print(json_encode($parents_formatted_backup));
@@ -2320,26 +2876,15 @@ function gofast_taxonomy_manage_folders_locations_process()
 function gofast_taxonomy_manage_folders_sync_permissions(){
   $folder_ref = $_POST['folder'];
 
-  // Get all parents locations of the folder
-  $parents = gofast_cmis_webservice_get_node_parents($folder_ref);
+  // Get the spaces of all the locations of the folder
+  $spaces = gofast_cmis_webservice_item_get_spaces_for_permissions($folder_ref);
 
-  foreach ($parents as $parent) {
-    $node_parent_nid = gofast_og_get_group_id_from_title_2($parent, TRUE, TRUE);
-    $node_parent = node_load($node_parent_nid);
-    $space_dn = rawurlencode(gofast_ldap_space_cn($node_parent));
-    if (gofast_og_is_user_private_space($node_parent)) {
-      $private_space[] = $space_dn;
-    }
-    else {
-      $groups[] = $space_dn;
-    }
-  }
   // Reach all documents of the folder
   $descendants = gofast_cmis_webservice_item_get_descendants($folder_ref, 'documents', false, true);
   foreach ($descendants as $reference => $descendant) {
 
     // Assign new permissions
-    gofast_cmis_webservice_item_assign_permissions($reference, $groups, $private_space);
+    gofast_cmis_webservice_item_assign_permissions($reference, $spaces['groups'], $spaces['private_spaces']);
   }
 
   return 'OK';
@@ -2680,19 +3225,16 @@ function gofast_taxonomy_write_alfresco_translation($term, $langcode, $translate
   }
 
   // 2. Are we in a langcode where a pivot file exists?
-  $file_path = "/etc/shared/gofast/{$file_prefix}{$langcode}.json";
+  $file_path = "/etc/gofast/shared/{$file_prefix}{$langcode}.json";
   $file = fopen($file_path, "r+");
   if (!$file) {
     return;
   }
 
   // 3. Read and update the translations
-  $json_content = fread($file, filesize($file_path));
-  $translations = json_decode($json_content, TRUE);
-  if ($translations === null) {
-      fclose($file);
-      return;
-  }
+  $json_content = file_get_contents($file_path);
+  $translations = json_decode($json_content, TRUE) ?: [];
+
   $translations[$term->name] = $translated_name;
   $new_json_content = json_encode($translations);
   fclose($file);
@@ -2894,4 +3436,409 @@ function gofast_taxonomy_enforceable_vocabularies(){
     GOFAST_VID_TAGS,
     GOFAST_VID_ENTITY,
   );
+}
+
+/**
+ * Constructs the mapping of classifications using an 'internal_level' >
+ * 'classification_type' > 'value' hierarchy.
+ *
+ * Internal level keys are ordered such that the lowest level comes first and
+ * the highest comes last.
+ *
+ * @return array<
+ *  GFTaxonomyInternalClassificationLevel,
+ *  array<GFTaxonomyClassificationTypeNames, string | false>
+ * > Returns a map in the following format:
+ *   ["classification_level" => ["classification_type" => "value"]]
+ */
+function _gofast_taxonomy_get_classification_level_type_term_mapping() {
+  return [
+    GOFAST_TAXONOMY_CLASSIFICATION_LEVEL_UNCLASSIFIED => [
+      "Civil Organization" => "NC – Unclassified / Public",
+      "French Military" => FALSE,
+      "CIS TLP" => "TLP:GREEN",
+      "EUCI" => FALSE,
+    ],
+    GOFAST_TAXONOMY_CLASSIFICATION_LEVEL_INTERNAL => [
+      "Civil Organization" => "C1 – Internal",
+      "French Military" => "Restricted Diffusion",
+      "CIS TLP" => "TLP:AMBER+STRICT",
+      "EUCI" => "EU Restricted",
+    ],
+    GOFAST_TAXONOMY_CLASSIFICATION_LEVEL_RESTRICTED => [
+      "Civil Organization" => "C2 – Restricted / Sensitive",
+      "French Military" => "Restricted Diffusion",
+      "CIS TLP" => "TLP:AMBER+STRICT",
+      "EUCI" => "EU Restricted",
+    ],
+    GOFAST_TAXONOMY_CLASSIFICATION_LEVEL_CONFIDENTIAL => [
+      "Civil Organization" => "C3 – Confidential / Secret / Sensitive sovereign",
+      "French Military" => "Secret Defence",
+      "CIS TLP" => "TLP:RED",
+      "EUCI" => "EU Secret",
+    ],
+    GOFAST_TAXONOMY_CLASSIFICATION_LEVEL_TOP_SECRET => [
+      "Civil Organization" => "C3 – Confidential / Secret / Sensitive sovereign",
+      "French Military" => "Top Secret Defence",
+      "CIS TLP" => "TLP:RED",
+      "EUCI" => "EU Top Secret",
+    ],
+  ];
+}
+
+/**
+ * Constructs a mapping array for a 'type' > 'name' > 'level' classification hierarchy.
+ *
+ * The final 'level' value is always the highest for each type and name pair.
+ *
+ * @see _gofast_taxonomy_get_classification_level_type_term_mapping for the base
+ *  hierarchy used as a source of truth.
+ *
+ * @return array<
+ *  GFTaxonomyClassificationTypeNames,
+ *  array<string, GFTaxonomyInternalClassificationLevel>
+ * >
+ */
+function _gofast_taxonomy_get_classification_type_term_level_mapping() {
+  $cache = &drupal_static(__FUNCTION__);
+  if (isset($cache)) {
+    return $cache;
+  }
+
+  $original_mapping = _gofast_taxonomy_get_classification_level_type_term_mapping();
+
+  // Reorder mapping so it's easy to get a term's classification level from its type and name.
+  // if a name appears for multiple internal levels, keep the first (lowest level) occurrence.
+  $mapping = [];
+  foreach ($original_mapping as $level => $type_mapping) {
+    foreach ($type_mapping as $type => $name) {
+      if ($name !== FALSE) {
+        $mapping[$type][$name] = $level;
+      }
+    }
+  }
+  $cache = $mapping;
+  return $cache;
+}
+
+/**
+ * Gets the internal classification level string for the given classification type and name.
+ *
+ * @param string $type
+ * @param string $name
+ * @return string|null internal level string, NULL if the pair is not mapped.
+ */
+function gofast_taxonomy_get_classification_level_from_type_and_name($type, $name) {
+  $mapping = _gofast_taxonomy_get_classification_type_term_level_mapping();
+  return $mapping[$type][$name];
+}
+
+/**
+ * Checks if a given taxonomy_term value makes the content it's attached to internal.
+ *
+ * @param object Loaded term.
+ * @return bool True if the term is considered internal.
+ */
+function gofast_taxonomy_is_term_internal($term) {
+  if (empty($term)) {
+    return FALSE;
+  }
+  if (is_array($term)) {
+    $term = reset($term); 
+  }
+  if (empty($term->field_classification_type[LANGUAGE_NONE])) {
+    return FALSE;
+  }
+  $type_tid = $term->field_classification_type[LANGUAGE_NONE][0]['tid'];
+  $type_term = taxonomy_term_load($type_tid);
+  if (empty($type_term)) {
+    return FALSE;
+  }
+  $classification_level = gofast_taxonomy_get_classification_level_from_type_and_name($type_term->name, $term->name);
+  return $classification_level == GOFAST_TAXONOMY_CLASSIFICATION_LEVEL_INTERNAL;
+}
+
+/**
+ * Checks if a given taxonomy_term value makes the content it's attached to confidential.
+ *
+ * @param numeric|object|EntityDrupalWrapper|null $term Term id, loaded term or term
+ *  wrapped in metadata wrapper.
+ * @return bool True if the term is considered confidential.
+ */
+function gofast_taxonomy_is_term_confidential($term) {
+  return gofast_taxonomy_is_confidentiality_value_confidential(gofast_taxonomy_get_term_confidentiality($term));
+}
+
+/**
+ * Checks if a given value of the confidentiality field should be considered confidential.
+ *
+ * @param ?bool $value Confidentiality field value to check for.
+ * @return bool True if the given value is considered confidential.
+ */
+function gofast_taxonomy_is_confidentiality_value_confidential($value) {
+  return $value === NULL ? FALSE : $value;
+}
+
+/**
+ * Retrieves the confidentiality value associated with a (classifcation) taxonomy term.
+ *
+ * @param numeric|object|EntityDrupalWrapper|null $term Term id, loaded term or term
+ *  wrapped in metadata wrapper.
+ * @return ?bool The value of the term's confidentiality field, or NULL if it is
+ *  not set. (includes having no field instance)
+ */
+function gofast_taxonomy_get_term_confidentiality($term) {
+  if (!isset($term)) {
+    return NULL;
+  }
+
+  $term_w = entity_metadata_wrapper('taxonomy_term', $term);
+  if (!isset($term_w->{GOFAST_TAXONOMY_CONFIDENTIALITY_FIELD})) {
+    return NULL;
+  }
+
+  return $term_w->{GOFAST_TAXONOMY_CONFIDENTIALITY_FIELD}->value();
+}
+
+/**
+ * Change a space's classification.
+ *
+ * Updating a space classification may update its confidentiality
+ *
+ * When making a space confidential:
+ * - All user lists members are removed
+ * - All user members without confidential clearance are removed.
+ *
+ * @param numeric|object|EntityDrupalWrapper $node Node object, id or wrapper of
+ *  space node to update.
+ * @param numeric|object|EntityDrupalWrapper|null $new_classification Taxonomy term
+ *  object, id or wrapper of new classification.
+ * @param bool $save Whether to eagerly save when the classification is updated.
+ * @return EntityDrupalWrapper The possibly updated node wrapper.
+ */
+function gofast_taxonomy_space_update_classification($node, $new_classification, $save = TRUE) {
+  /** @var EntityDrupalWrapper */
+  $node_w = entity_metadata_wrapper('node', $node);
+  $classification = isset($new_classification) ?
+    entity_metadata_wrapper('taxonomy_term', $new_classification)
+    : NULL;
+
+  if (!isset($node_w->field_classification)) {
+    return $node_w; // Classification field does not exist on this node type, abort.
+  }
+
+  // Kick non-confidential users and kick all user list members.
+  if (isset($classification) && gofast_taxonomy_is_term_confidential($classification)) {
+    gofast_space_remove_non_confidential_members($node_w);
+  }
+
+  // Update confidentiality field value and save.
+  $node_w->field_classification->set($classification);
+  if ($save) {
+    $node_w->save();
+  }
+
+  return $node_w;
+}
+
+/**
+ * Internal function to check if a node's classification field is set using its
+ * entity wrapper.
+ *
+ * This function should only be called after checking:
+ * - the wrapper has data
+ *
+ * This function checks that:
+ * - The wrapped entity type has the `field_classification` field
+ * - The wrapped entity's `field_classification` is set (value not null)
+ *
+ * @param EntityDrupalWrapper $wrapper Node wrapper to check.
+ * @return bool True if the classification is set on the node, false otherwise.
+ */
+function _gofast_taxonomy_is_node_wrapper_classification_set($wrapper) {
+  return isset($wrapper->field_classification) && $wrapper->field_classification->value() !== NULL;
+}
+
+/**
+ * Internal function to check if a node's criticity field is set using its
+ * entity wrapper.
+ *
+ * This function should only be called after checking:
+ * - the wrapper has data
+ *
+ * This function checks that:
+ * - The wrapped entity type has the `field_criticity` field
+ * - The wrapped entity's `field_criticity` is set (value not null)
+ *
+ * @param EntityDrupalWrapper $wrapper Node wrapper to check.
+ * @return bool True if the criticity is set on the node, false otherwise.
+ */
+function _gofast_taxonomy_is_node_wrapper_criticity_set($wrapper) {
+  return isset($wrapper->field_criticity) && $wrapper->field_criticity->value() !== NULL;
+}
+
+/**
+ * Checks if a given document node's criticity is confidential.
+ *
+ * @param numeric|object|EntityDrupalWrapper $node Node id, object or wrapper to
+ *  check the criticity of.
+ * @return bool True if node has confidential criticity, false otherwise
+ */
+function gofast_taxonomy_is_node_criticity_confidential($node) {
+  /** @var EntityDrupalWrapper */
+  $node = entity_metadata_wrapper('node', $node);
+  if (!_gofast_taxonomy_is_node_wrapper_criticity_set($node)) {
+    return FALSE;
+  }
+
+  return _gofast_taxonomy_is_node_wrapper_criticity_confidential($node);
+}
+
+/**
+ * Internal function to check if a node's criticity is confidential using its
+ * entity wrapper.
+ *
+ * This function should only be called after ensuring:
+ * - the wrapper has data
+ * - the wrapped entity type has the `field_criticity` field
+ * - the wrapped entity's `field_criticity` is set (value not null)
+ *
+ * @param EntityDrupalWrapper $wrapper The node wrapper.
+ * @return bool True if node has confidential criticity, false otherwise
+ */
+function _gofast_taxonomy_is_node_wrapper_criticity_confidential($wrapper) {
+  if (!_gofast_taxonomy_is_node_wrapper_criticity_set($wrapper)) {
+    return FALSE;
+  }
+  return $wrapper->field_criticity->name->value() === 'Confidential Data';
+}
+
+/**
+ * Checks if a given document node's classification is internal.
+ *
+ * @param numeric|object|EntityDrupalWrapper $node Node id, object or wrapper to
+ *  check the criticity of.
+ * @return bool True if node has internal classification, false otherwise
+ */
+function gofast_taxonomy_is_node_classification_internal($node) {
+    /** @var EntityDrupalWrapper */
+  $node = entity_metadata_wrapper('node', $node);
+  $classification_match = FALSE;
+  if (_gofast_taxonomy_is_node_wrapper_classification_set($node)) {
+    $classification = $node->field_classification->value();
+    $classification_match = gofast_taxonomy_is_term_internal($classification);
+  }
+
+  return $classification_match;
+}
+
+/**
+ * Checks if a given document node's criticity is internal.
+ *
+ * @param numeric|object|EntityDrupalWrapper $node Node id, object or wrapper to
+ *  check the criticity of.
+ * @return bool True if node has internal criticity, false otherwise
+ */
+function gofast_taxonomy_is_node_criticity_internal($node) {
+  /** @var EntityDrupalWrapper */
+  $node = entity_metadata_wrapper('node', $node);
+  if (!_gofast_taxonomy_is_node_wrapper_criticity_set($node)) {
+    return FALSE;
+  }
+
+  return _gofast_taxonomy_is_node_wrapper_criticity_internal($node);
+}
+
+/**
+ * Internal function to check if a node's criticity is internal using its entity
+ * wrapper.
+ *
+ * This function should only be called after ensuring:
+ * - the wrapper has data
+ * - the wrapped entity type has the `field_criticity` field
+ * - the wrapped entity's `field_criticity` is set (value not null)
+ *
+ * @param EntityDrupalWrapper $wrapper The node wrapper.
+ * @return bool True if node has internal criticity, false otherwise
+ */
+function _gofast_taxonomy_is_node_wrapper_criticity_internal($wrapper) {
+  if (!_gofast_taxonomy_is_node_wrapper_criticity_set($wrapper)) {
+    return FALSE;
+  }
+  return $wrapper->field_criticity->name->value() === 'Internal Distribution';
+}
+
+/**
+ * Checks if a given document node's criticity is either confidential or internal.
+ *
+ * @param numeric|object|EntityDrupalWrapper $node Node id, object or wrapper to
+ *  check the criticity of.
+ * @return bool True if node has confidential or internal criticity, false otherwise
+ */
+function gofast_taxonomy_is_node_criticity_confidential_or_internal($node) {
+  /** @var EntityDrupalWrapper */
+  $node = entity_metadata_wrapper('node', $node);
+  if (!_gofast_taxonomy_is_node_wrapper_criticity_set($node)) {
+    return FALSE;
+  }
+
+  return _gofast_taxonomy_is_node_wrapper_criticity_confidential($node) || _gofast_taxonomy_is_node_wrapper_criticity_internal($node);
+}
+
+/**
+ * Checks if a given document node is confidential or internal.
+ *
+ * @param numeric|object|EntityDrupalWrapper $node Node id, object or wrapper to
+ * check the criticity/classification of.
+ * @return bool True if node has 'internal' criticity OR is confidential,
+ * false otherwise.
+ */
+function gofast_taxonomy_is_node_confidential_or_internal($node) {
+  // First check criticity
+  $criticity_match = gofast_taxonomy_is_node_criticity_internal($node);
+  if ($criticity_match) {
+    return TRUE;
+  }
+  // Then check classification
+  return gofast_taxonomy_is_node_confidential($node);
+}
+
+/**
+ * Checks if a given document node is internal.
+ *
+ * @param numeric|object|EntityDrupalWrapper $node Node id, object or wrapper to
+ *  check the confidentiality.
+ * @return bool True if node is internal.
+ */
+function gofast_taxonomy_is_node_internal($node) {
+  return gofast_taxonomy_is_node_criticity_internal($node) || gofast_taxonomy_is_node_classification_internal($node);
+}
+
+/**
+ * Checks if a given document node is confidential.
+ *
+ * @param numeric|object|EntityDrupalWrapper $node Node id, object or wrapper to
+ *  check the confidentiality.
+ * @return bool True if node is confidential.
+ */
+function gofast_taxonomy_is_node_confidential($node) {
+  return gofast_taxonomy_is_node_criticity_confidential($node) || gofast_taxonomy_is_node_classification_confidential($node);
+}
+
+/**
+ * Checks if a given document node's classification is confidential.
+ *
+ * @param numeric|object|EntityDrupalWrapper $node Node id, object or wrapper to
+ *  check the criticity of.
+ * @return bool True if node has confidential classification, false otherwise
+ */
+function gofast_taxonomy_is_node_classification_confidential($node) {
+    /** @var EntityDrupalWrapper */
+  $node = entity_metadata_wrapper('node', $node);
+  $classification_match = FALSE;
+  if (_gofast_taxonomy_is_node_wrapper_classification_set($node)) {
+    $classification = $node->field_classification->value();
+    $classification_match = gofast_taxonomy_is_term_confidential($classification);
+  }
+  return $classification_match;
 }

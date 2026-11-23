@@ -5,6 +5,8 @@
 
 global $conf;
 include_once 'invite.php';
+require_once libraries_get_path('php-rrule-2.4.1') . '/vendor/autoload.php';
+
 define('CONFERENCE_URL', 'https://'.$conf['gofast-comm_domain'].'/jitsi-meet');
 define('ORGANIZER_EMAIL_IS_POSTMASTER', variable_get('organizer_email_is_postmaster', FALSE));
 
@@ -275,7 +277,7 @@ function gofast_conference_form_conference_node_form_alter(&$form, &$form_state)
     '#name' => 'ac-list-tags-list-documents',
     '#size' => 99999,
     //'#required' => TRUE,
-    //'#default_value' => isset($form_state['values']['list_documents']) ? $form_state['values']['list_documents'] : '',
+    '#default_value' => isset($info['json_conference_document']) ? json_encode($info['json_conference_document'], JSON_HEX_APOS) : '',
     '#maxlength' => '', // no maxlength
     //'#autocomplete_path' => 'conference/node-link-autocomplete',
     '#attributes' => $attributes_list_documents,
@@ -338,7 +340,7 @@ function gofast_conference_form_conference_node_form_alter(&$form, &$form_state)
     $form['notify_added_removed_only'] = array(
         '#title' => t("Send a notification to the added or removed participants only", array(), array('context' => 'gofast_cdel')),
         '#type' => 'checkbox',
-        '#default_value' => TRUE,
+        '#default_value' => FALSE,
     );
   }
 
@@ -714,15 +716,16 @@ function gofast_conference_event_recurrence_form(&$form, &$form_state) {
 }
 
 /**
+ * @deprecated 4.5.1 This is no longer necessary as the gofast_conference module
+ * automatically requires the autoload on every request now.
+ *
+ * The uses of this function can safely be deleted as it does nothing now.
+ *
  * Shortcut function to require the php-rrule autoload
  *
  * Must be used before using anything in the \RRule namespace.
- * By nature of being a function that is not automatically called to limit
- * side-effects of including the module file, it is incompatible with the use of
- * `use` imports.
  */
 function gofast_conference__require_rrule_autoload() {
-  require_once libraries_get_path('php-rrule-2.4.1') . '/vendor/autoload.php';
 }
 
 /**
@@ -1627,6 +1630,8 @@ function gofast_conference_library() {
  */
 function gofast_conference_form_conference_node_form_validate(&$form, &$form_state) {
 
+  $form_state['values']["body"][LANGUAGE_NONE][0]["value"] = gofast_html_close_tag($form_state['values']["body"][LANGUAGE_NONE][0]["value"]);
+  
   $save_list_spaces = array();
   // check the the forbiden caraters, like "."
   $pos = strpos($form['title']['#value'], ".");
@@ -1874,7 +1879,7 @@ function gofast_conference_form_conference_node_form_submit(&$form, &$form_state
     //Store new participants in case they are needed by others modules
     foreach($existing_participants as $participant){
       $uid = $participant;
-      if(!in_array($uid, $existing_node_participants, true)){
+      if(!in_array($uid, $existing_node_participants ?? [], true)){
         $_POST['added_to_meeting']['internal'][] = $uid;
       }
     }
@@ -2002,7 +2007,7 @@ function gofast_conference__node_get_recurrence_rule_object($node) {
 
 function gofast_conference_removed_from_meeting($node, $user){
   $title = $node->title;
-  $footer = t('Meeting powered by GoFAST', array(), array('context' => 'gofast:gofast_conference'));
+  $footer = t('Meeting powered by @sitename', array('@sitename' => variable_get('site_name', 'GoFAST')), array('context' => 'gofast:gofast_conference'));
 
   $owner = user_load($node->uid);
   $conference_owner = theme('user_picture', array('account' => $owner , 'dimensions' => 40, 'attributes' => ['style' => "border-radius: 5px; width:40px;"]));
@@ -2076,7 +2081,8 @@ function gofast_conference_removed_from_meeting($node, $user){
      $public_path = "/var/www/d7/sites/default/files";
 
      $current_timestamp = time();
-     $file_path = $public_path."/invite_gofast_".$current_timestamp.".ics";
+     // Conferences cancelled in the same second must not share an invitation file.
+     $file_path = $public_path."/invite_gofast_".$node->nid."_".$current_timestamp.".ics";
      $written_file = fopen($file_path, "w+");
      fwrite($written_file, $ics_content);
      fclose($written_file);
@@ -2124,6 +2130,9 @@ function gofast_conference_node_compare($new, $original) {
     "field_existing_participants",
     "field_conference_organizer",
     "field_recurrence",
+    "field_place",
+    "field_timestamp_target_link", // Linked documents
+    "field_conference_is_all_day",
   ];
   // comparison of structured fields
   foreach ($nested_fields as $nested_field) {
@@ -2132,10 +2141,48 @@ function gofast_conference_node_compare($new, $original) {
     $new_values = $new->$nested_field[LANGUAGE_NONE] ? array_map(fn($el) => $el["value"], $new->$nested_field[LANGUAGE_NONE]) : [];
     // serialization makes it simpler to detect if any change occured (regarder the values but also regarding the values order)
     if (serialize($original_values) != serialize($new_values)) {
-      $diffs[$field] = ["from" => $original->$nested_field, "to" => $new->$nested_field];
+      $diffs[$nested_field] = ["from" => $original->$nested_field, "to" => $new->$nested_field];
     }
   }
   return $diffs;
+}
+
+/**
+ * Checks if modifications on a conference node need to force to notify all participants.
+ *
+ * This is needed when modified fields map to calendar invitation fields that
+ * must be synchronised for every participant, like start date, end date, etc.
+ *
+ * @param object $node
+ *   The node object of the updated conference.
+ *
+ * @return bool
+ *   Whether all participants should receive a notification for the update.
+ */
+function gofast_conference__should_force_email_notification_to_all($node) {
+  // New node should always notify everyone.
+  if (!isset($node->original)) {
+    return TRUE;
+  }
+
+  // List of field on which any update should force an email notification to
+  // allow linked calendars to update.
+  $forced_update_fields = [
+    'title',
+    'field_date',
+    'field_end_date',
+    'field_recurrence',
+    'body',
+    'field_place',
+    'field_timestamp_target_link', // Linked documents
+  ];
+
+  // Get array of differences from original (which fields/properties were changed).
+  // Importantly, fields that were not changed do not appear in this array as keys.
+  $comparison = gofast_conference_node_compare($node, $node->original);
+
+  // Forced notification is whether any key of the comparison is listed as a forced update field.
+  return !empty(array_intersect_key(array_flip($forced_update_fields), $comparison));
 }
 
 // /!\ IMPORTANT : can't use hook_presave for sending email because of polling => spamming mail
@@ -2143,6 +2190,13 @@ function gofast_conference_node_compare($new, $original) {
 function gofast_conference_node_insert($node, $delete = false, $update = false) {
 
   if ($node->type === 'conference') {
+    
+    $comparison = gofast_conference_node_compare($node, $node->original);
+    // Prevent sending notification if there is no modification
+    if(empty($comparison)){
+      return;
+    }
+
     global $base_url;
     global $user;
     $normalize_title = preg_replace("/[^A-Za-z0-9]/", '', gofast_conference_normalize_conference_name($node->title)).$node->nid;
@@ -2156,12 +2210,18 @@ function gofast_conference_node_insert($node, $delete = false, $update = false) 
 
     $conference_recurrence = gofast_conference__node_get_recurrence_rule_object($node);
 
+    $force_mail_notification_to_all = gofast_conference__should_force_email_notification_to_all($node);
+
     //fills the existing_participants_email array
-    foreach($node->field_existing_participants[LANGUAGE_NONE] as $participant){
+    foreach($node->field_existing_participants[LANGUAGE_NONE] as $index => $participant){
       $appartenance = false;
       //Retrieve participant uid and private space nid
       $puid = $participant['target_id'];
       $pnid = gofast_og_get_user_private_space(user_load($puid), FALSE);
+      if (!$pnid) {
+        unset($node->field_existing_participants[LANGUAGE_NONE][$index]);
+        continue;
+      }
 
       //Check appartenance to this conference
       foreach($node->og_group_content_ref[LANGUAGE_NONE] as $space){
@@ -2188,6 +2248,28 @@ function gofast_conference_node_insert($node, $delete = false, $update = false) 
 
     if(!$delete){
       //Add spaces membership to the conference
+
+      global $user;
+      $spaces = gofast_og_get_spaces_by_user($user, FALSE);
+      $pnid = gofast_og_get_user_private_space($user, FALSE);
+
+      $snid = $_SESSION['spaceId'];
+
+      if (in_array($snid, $spaces)) {  // get the current space nid and check if it belongs to the current user if it's imported via ics
+
+        if (!og_get_membership('node', $snid, 'node', $node->nid)) {
+          $og = og_membership_create('node', $snid, 'node', $node->nid, GOFAST_OG_CONTENT_MEMBERSHIP_FIELD);
+          og_membership_save($og);
+        }
+      } else {
+
+        // if it's a synchro create a membership to the private space by default
+        if (!og_get_membership('node', $pnid, 'node', $node->nid)) {
+          $og = og_membership_create('node', $pnid, 'node', $node->nid, GOFAST_OG_CONTENT_MEMBERSHIP_FIELD);
+          og_membership_save($og);
+        }
+      }
+
       foreach($_POST['gofast_conference_space_ids'] as $gid){
         $og = og_membership_create('node', $gid, 'node', $node->nid, GOFAST_OG_CONTENT_MEMBERSHIP_FIELD);
         og_membership_save($og);
@@ -2269,7 +2351,7 @@ function gofast_conference_node_insert($node, $delete = false, $update = false) 
       }else{
         $subject = t('[Meeting] !title', array('!title' => $node->title), $l);
       }
-      $footer = t('Meeting powered by GoFAST', array(), $l);
+      $footer = t('Meeting powered by @sitename', array('@sitename' => variable_get('site_name', 'GoFAST')), $l);
 
       $recipient_name = $recipient->ldap_user_givenname[LANGUAGE_NONE][0]['value'] ?: $email_recipient;
       if(isset($recipient->uid)){
@@ -2284,7 +2366,7 @@ function gofast_conference_node_insert($node, $delete = false, $update = false) 
 
       $start_time = strtotime(gofast_change_time_zone($date, 'UTC', $recipient->timezone ?? null));
       $end_time = strtotime(gofast_change_time_zone($end_date, 'UTC', $recipient->timezone ?? null));
-
+      
       // if recurring event: make the displayed date the next, current or last occurrence
       if ($conference_recurrence !== null) {
         $duration = (new DateTime('@' . $start_time))->diff(new DateTime('@' . $end_time));
@@ -2458,7 +2540,8 @@ function gofast_conference_node_insert($node, $delete = false, $update = false) 
 
       $current_timestamp = time();
       $public_path = "/var/www/d7/sites/default/files";
-      $file_path = $public_path."/invite_gofast_".$current_timestamp."_".$partIndex.".ics";
+      // Conferences saved in the same second must not share an invitation file.
+      $file_path = $public_path."/invite_gofast_".$node->nid."_".$current_timestamp."_".$partIndex.".ics";
       $written_file = fopen($file_path, "w+");
       fwrite($written_file, $ics_content);
       fclose($written_file);
@@ -2477,7 +2560,7 @@ function gofast_conference_node_insert($node, $delete = false, $update = false) 
           'deleteAttachment' => TRUE
         );
         
-        if($_POST['notify_added_removed_only']){
+        if (!$force_mail_notification_to_all && $_POST['notify_added_removed_only']) {
           $recipients_gofast = gofast_conference_notify_only_edited_participants($recipients_gofast, TRUE);
         }
 
@@ -2501,7 +2584,7 @@ function gofast_conference_node_insert($node, $delete = false, $update = false) 
           'deleteAttachment' => TRUE
         );
         
-        if($_POST['notify_added_removed_only']){
+        if (!$force_mail_notification_to_all && $_POST['notify_added_removed_only']) {
           $recipients_external = gofast_conference_notify_only_edited_participants($recipients_external, FALSE);
         }
 
@@ -2551,7 +2634,7 @@ function gofast_conference_notify_only_edited_participants($recipients, $interna
 function gofast_conference_remind_conference($node, $recipients, $body) {
   $subject = t('[Meeting reminder] "!title" is about to start', array('!title' => $node->title), array('context' => 'gofast:gofast_conference'));
   $title = $node->title;
-  $footer = t('Meeting reminder powered by GoFAST', array(), array('context' => 'gofast:gofast_conference'));
+  $footer = t('Meeting reminder powered by @sitename', array('@sitename' => variable_get('site_name', 'GoFAST')), array('context' => 'gofast:gofast_conference'));
   $timestamp = '';
   $mail = array(
     'body' => $body,
@@ -2888,11 +2971,18 @@ function getConferenceDuration($startTime, $endTime){
  * @param \RRule\RRuleInterface $recurrence The recurrence rule of the event
  * @param DateInterval $duration The duration of the event (necessary to get the
  *  current occurrence)
+ * @param DateTimeInterface|null $reference_date_time Reference date time from which
+ *  the occurrence should be found, defaults to current date and time.
  * @return \DateTimeInterface|null A DateTimeInterface object (most likely
  *  DateTime) if at least one occurrence exists, `null` otherwise
  */
-function gofast_conference__recurrence_get_current_next_or_last_occurrence($recurrence, $duration) {
-  $next = $recurrence->getNthOccurrenceAfter((new DateTime())->sub($duration), 1);
+function gofast_conference__recurrence_get_current_next_or_last_occurrence($recurrence, $duration, $reference_date_time = NULL) {
+  // Normalize date time argument to mutable DateTime object.
+  $reference_date_time = isset($reference_date_time) ?
+    DateTime::createFromInterface($reference_date_time)
+    : new DateTime();
+
+  $next = $recurrence->getNthOccurrenceAfter($reference_date_time->sub($duration), 1);
 
   if ($next !== null) {
     return $next;
@@ -3257,9 +3347,15 @@ function gofast_conference_can_edit_conference($node){
  * Action : recording
  *
  * Store a record of a GoFAST conference
- * This API don't need any access as it won't do anything if it's not called with proper params
+ * Should be called ONLY by GoFAST COMM
  */
 function gofast_api_conference_recording($params){
+    //Check if the request is coming from the associated GoFAST COMM
+    global $conf;
+    if(ip_address() !== gethostbyname($conf['gofast-comm_domain'])){
+        gofast_api_forbidden("This API is only accessible from the GoFAST COMM");
+    }
+
     set_time_limit(0);
 
     if($params['method'] !== "GET"){
@@ -3324,7 +3420,7 @@ function gofast_api_conference_recording($params){
 
     //Try to download the file
     $url = CONFERENCE_URL . $recording_path;
-    shell_exec("wget -O $path $url");
+    shell_exec('wget --max-redirect=0 -O ' . escapeshellarg($path) . ' -- ' . escapeshellarg($url));
     $filesize = filesize($path);
 
     if(!$filesize){

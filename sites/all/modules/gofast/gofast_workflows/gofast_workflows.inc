@@ -1,7 +1,27 @@
 <?php
 
+/**
+ * Gets or sets whether the Bonita requests print their curl debug output.
+ *
+ * @param bool|null $verbose
+ *  The new state, or NULL to only read the current one.
+ *
+ * @return bool
+ *  Whether the requests are verbose.
+ */
+function gofast_workflows_curl_verbose($verbose = NULL) {
+  $current = &drupal_static(__FUNCTION__, TRUE);
+  if (isset($verbose)) {
+    $current = (bool) $verbose;
+  }
+  return $current;
+}
+
 function gofast_workflows_curl_exec($ch){
    curl_setopt($ch, CURLOPT_PROXY, '');
+   if (!gofast_workflows_curl_verbose()) {
+     curl_setopt($ch, CURLOPT_VERBOSE, FALSE);
+   }
    $temps_debut = microtime(true);
    global $user;
    if(isset($_SESSION['bonita_cookie_problem_' . $user->uid])){
@@ -287,8 +307,10 @@ function gofast_workflows_get_task_object($taskId){
             $buf = gofast_workflows_curl_exec($ch);
 
             $array_results = json_decode($buf, true);
-            $array_results_formatted = array();
-            if(count($array_results)> 0){
+            $task = array();
+            //Bonita returns a non-array (404 on a finished/deleted task) or an error object ("exception"),
+            //treat as "task not found"
+            if(is_array($array_results) && count($array_results) > 0 && empty($array_results["exception"]) && !empty($array_results["parentCaseId"])){
                     //j'enrichi l'objet $task avec le case et le processDefinition dont la tache fait parti
                     $task = $array_results;
                     $caseObject = gofast_workflows_api_get_case_object($array_results["parentCaseId"], false);
@@ -472,6 +494,11 @@ function gofast_api_process_document($params, $api = TRUE){
      }
 
     $output = array();
+    // Make sure there is always a valid "empty" value when returning a
+    // process_filter result
+    if ($return === 'process_filter') {
+        $output['process_filters'] = 'caseids=';
+    }
     if(isset($mysql_result) && count($mysql_result) > 0){
          if($return == "process_filter"){
                 $process_filters = "caseids=";
@@ -562,14 +589,68 @@ function ceo_vision_workflow_execute_bonita_query_bdm($query){
     return $mysql_result;
 }
 
-function ceo_vision_workflow_execute_bonita_query_bdm_mysqli($query){
-    $mysql_result = array();
+/*
+ * Open a mysqli connection to the Bonita BDM database
+ */
+function gofast_workflows_connect_bonita_bdm_mysqli(){
     $VALEUR_hote ='localhost:3306';
     $VALEUR_nom_bd = variable_get_value('bonita_mysql_db')."_bdm";
     $VALEUR_user = variable_get_value('bonita_mysql_user');
     $VALEUR_mot_de_passe = variable_get_value('bonita_mysql_password');
 
-    $mysqli = new mysqli($VALEUR_hote, $VALEUR_user, $VALEUR_mot_de_passe, $VALEUR_nom_bd);
+    return new mysqli($VALEUR_hote, $VALEUR_user, $VALEUR_mot_de_passe, $VALEUR_nom_bd);
+}
+
+/*
+ * Execute a Drupal select query on the Bonita BDM database as a prepared statement
+ * @params $query : SelectQueryInterface, its values are bound and never rendered into the SQL string
+ * @params $session_statements : array of constant SQL statements to run first on the same connection
+ * Return an array of objects
+ */
+function gofast_workflows_execute_bonita_select_query_bdm(SelectQueryInterface $query, $session_statements = array()){
+    $query->preExecute();
+    // Remove "{" "}" around the table name to make it work with another database
+    $sql = preg_replace("/({|})/", "", (string) $query);
+
+    // mysqli only supports positional placeholders: swap Drupal named ones, in order of appearance
+    $arguments = $query->arguments();
+    $values = array();
+    $sql = preg_replace_callback("/:[A-Za-z0-9_]+/", function($match) use ($arguments, &$values){
+        if(!array_key_exists($match[0], $arguments)){
+            return $match[0];
+        }
+        $values[] = $arguments[$match[0]];
+        return "?";
+    }, $sql);
+
+    $mysqli = gofast_workflows_connect_bonita_bdm_mysqli();
+    foreach($session_statements as $session_statement){
+        $mysqli->query($session_statement);
+    }
+
+    $statement = $mysqli->prepare($sql);
+    if($statement === FALSE){
+        watchdog("gofast_workflows", "Bonita BDM query preparation failed: @error", array("@error" => $mysqli->error), WATCHDOG_ERROR);
+        $mysqli->close();
+        return array();
+    }
+    if(!empty($values)){
+        $statement->bind_param(str_repeat("s", count($values)), ...$values);
+    }
+    $statement->execute();
+    $rows = $statement->get_result()->fetch_all(MYSQLI_ASSOC);
+    $statement->close();
+    $mysqli->close();
+
+    return array_map(function($row){
+        return (object) $row;
+    }, $rows);
+}
+
+function ceo_vision_workflow_execute_bonita_query_bdm_mysqli($query){
+    $mysql_result = array();
+
+    $mysqli = gofast_workflows_connect_bonita_bdm_mysqli();
     $mysqli->multi_query($query);
 
     do {
@@ -914,7 +995,7 @@ function gofast_workflows_get_html_list_available_processes($reference = false){
 
         foreach($list_available_processes as $key=>$process){
 
-            $output .= "<tr>";
+          $output .= "<tr data-wf-name=\"{$process['name']}\">";
 
             // title
             $content = "<span style='font-weight:bold;'>" . t($process["displayName"], array(), array('context' => 'gofast:gofast_workflows')) . "</span>";
@@ -924,7 +1005,7 @@ function gofast_workflows_get_html_list_available_processes($reference = false){
             $output .= "<td class=\"gofast_wf_profil\"><div class='d-flex justify-content-between align-items-center'>";
 
             // We load all saved profil to display multiple line for each process with saved profils in a droplist
-            $saved_profils = gofast_workflows_profil_get_all_from_type_wf($process["displayName"]);
+            $saved_profils = gofast_workflows_profil_get(type_wf: $process["displayName"]);
 
             if(in_array($process["name"], variable_get("gofast_workflows_processes_models", array('Document broadcast', 'Courrier Sortant')))){
 
@@ -1480,7 +1561,9 @@ function gofast_workflows_get_availables_buttons_from_process($process, $referen
 
 function gofast_workflows_get_image_process($processId, $process_name){
     //on copie l'image du process dans le repertoire swf dans l'arborescence Drupal
-    $output = "<img src='/sites/default/files/".gofast_xss_clean($process_name).".png?rand=".time()."' />";
+    // The name is a path segment taken from the URL: encode it, then escape the attribute.
+    $src = '/sites/default/files/' . rawurlencode($process_name) . '.png?rand=' . time();
+    $output = '<img src="' . check_plain($src) . '" />';
     print $output;
 
 }
@@ -1906,7 +1989,7 @@ function gofast_workflows_assign_task_to_user($task_id, $user_id = false){
  * @param object $profile profile fetched from the gofast_wf_profil table
  * @return object|boolean the actual profile if the current user has access to at least one space the profile belongs to, otherwise FALSE
  */
-function gofast_worflows_profil_handle_space_restriction($profile) {
+function gofast_worflows_profil_handle_space_restriction(&$profile) {
     global $user;
     $can_access = FALSE;
     $gids = explode(",",  $profile->gids);
@@ -1918,47 +2001,62 @@ function gofast_worflows_profil_handle_space_restriction($profile) {
         }
         $profile->spaces[] = gofast_ac_format_value_json("node", node_load($gid));
     }
-    // if user is not in one of the target spaces, don't return the profile
-    if ($can_access) {
-        return $profile;
-    }
-    return FALSE;
+    
+    return $can_access;
 }
 
-function gofast_workflows_profil_get($id){
-    $profile = db_select("gofast_wf_profil", "p")
-        ->fields("p", array())
-        ->condition("id", $id)
-        ->execute()->fetchAll();
-    $profile = reset($profile);
-    $profile->spaces = [];
-    // profile has no space restriction: return it right away
-    if (strlen($profile->gids)== 0) {
-        return $profile;
+function gofast_workflows_profil_get($ids = null, $type_wf = null, $version = null){
+    $profiles = db_select("gofast_wf_profil", "p")->fields("p", array());
+    if(isset($ids)){
+      $profiles->condition("id", (array)$ids, "IN");
     }
-    return gofast_worflows_profil_handle_space_restriction($profile);
+    if(isset($type_wf)){
+      $profiles->condition("type_wf", (array)$type_wf, "IN");
+    }
+    if(isset($version)){
+      $profiles->condition("version_wf", (array)$version, "IN");
+    }
+    $profiles = $profiles->execute()->fetchAll();
+    // profiles has no space restriction: return it right away
+    $return_profiles = array();
+    foreach($profiles as $profile){
+      $profile->value = gofast_workflows_profil_drop_empty_signers($profile->value);
+      $profile->spaces = array();
+      if (strlen($profiles->gids)== 0 || gofast_worflows_profil_handle_space_restriction($profile)) {
+        $return_profiles[] = $profile;
+      }
+    }
+    return $return_profiles;
 }
 
-function gofast_workflows_profil_get_all_from_type_wf($type_wf, $version = null){
-    $ids = db_select("gofast_wf_profil", "p")
-        ->fields("p", array("id"))
-        ->condition("type_wf", $type_wf);
-    if ($version) {
-        $ids = $ids->condition("version_wf", $version);
+/**
+ * Drops the untouched signature rows of a saved process model: an empty row
+ * blocks the form's submit until the user deletes it.
+ */
+function gofast_workflows_profil_drop_empty_signers($value){
+    $data = json_decode($value);
+    $signers = $data->processInitInput->collectionAttributionsSignature ?? NULL;
+    if(!is_array($signers)){
+      return $value;
     }
-    $ids = $ids->execute()->fetchCol();
-    $profiles = [];
-    foreach ($ids as $id) {
-        $profile = gofast_workflows_profil_get($id);
-        if ($profile) {
-            $profiles[] = $profile;
+    $kept = array_values(array_filter($signers, function($signer){
+      foreach(array('type', 'uid', 'nom', 'prenom', 'mail', 'tel') as $key){
+        if(!empty($signer->$key)){
+          return TRUE;
         }
+      }
+      return FALSE;
+    }));
+    if(count($kept) === count($signers)){
+      return $value;
     }
-    return $profiles;
+    $data->processInitInput->collectionAttributionsSignature = $kept;
+    return json_encode($data, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
 }
 
 function gofast_workflows_profil_create($name, $value, $type_wf, $version_wf, $gids){
     global $user;
+    $value = gofast_workflows_profil_drop_empty_signers($value);
     $uid = $user->uid;
     db_insert("gofast_wf_profil")
         ->fields(array(
@@ -1973,6 +2071,7 @@ function gofast_workflows_profil_create($name, $value, $type_wf, $version_wf, $g
 }
 
 function gofast_workflows_profil_edit($id, $name, $value, $type_wf, $version_wf, $gids){
+    $value = gofast_workflows_profil_drop_empty_signers($value);
     db_update("gofast_wf_profil")
         ->fields(array(
         'name' => $name,
@@ -1991,26 +2090,402 @@ function gofast_workflows_profil_delete($id)
     return $result;
 }
 
-
-function gofast_workflows_parse_bonita_java_variable($variable_value){
-    $list_all_signers = str_replace("=", ":" , $variable_value);
-    $list_all_signers = str_replace("[", "" , $list_all_signers);
-    $list_all_signers = str_replace("]", "" , $list_all_signers);
-    $array_list_all_signers = explode("},", $list_all_signers );
-    $final_result = array();
-    foreach($array_list_all_signers as $signer){
-        $signer = str_replace("{", "" , $signer);
-        $signer = str_replace("}", "" , $signer);
-        $array_signer = explode(",", $signer  );
-        $final_array_signer = array();
-        foreach( $array_signer as $data_signer){
-            list($k, $v) = explode(":", $data_signer);
-            $final_array_signer[ trim($k) ] = $v;
-        }
-        $final_result[] =  $final_array_signer;
+/**
+ * Create a number token and parse the number value into either an int or a float.
+ *
+ * This assumes the character at the start of the stream has already been
+ * verified to be a digit.
+ *
+ * @deprecated 4.5.0 `gofast_workflows_parse_bonita_java_variable` is deprecated
+ *
+ * See its deprecation notice for more information.
+ *
+ * @param string[] $characters array/queue/stream of possibly multibyte characters.
+ *  Tokenization consumes characters from the array as needed.
+ * @return array Number token array.
+ */
+function gofast_workflows_parse_bonita_java_variable__tokenize_number(&$characters) {
+    // Consume and collect digits at the start of the stream for the integral
+    // part of the number.
+    $integral_digits = [];
+    while (mb_ereg('[0-9]', reset($characters))) {
+        $integral_digits[] = array_shift($characters);
     }
-  
- return $final_result;
+    // No point? number is an integer.
+    if (reset($characters) !== '.') {
+        return [
+            'type' => 'number',
+            'value' => intval(implode($integral_digits)),
+        ];
+    }
+    // Consume point character.
+    array_shift($characters);
+    // Consume and collect digits at the start of the stream for the fractional
+    // part of the number.
+    $fractional_digits = [];
+    while (mb_ereg('[0-9]', reset($characters))) {
+        $fractional_digits[] = array_shift($characters);
+    }
+
+    $float_string = implode($integral_digits) . '.' . implode($fractional_digits);
+    return [
+        'type' => 'number',
+        'value' => floatval($float_string),
+    ];
+}
+
+/**
+ * Create a string token.
+ *
+ * Strings are assumed to be unquoted sequences of letters, underscores or hypens.
+ *
+ * @deprecated 4.5.0 `gofast_workflows_parse_bonita_java_variable` is deprecated
+ *
+ * See its deprecation notice for more information.
+ *
+ * @param string[] $characters array/queue/stream of possibly multibyte characters.
+ *  Tokenization consumes characters from the array as needed.
+ * @return array String token array.
+ */
+function gofast_workflows_parse_bonita_java_variable__tokenize_string(&$characters) {
+    $content = [];
+
+    while (mb_ereg('[a-zA-Z_-]', reset($characters))) {
+        $content[] = array_shift($characters);
+    }
+
+    return [
+        'type' => 'string',
+        'value' => implode($content),
+    ];
+}
+
+/**
+ * Tokenize Bonita serialized object value string into an array/stream of tokens.
+ *
+ * @deprecated 4.5.0 `gofast_workflows_parse_bonita_java_variable` is deprecated
+ *
+ * See its deprecation notice for more information.
+ *
+ * @param string $value String containing serialized value.
+ * @return array{type:string,value:string|int|float}[] Array/stream of tokens.
+ */
+function gofast_workflows_parse_bonita_java_variable__tokenize($value) {
+    // Split string into possibly multibyte characters for convenience.
+    $characters = mb_str_split($value);
+    $tokens = [];
+
+    // Safeguard to ensure tokenization doesn't run into an infinite loop during
+    // development in case characters are not consumed while creating a token.
+    $max_iter = 1_000_000;
+    $i = 0;
+
+    // Tokenization loop: find possible tokens until all characters have been consumed.
+    while ($characters && $i++ < $max_iter) {
+        // ignore spaces.
+        while (mb_ereg('\s', reset($characters))) {
+            array_shift($characters); // Consume whitespace character.
+        }
+        $current_char = reset($characters);
+
+        // Simple single character match tokens.
+        $token_type = match ($current_char) {
+            '[' => 'left_square_bracket',
+            ']' => 'right_square_bracket',
+            '{' => 'left_curly_bracket',
+            '}' => 'right_curly_bracket',
+            '=' => 'equal_sign',
+            ',' => 'comma',
+            default => NULL,
+        };
+        if ($token_type !== NULL) {
+            array_shift($characters); // Consume single character.
+            $tokens[] = ['type' => $token_type];
+            continue;
+        }
+        // Next character is a digit? tokenize a number.
+        if (mb_ereg('[0-9]', $current_char)) {
+            $tokens[] = gofast_workflows_parse_bonita_java_variable__tokenize_number($characters);
+            continue;
+        }
+        // next character is possible string character? try and tokenize a string.
+        if (mb_ereg('[a-zA-Z_-]', $current_char)) {
+            $tokens[] = gofast_workflows_parse_bonita_java_variable__tokenize_string($characters);
+            continue;
+        }
+
+        // Default case: character does not match any known token, emit unknown token and consume character.
+        $tokens[] = [
+            'type' => 'unknown',
+            'character' => $current_char,
+        ];
+        array_shift($characters);
+        // Maybe we could actually break here because we know it won't lead anywhere?
+    }
+
+    // Safeguard against reaching maximum iteration count while there are still characters.
+    if ($characters && $i >= $max_iter) {
+        throw new Exception("Max iteration count exceeded while tokenizing Bonita serialized value");
+    }
+
+    return $tokens;
+}
+
+/**
+ * Parse a bonita list value from a token stream.
+ *
+ * The parsing of a list expects to fulfill this grammar:
+ * ```ebnf
+ * list = '[' (value (',' value)* ','?)? ']';
+ * ```
+ *
+ * @deprecated 4.5.0 `gofast_workflows_parse_bonita_java_variable` is deprecated
+ *
+ * See its deprecation notice for more information.
+ *
+ * @param array{type:string,value:string|int|float}[] $tokens Token stream array.
+ * @return array{0:array:1:null}|array{0:null,1:mixed[]} Parsing result of either an error or the list value.
+ */
+function gofast_workflows_parse_bonita_java_variable__parse_list(&$tokens) {
+    // Check opening bracket.
+    if (reset($tokens)['type'] !== 'left_square_bracket') {
+        return [
+            [
+                'error' => 'unexpected_token',
+                'token' => reset($tokens),
+                'message' => 'unexpected token while parsing bonita serialized value',
+            ],
+            NULL,
+        ];
+    }
+    // Eat opening bracket.
+    array_shift($tokens);
+
+    $list = [];
+
+    while (reset($tokens)['type'] !== 'right_square_bracket') {
+        // Parse possible value.
+        [$error, $value] = gofast_workflows_parse_bonita_java_variable__parse_value($tokens);
+        if ($error) {
+            return [$error, NULL];
+        }
+        $list[] = $value;
+        // Is followed by comma?
+        if (reset($tokens)['type'] !== 'comma') {
+            break;
+        }
+        // Eat comma.
+        array_shift($tokens);
+    }
+    // Check closing bracket.
+    if (reset($tokens)['type'] !== 'right_square_bracket') {
+        return [
+            [
+                'error' => 'unmatched_bracket',
+                'opening_bracket' => '[',
+                'token' => reset($tokens),
+            ],
+            NULL,
+        ];
+    }
+    // Eat closing bracket.
+    array_shift($tokens);
+    return [NULL, $list];
+}
+
+/**
+ * Parse a bonita map value from a token stream.
+ *
+ * The parsing of a map expects to fulfill this grammar:
+ * ```ebnf
+ * map = '{' (key '=' value (',' key '=' value)* ','?)? '}';
+ * key = string;
+ * ```
+ *
+ * @deprecated 4.5.0 `gofast_workflows_parse_bonita_java_variable` is deprecated
+ *
+ * See its deprecation notice for more information.
+ *
+ * @param array{type:string,value:string|int|float}[] $tokens Token stream array.
+ * @return array{0:array:1:null}|array{0:null,1:array<string,mixed>} Parsing result of either an error or the map value as an array.
+ */
+function gofast_workflows_parse_bonita_java_variable__parse_map(&$tokens) {
+    // check opening bracket
+    if (reset($tokens)['type'] !== 'left_curly_bracket') {
+        return [
+            [
+                'error' => 'unexpected_token',
+                'token' => reset($tokens),
+                'message' => 'unexpected token while parsing bonita serialized value',
+            ],
+            NULL,
+        ];
+    }
+    // eat opening bracket
+    array_shift($tokens);
+
+    $map = [];
+
+    while (reset($tokens)['type'] !== 'right_curly_bracket') {
+        // check key token
+        if (reset($tokens)['type'] !== 'string') {
+            return [
+                [
+                    'error' => 'unexpected_token',
+                    'token' => reset($tokens),
+                    'message' => 'unexpected token while trying to parse map key',
+                ],
+                NULL,
+            ];
+        }
+        // eat key token
+        $key_token = array_shift($tokens);
+        $key = $key_token['value'];
+
+        // check equals sign
+        if (reset($tokens)['type'] !== 'equal_sign') {
+            return [
+                [
+                    'error' => 'unexpected_token',
+                    'token' => reset($tokens),
+                    'message' => 'unexpected token while trying to parse equals sign',
+                ],
+                NULL,
+            ];
+        }
+        // eat equals sign
+        array_shift($tokens);
+
+        // parse possible value
+        [$error, $value] = gofast_workflows_parse_bonita_java_variable__parse_value($tokens);
+        if ($error) {
+            return [$error, NULL];
+        }
+        $map[$key] = $value;
+        // is followed by comma ?
+        if (reset($tokens)['type'] !== 'comma') {
+            break;
+        }
+        // eat comma
+        array_shift($tokens);
+    }
+    // check closing bracket
+    if (reset($tokens)['type'] !== 'right_curly_bracket') {
+        return [
+            [
+                'error' => 'unmatched_bracket',
+                'opening_bracket' => '{',
+                'token' => reset($tokens),
+            ],
+            NULL,
+        ];
+    }
+    // eat closing bracket
+    array_shift($tokens);
+    return [NULL, $map];
+}
+
+/**
+ * Parse a bonita value from a token stream.
+ *
+ * The parsing of a value expects to fulfill this grammar:
+ * ```ebnf
+ * value = number | string | list | map;
+ * number = [0-9]+ ('.' [0-9]*)?;
+ * string = [a-zA-Z_-]+;
+ * ```
+ *
+ * @deprecated 4.5.0 `gofast_workflows_parse_bonita_java_variable` is deprecated
+ *
+ * See its deprecation notice for more information.
+ *
+ * @param array{type:string,value:string|int|float}[] $tokens Token stream array.
+ * @return array{0:array:1:null}|array{0:null,1:mixed} Parsing result of either
+ *  an error or the value.
+ */
+function gofast_workflows_parse_bonita_java_variable__parse_value(&$tokens) {
+    $current_token = reset($tokens);
+
+    // Token is simply a number or string? Return its value.
+    if (in_array($current_token['type'], ['string', 'number'], TRUE)) {
+        array_shift($tokens);
+        return [NULL, $current_token['value']];
+    }
+    // Token is a list opening token? Parse stream as list and return result.
+    if ($current_token['type'] === 'left_square_bracket') {
+        return gofast_workflows_parse_bonita_java_variable__parse_list($tokens);
+    }
+    // Token is a map opening token? Parse stream as map and return result.
+    if ($current_token['type'] === 'left_curly_bracket') {
+        return gofast_workflows_parse_bonita_java_variable__parse_map($tokens);
+    }
+    // Unknown/unexpected token: return an error.
+    return [
+        [
+            'error' => 'unexpected_token',
+            'token' => $current_token,
+            'message' => 'unexpected token while parsing bonita serialized value',
+        ],
+        NULL,
+    ];
+}
+
+/**
+ * Parse a serialized bonita value into a corresponding PHP value using primitives.
+ *
+ * Parsed grammar (sort-of based on EBNF syntax idk) of bonita serialized format:
+ * ```ebnf
+ * value = scalar | list | map;
+ *
+ * scalar = number | string;
+ *
+ * number = [0-9]+ ('.' [0-9]*);
+ *
+ * string = unquoted-string;
+ *
+ * unquoted-string = [a-zA-Z_-]+;
+ *
+ * list = '[' comma-separated-values? ']';
+ *
+ * comma-separated-values = value (',' value)* ','?;
+ *
+ * map = '{' comma-separated-key-value-pairs? '}';
+ *
+ * comma-separated-key-value-pairs = key-value-pair (',' key-value-pair)*;
+ *
+ * key-value-pair = key-identifier '=' value;
+ *
+ * key-identifier = unquoted-string;
+ * ```
+ * NOTE: The above grammar is made in a verbose manner with many rules for clarity.
+ *
+ * NOTE: since this does NOT follow EBNF/ABNF/BNF syntax exactly it can't be
+ *  used where these are expected without conversion.
+ *
+ * @deprecated 4.5.0 "Bonita java variable" format is not a serialisation format.
+ *
+ * This shouldn't be used anymore, the "serialisation" format has been
+ * discovered to be Java object's toString() return values which are not
+ * unambiguous or guaranteed to be deserializable at all therefore shouldn't
+ * be used as a serialization format.
+ *
+ * If you come here after getting a value of a Bonita variable through the
+ * Bonita API and are trying to parse the value of the variable, find another
+ * solution.
+ *
+ * @param string $variable_value Serialized string representing the variable value.
+ * @return int|float|string|array Parsed value
+ * @throws Exception When parsing encounters an error.
+ */
+function gofast_workflows_parse_bonita_java_variable($variable_value) {
+    $tokens = gofast_workflows_parse_bonita_java_variable__tokenize($variable_value);
+
+    [$error, $result] = gofast_workflows_parse_bonita_java_variable__parse_value($tokens);
+    if ($error) {
+        throw new Exception('Bonita value parsing error: ' . json_encode($error));
+    }
+
+    return $result;
 }
 
 function gofast_workflows_get_user_tasks_infos($task_ids) {

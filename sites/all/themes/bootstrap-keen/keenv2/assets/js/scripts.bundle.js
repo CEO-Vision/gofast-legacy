@@ -10618,4 +10618,3 @@ __webpack_require__(/*! @/src/js/layout/initialize.js */ "../demo1/src/js/layout
 
 /******/ })()
 ;
-//# sourceMappingURL=scripts.bundle.js.map

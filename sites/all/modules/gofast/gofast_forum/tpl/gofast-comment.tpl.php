@@ -53,7 +53,7 @@ if ($comment->field_comment_is_private[LANGUAGE_NONE][0]['value']) {
         <!-- END TITLE --->
 
         <!-- BEGIN TEXT BODY --->
-        <div class="timeline-content__body mt-4">
+        <div class="timeline-content__body mt-4 ck-content">
           <?php
           hide($content['links']['print_html']);
           hide($content['links']['print_mail']);

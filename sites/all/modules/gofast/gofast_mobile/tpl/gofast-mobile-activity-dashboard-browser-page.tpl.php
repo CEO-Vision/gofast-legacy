@@ -12,7 +12,9 @@
                         <span class="nav-icon">
                         <i class="<?php print $link['icon'] ?>"></i>
                         </span>
-                        <span class="nav-text"><?php print $link['label']; ?></span>
+                        <?php if (isset($link['label'])) { ?>
+                          <span class="nav-text"><?php print $link['label']; ?></span>
+                        <?php } ?>
                     </a>
                     <div class="dropdown-menu">
                         <?php foreach ($link['dropdown-menu'] as $dropdown_link) : ?>
@@ -20,7 +22,9 @@
                                 <span class="navi-icon pr-2">
                                     <i class="<?php print $dropdown_link['icon'] ?>"></i>
                                 </span>
-                                <span class="navi-text"><?php print $dropdown_link['label']; ?></span>
+                                <?php if (isset($dropdown_link['label'])) { ?>
+                                  <span class="navi-text"><?php print $dropdown_link['label']; ?></span>
+                                <?php } ?>
                             </a>
                         <?php endforeach; ?>
                     </div>
@@ -31,7 +35,9 @@
                         <span class="nav-icon">
                         <i class="<?php print $link['icon'] ?>"></i>
                         </span>
-                        <span class="nav-text"><?php print $link['label']; ?></span>
+                        <?php if (isset($link['label'])) { ?>
+                          <span class="nav-text"><?php print $link['label']; ?></span>
+                        <?php } ?>
                     </a>
                 </li>
             <?php endif; ?>

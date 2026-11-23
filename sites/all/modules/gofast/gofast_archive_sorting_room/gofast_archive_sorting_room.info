@@ -1,7 +1,0 @@
-name = Archive Sorting Room
-description = " Archive sorting Room "
-core = 7.x
-version = "7.x-4.4.0"
-project = "gofast_Archive_sorting_room"
-package = Gofast
-dependencies[] = gofast

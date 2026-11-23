@@ -103,6 +103,7 @@ function gofast_search_advanced_search_query(){
   $categories = $_GET['categories'];
   $search_name = $_GET['name'];
   $options = json_decode($_GET['options'],TRUE);
+  $global_operator = $_GET["globalOperator"];
   
   $insert_history = $_GET['insertHistory'];
   $is_export = $_GET["export"] ?: false;
@@ -185,23 +186,35 @@ function gofast_search_advanced_search_query(){
           // Convert the value to an array
           $array_date = explode(" - ", $curr_value);
           // Format the date
-          $array_date[0] = DateTime::createFromFormat('d/m/Y', $array_date[0]);
-          $array_date[1] = DateTime::createFromFormat('d/m/Y', $array_date[1]);
-          
+          $date_start = gofast_search_advanced_format_date_to_solr($array_date[0]);
+          // A single date can be picked on both ends of the range, the end date then defaults to the start one
+          $date_end = gofast_search_advanced_format_date_to_solr(isset($array_date[1]) ? $array_date[1] : $array_date[0], TRUE);
+
+          // Skip the filter rather than sending an invalid range to Solr
+          if (!$date_start || !$date_end) {
+            continue 2;
+          }
+
           // Define the solr array filter
-          $curr_value = ' [' . $array_date[0]->format('Y-m-d\TH:i:s\Z') . ' TO ' . $array_date[1]->format('Y-m-d\TH:i:s\Z') . ']';
+          $curr_value = ' [' . $date_start . ' TO ' . $date_end . ']';
           break;
         case 'lower':
           // Get the value and format it
-          $curr_value = DateTime::createFromFormat('d/m/Y', $curr_value);
+          $date_start = gofast_search_advanced_format_date_to_solr($curr_value);
+          if (!$date_start) {
+            continue 2;
+          }
           // Define the solr array filter
-          $curr_value = ' [' . $curr_value->format('Y-m-d\TH:i:s\Z') . ' TO *]';
+          $curr_value = ' [' . $date_start . ' TO *]';
           break;
         case 'higher':
           // Get the value and format it
-          $curr_value = DateTime::createFromFormat('d/m/Y', $curr_value);
+          $date_end = gofast_search_advanced_format_date_to_solr($curr_value, TRUE);
+          if (!$date_end) {
+            continue 2;
+          }
           // Define the solr array filter
-          $curr_value = ' [* TO ' . $curr_value->format('Y-m-d\TH:i:s\Z') . ']';
+          $curr_value = ' [* TO ' . $date_end . ']';
           break;
         default:
           # code...
@@ -213,7 +226,7 @@ function gofast_search_advanced_search_query(){
   }
   // If the initHistory is set to false, then dont insert the history
   if ($insert_history != "false") {
-    gofast_search_advanced_history_save($search_name, $query, $history_filters);
+    gofast_search_advanced_history_save($search_name, $query, $history_filters, $global_operator);
   }
   
   // Search function from gofast_search module
@@ -285,7 +298,7 @@ function gofast_search_advanced_search_query(){
   $kt_results["filters"]["categories"] = $categories;
   $kt_results["filters"]["options"] = $options;
   $kt_results["filters"]["insert_history"] = false;
-  $kt_results["filters"]["globalOperator"] = $_GET["globalOperator"];
+  $kt_results["filters"]["globalOperator"] = $global_operator;
   print json_encode($kt_results); exit;
 }
 

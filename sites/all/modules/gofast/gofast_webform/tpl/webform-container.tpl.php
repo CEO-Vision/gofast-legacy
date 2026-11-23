@@ -2,7 +2,7 @@
   <div class="card-header min-h-50px flex-nowrap px-3">
     <?php print theme('gofast_menu_header_subheader', array('node' => $node)); ?>
   </div>
-  <div id="fullscreen-node" class="h-100 w-100 card-body overflow-auto p-0">
+  <div id="fullscreen-node" class="h-100 w-100 card-body p-0">
     <div id="node-<?php print $node->nid; ?>" class="<?php print $classes; ?> h-100 w-100" <?php print $attributes; ?>>
 
       <?php if (isset($content['vud_node_widget_display'])) : ?>

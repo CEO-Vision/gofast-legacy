@@ -1,0 +1,8 @@
+Apache Solr framework 7.x-1.15, 2025-11-05
+-----------------------
+- Improved Solr 8 & 9 default configurations
+
+Apache Solr framework 7.x-1.14, 2025-05-13
+-----------------------
+- Add Solr 8 default configuration
+- Add Solr 9 default configuration

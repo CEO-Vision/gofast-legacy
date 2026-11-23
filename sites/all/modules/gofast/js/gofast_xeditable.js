@@ -595,35 +595,6 @@
           }
         });
       }
-      if ($(this).parent().hasClass('manual_ckeditor')) {
-        var current_text = $(this).parent().find('.xeditable-values').html();
-        $(this).on('shown', function (e, editable) {
-          $(this).parent().find('.xeditable-values').text('');
-          CKEDITOR.config.plugins = "dialogui,dialog,about,a11yhelp,dialogadvtab,basicstyles,bidi,blockquote,notification,button,toolbar,clipboard,panelbutton,panel,floatpanel,colorbutton,colordialog,templates,menu,contextmenu,copyformatting,div,resize,elementspath,enterkey,entities,popup,filetools,filebrowser,find,fakeobjects,flash,floatingspace,listblock,richcombo,font,forms,format,horizontalrule,htmlwriter,iframe,wysiwygarea,image,indent,indentblock,indentlist,smiley,justify,menubutton,language,link,list,liststyle,magicline,maximize,newpage,pagebreak,pastetext,pastefromword,preview,print,removeformat,save,selectall,showblocks,showborders,sourcearea,specialchar,scayt,tab,table,tabletools,tableselection,undo,lineutils,widgetselection,widget,notificationaggregator,uploadwidget,uploadimage";
-          CKEDITOR.config.toolbar = eval(cke_settings_advanced.settings.toolbar);
-          if ($("#ogtab_home").length == 1) {
-            CKEDITOR.config.width = "125%";
-          } else {
-            CKEDITOR.config.width = "100%";
-          }
-
-          $('.textarea_ckeditor').ckeditor();
-
-
-        });
-        $(this).on('save', function (e, params) {
-          //$(this).attr('data-value', params.newValue);
-          var that = $(this);
-          setTimeout(function () {
-            that.html(params.newValue);
-          }, 1);
-        });
-        $(this).on('hidden', function (e, reason) {
-          if (reason === 'cancel' || reason === 'nochange') {
-            $(this).parent().find('.xeditable-values').html(current_text);
-          }
-        });
-      }
 
       //Separating file/space renaming forms
         var timeoutMode;

@@ -44,6 +44,52 @@ function gofast_user_schema(){
     ),
     'primary key' => array('tid'),
   );
+  
+  $schema['gofast_users_reporting'] = array(
+    'description' => 'Users reporting data for administrative purpose',
+    'fields' => array(
+      'id' => array(
+        'description' => 'Unique ID to identify the line',
+        'type' => 'serial',
+        'size' => 'big',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+      ),
+      'timestamp' => array(
+        'type' => 'int',
+        'not null' => TRUE,
+        'default' => 0,
+        'disp-size' => 11,
+      ),
+      'count_internal_actives' => array(
+        'type' => 'int',
+        'not null' => TRUE,
+        'default' => 0,
+        'disp-size' => 11,
+      ),
+      'count_external_actives' => array(
+        'type' => 'int',
+        'not null' => TRUE,
+        'default' => 0,
+        'disp-size' => 11,
+      ),
+      'count_internal_inactives' => array(
+        'type' => 'int',
+        'not null' => TRUE,
+        'default' => 0,
+        'disp-size' => 11,
+      ),
+      'count_external_inactives' => array(
+        'type' => 'int',
+        'not null' => TRUE,
+        'default' => 0,
+        'disp-size' => 11,
+      ),
+    ),
+    'primary key' => array('id'),
+  );
+  
+  
   return $schema;
 }
 
@@ -204,4 +250,214 @@ function gofast_user_update_7307(){
  */
 function gofast_user_update_7308(){
   db_query("TRUNCATE TABLE {gofast_token}");
+}
+
+function gofast_user_update_7311(){
+   $schema = drupal_get_schema('gofast_users_reporting');
+  
+   if (!db_table_exists('gofast_users_reporting')) {
+     db_create_table('gofast_users_reporting', $schema);
+   }
+}
+
+/**
+ * Implements hook_update_N
+ * Transform users that are simultaneously external and support into external only.
+ */
+function gofast_user_update_7401() {
+
+  // Query needed role information for support and standard role.
+  $support_role_name = defined('GOFAST_ROLE_BUSINESS_ADMIN') ? GOFAST_ROLE_BUSINESS_ADMIN : 'business administrator';
+  // NOTE The role constant for standard role does not exist?
+  $standard_role_name = defined('GOFAST_ROLE_CONTRIBUTOR') ? GOFAST_ROLE_CONTRIBUTOR : 'contributor';
+
+  $role_ids_by_name = db_query(
+    <<<'SQL'
+      SELECT r.name, r.rid FROM `role` r WHERE r.name IN (:role_names)
+    SQL,
+    [':role_names' => [$support_role_name, $standard_role_name]],
+  )->fetchAllKeyed();
+
+  $support_role_id = $role_ids_by_name[$support_role_name] ?? NULL;
+  $standard_role_id = $role_ids_by_name[$standard_role_name] ?? NULL;
+
+  if (!isset($support_role_id, $standard_role_id)) {
+    // Support or standard role could not be found, stop here.
+    return;
+  }
+
+  // Find users that have both the support role and external field set.
+  $external_support_query_result = db_query(
+    <<<'SQL'
+      SELECT u.uid from users u
+      JOIN users_roles ur on ur.uid = u.uid
+      JOIN field_data_is_extranet fdie ON fdie.entity_id = u.uid AND fdie.entity_type = 'user'
+      WHERE ur.rid = :support_role_id AND fdie.is_extranet_value = 1
+    SQL,
+    [':support_role_id' => $support_role_id],
+  );
+  $external_support_uids = $external_support_query_result->fetchCol();
+
+  if (empty($external_support_uids)) {
+    // We got no external user with support role, we have nothing to do.
+    return;
+  }
+
+  $transaction = db_transaction('gofast_update_external_support_to_external_standard');
+  try {
+    // Remove support role from users with both external role and extranet field
+    // set. (Users we have just retrieved)
+    $delete = db_delete('users_roles');
+    $delete->condition('uid', $external_support_uids, 'IN')->condition('rid', $support_role_id);
+    $delete->execute();
+
+    // Add back "standard" role in place of support role for each affected user.
+    $insert = db_insert('users_roles');
+    $insert->fields(['uid', 'rid']);
+    foreach ($external_support_uids as $uid) {
+      $insert->values([$uid, $standard_role_id]);
+    }
+    $insert->execute();
+
+  } catch (\Exception $e) {
+    watchdog_exception('gofast_user', $e);
+    $transaction->rollback();
+  }
+  // Unsetting transaction calls __destruct which commits the transaction.
+  unset($transaction);
+}
+
+/** GOFAST-14511 - Set timezone-less users the platform default timezone. */
+function gofast_user_update_7403() {
+  $users = db_select('users', 'u')
+    ->fields('u', array('uid'))
+    ->condition(db_or()
+      ->isNull('u.timezone')
+      ->condition('u.timezone', '')
+    )
+    ->execute()->fetchAll();
+
+  foreach($users as $user) {
+    if ($user->uid === '0') {
+      continue;
+    }
+    $user = user_load($user->uid);
+    $user->timezone = variable_get('date_default_timezone', date_default_timezone_get());
+    user_save($user);
+  }
+}
+
+/** GOFAST-14711 - Report the confidential spaces without a confidential administrator. */
+function gofast_user_update_7405() {
+  $spaces = gofast_get_confidential_spaces_without_confidential_administrator();
+  if (empty($spaces)) {
+    return 'Every confidential space has a confidential administrator.';
+  }
+
+  $directory = 'public://logs';
+  file_prepare_directory($directory, FILE_CREATE_DIRECTORY);
+  $uri = $directory . '/unmanageable-confidential-spaces-' . date('Ymd-His') . '.csv';
+
+  $handle = fopen($uri, 'w');
+  if ($handle === FALSE) {
+    $message = format_string(
+      '@spaces confidential spaces have no confidential administrator, the report could not be written',
+      ['@spaces' => count($spaces)],
+    );
+    watchdog('GOFAST-14711', $message, NULL, WATCHDOG_ERROR);
+
+    return $message;
+  }
+
+  // Byte order mark, for spreadsheets to read the file as UTF-8.
+  fwrite($handle, "\xEF\xBB\xBF");
+  fputcsv($handle, ['space_nid', 'space_title', 'space_type', 'administrator_uid', 'administrator_login'], ';');
+  foreach ($spaces as $space) {
+    $row = [$space['nid'], $space['title'], $space['type']];
+    if (empty($space['administrators'])) {
+      fputcsv($handle, array_merge($row, ['', '']), ';');
+      continue;
+    }
+    foreach ($space['administrators'] as $administrator) {
+      fputcsv($handle, array_merge($row, [$administrator['uid'], $administrator['login']]), ';');
+    }
+  }
+  fclose($handle);
+
+  $message = format_string(
+    '@spaces confidential spaces have no confidential administrator, report written in @path',
+    ['@spaces' => count($spaces), '@path' => drupal_realpath($uri)],
+  );
+  watchdog('GOFAST-14711', $message, NULL, WATCHDOG_WARNING);
+
+  return $message;
+}
+
+/** GOFAST-14712 - Revoke the confidential clearance held by the ADM account. */
+function gofast_user_update_7406() {
+  $adm_username = variable_get('gofast_user_adm_username', 'adm');
+  $adm = user_load_by_name($adm_username);
+  if (!$adm) {
+    $message = format_string('No account named @adm was found, nothing to revoke', ['@adm' => $adm_username]);
+    watchdog('GOFAST-14712', $message, NULL, WATCHDOG_WARNING);
+
+    return $message;
+  }
+
+  // Silences the Bonita synchronization requests for this update only.
+  if (function_exists('gofast_workflows_curl_verbose')) {
+    gofast_workflows_curl_verbose(FALSE);
+  }
+
+  try {
+    usurp(1);
+    // The clearance cannot be revoked while ADM is a member of a confidential
+    // space, so ADM is removed from each of them first.
+    $gids = og_get_groups_by_user($adm, 'node');
+    foreach ($gids as $gid) {
+      $space = node_load($gid);
+      if (!$space || !gofast_group_is_confidential($space)) {
+        continue;
+      }
+
+      $membership = og_get_membership('node', $gid, 'user', $adm->uid);
+
+      if ($membership) {
+        $membership->delete();
+      }
+
+      $line = format_string('Removed @adm from the confidential space "@title" (nid @nid)', [
+        '@adm' => $adm->name,
+        '@title' => $space->title,
+        '@nid' => $gid,
+      ]);
+      watchdog('GOFAST-14712', $line, NULL, WATCHDOG_WARNING);
+    }
+
+    $adm = user_load($adm->uid, TRUE);
+    $errors = gofast_user_try_set_granted_confidential_access($adm, ['op' => 'remove']);
+  }
+  finally {
+    usurp(FALSE);
+    if (function_exists('gofast_workflows_curl_verbose')) {
+      gofast_workflows_curl_verbose(TRUE);
+    }
+  }
+
+  if (!empty($errors)) {
+    $message = 'Could not revoke the confidential clearance of @adm : !errors';
+    $variables = [
+      '@adm' => $adm->name,
+      '!errors' => implode(' ', array_map(fn($error) => $error['message'], $errors)),
+    ];
+
+    $final_message = format_string($message, $variables);
+    watchdog('GOFAST-14712', $final_message, NULL, WATCHDOG_WARNING);
+  }
+  elseif (gofast_user_can_user_access_confidential_content(user_load($adm->uid, TRUE))) {
+    $final_message = format_string('The confidential clearance of @adm is still set although no error was reported', [
+      '@adm' => $adm->name,
+    ]);
+    watchdog('GOFAST-14712', $final_message, NULL, WATCHDOG_WARNING);
+  }
 }

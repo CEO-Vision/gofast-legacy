@@ -207,6 +207,7 @@ foreach ($matches[0] as $index => $match) {
   </table>
 </div>
 <?php endif; ?>
+<?php if (!$skip_body) : ?>
 <!--[if mso | IE]></td></tr></table><table align="center" border="0" cellpadding="0" cellspacing="0" class="" role="presentation" style="width:992px;" width="992" bgcolor="white" ><tr><td style="line-height:0px;font-size:0px;mso-line-height-rule:exactly;"><![endif]-->
 <div style="background:white;background-color:white;margin:0px auto;max-width:992px;">
   <table align="center" border="0" cellpadding="0" cellspacing="0" role="presentation" style="background:white;background-color:white;width:100%;">
@@ -224,7 +225,7 @@ foreach ($matches[0] as $index => $match) {
                         <tbody>
                           <tr>
                             <td>
-                              <img src="<?= $base_url ?>/sites/all/modules/gofast/gofast_mail_queue/icon/user-solid-primary.png" alt="Information Icon" width="18" />
+                              <img src="<?= $base_url ?>/sites/all/modules/gofast/gofast_mail_queue/icon/user-primary.png" alt="User Icon" width="18" />
                             </td>
                             <td><span style="color: #3699ff; font-size: 18px; font-weight: 600;">&nbsp;<?php echo t('Member(s) pending in : ') . $node_title ?></span></td>
                           </tr>
@@ -242,7 +243,6 @@ foreach ($matches[0] as $index => $match) {
     </tbody>
   </table>
 </div>
-<?php if (!$skip_body) : ?>
   <?php foreach ($request_entities as $request_entity) : ?>
     <!--[if mso | IE]></td></tr></table><table align="center" border="0" cellpadding="0" cellspacing="0" class="" role="presentation" style="width:992px;" width="992" bgcolor="white" ><tr><td style="line-height:0px;font-size:0px;mso-line-height-rule:exactly;"><![endif]-->
     <div style="background:white;background-color:white;margin:0px auto;max-width:992px;">

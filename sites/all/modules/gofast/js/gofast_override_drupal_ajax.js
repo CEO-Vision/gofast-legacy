@@ -38,6 +38,33 @@
           }
         }
       }
+
+      // If the Drupal form requests a JS handler to run before the actual submit
+      const beforeSubmit = form_values.find(obj => obj.name === "before_submit");
+
+      // If we want to map form_state keys to other keys (e.g., Alfresco props keys)
+      let ajaxMap = form_values.find(obj => obj.name === "ajax_map");
+      if (ajaxMap) {
+        ajaxMap = JSON.parse(ajaxMap.value);
+        const keysToKeep = Object.keys(ajaxMap);
+        form_values = form_values
+            .filter(item => keysToKeep.includes(item.name))
+            .reduce((obj, item) => {
+                if (ajaxMap[item.name] == "tags") {
+                  item.value = item.value || "[]";
+                  item.value = JSON.parse(item.value).map(item => item.name).join(",");
+                }
+                if (item.value && item.name.includes("date")) {
+                  item.value = moment(item.value, GofastConvertDrupalDatePattern("moment", Drupal.settings.date_format_short, false)).format("YYYY-MM-DDTHH:mm:ss[Z]");
+                }
+                obj[ajaxMap[item.name]] = item.value;
+                return obj;
+            }, {});
+      }
+
+      if (beforeSubmit) {
+        eval(beforeSubmit.value)(form_values);
+      }
     };
     /**
      * Override Drupal's AJAX prototype beforeSend function so it can append the

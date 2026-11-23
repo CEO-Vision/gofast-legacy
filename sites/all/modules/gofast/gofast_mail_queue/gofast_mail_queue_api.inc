@@ -35,6 +35,25 @@ function gofast_mail_queue_api_clear_queue(){
 }
 
 /**
+ * Get the set of node ids of the closest parent spaces of a node, for all its
+ * locations, as an array.
+ *
+ * @param string $nid The id of the node to get the closest parent spaces of.
+ *
+ * @return array<array-key, string> The parent spaces ids
+ */
+function gofast_mail_queue_get_all_nearest_space_ids($nid) {
+  $node = node_load($nid);
+
+  // Get node direct space parents node ids.
+  // FIXME?(GOFAST-12866) does not work with deleted node
+  return array_map(
+    fn($x) => gofast_ajax_file_browser_get_nid_from_href($x['path']),
+    iterator_to_array(gofast_cmis_node_get_mirrored_parent_spaces($node)),
+  );
+}
+
+/**
  * Queue a message, asking the subscription module about interested users
  *
  * @param $message
@@ -66,6 +85,20 @@ function gofast_mail_queue_api_queue($message, $type){
     }
 
     $type_com = NULL; // Var to stock type message comment
+
+  // event values meaning:
+  // - `NCON`: new content, on node creation (?)
+  // - `NDEL`: node delete, on node deletion (?)
+  // - `NMEM`: new membership, on adding a membership (?)
+  // - `DMEM`: delete membership, on removing membership (?)
+  // - `ECOM`: edit comment (?)
+  // - `NCOM`: new comment (?)
+  // - `DCOM`: delete comment (?)
+  // - `EDTL`: edit to-do list (?)
+  // - `NTDL`: new to-do list (?)
+  // - `NUSL`: new user list (?)
+  // - `EUSL`: edit user list (?)
+  // - `DUSL`: delete user list (?)
 
     switch($req){
       case 'NCON':
@@ -251,6 +284,13 @@ function gofast_mail_queue_api_queue($message, $type){
         break;
     }
 
+    // When needed add parent groups (spaces) to subscribed group list
+    if (in_array($req, ['ECON', 'NCON'])) {
+      $group_ids = gofast_mail_queue_get_all_nearest_space_ids($nid);
+      foreach($group_ids as $group_id) {
+        $subscribed_group[] = gofast_subscription_ui_api_subscribed_list('group', $group_id, $nid);
+      }
+    }
 
     if($type == 'message_kanban'){
         $node = node_load($message_data['nid']['value']);
@@ -266,20 +306,23 @@ function gofast_mail_queue_api_queue($message, $type){
     if ($all_subscription_items != NULL) {
       // accumulators intended to check for duplicates
       $filtered_subscription_items = [];
-      $met_uids = [];
       $highest_met_frequency = [];
-      // store unique uid values with highest frequencies
+      // Keep a single frequency per uid across his subscriptions (e.g. document + parent space).
       foreach($all_subscription_items as $subscription_item) {
-        if(in_array($subscription_item[0], $met_uids))  {
-          if($subscription_item[1] == 4) {
-            $highest_met_frequency[$subscription_item[0]] = $subscription_item[1];
-          } elseif ($subscription_item[1] < $highest_met_frequency[$subscription_item[0]]) {
-            $highest_met_frequency[$subscription_item[0]] = $subscription_item[1];
-          }
+        $uid = $subscription_item[0];
+        $frequency = $subscription_item[1];
+        if(!isset($highest_met_frequency[$uid])) {
+          // First subscription met for this uid.
+          $highest_met_frequency[$uid] = $frequency;
           continue;
         }
-        $met_uids[] = $subscription_item[0];
-        $highest_met_frequency[$subscription_item[0]] = $subscription_item[1];
+        if($highest_met_frequency[$uid] == 4 || $frequency == 4) {
+          // "Instantly" always wins, whatever the order.
+          $highest_met_frequency[$uid] = 4;
+        } elseif($frequency < $highest_met_frequency[$uid]) {
+          // Otherwise the most frequent wins (0 = twice a day).
+          $highest_met_frequency[$uid] = $frequency;
+        }
       }
       // recreate same-structured subscription array with unique stored values
       foreach($highest_met_frequency as $uid => $frequency) {
@@ -572,11 +615,32 @@ function gofast_mail_queue_api_send_mail(string $subject, string $title, string 
         $user_mail = $user->mail; //Get the user's mail
     }
     else{ //If it's a mail address
-      $user = user_load_by_mail($recept_item['recpt']); //Load the user
-      if(isset($user->uid) && gofast_user_is_left($user)){
-          watchdog('gofast_mail_queue', 'prevent sending email to blocked user : '.$user->uid);
-          continue;
+      // Check that the that the user of the email address is not blocked if either:
+      // - the email is not associated with any account
+      // - at least one account is active
+      // Load the user
+      $result = gofast_user_load_active_user_by_email($recept_item['recpt']);
+
+      // some users have this email, and none are activated
+      if ($result['users_with_email_exist'] && !isset($result['user'])) {
+        watchdog(
+          'gofast_mail_queue',
+          'Prevent sending email to blocked users. '
+          . 'All accounts associated with email "@email" are deactivated. '
+          . 'user IDs: @user_ids',
+          [
+            '@email' => $recept_item['recpt'],
+            '@user_ids' => json_encode(
+              array_keys(
+                user_load_multiple([], ['mail' => $recept_item['recpt']]),
+              ),
+            ),
+          ],
+          WATCHDOG_WARNING,
+        );
+        continue; // do not send email
       }
+
       $user_name = "";
       $user_mail = $recept_item['recpt'];
     }
@@ -703,6 +767,11 @@ function gofast_mail_queue_cron(){
 
   watchdog('gofast_mail_queue', 'START: Push notifications Comment');
   gofast_mail_queue_api_push("message_comment");
+
+  // force some external modules' email to be processed each round of processed emails
+  watchdog('gofast_mail_queue', 'START: Push external module notifications');
+  gofast_mail_queue_api_push("ext");
+
   $end_timer = time()-$start_timer;
   watchdog('gofast_mail_queue', 'END: Push notifications. '.$end_timer.' sec was needed.');
 }
@@ -719,10 +788,11 @@ function gofast_mail_queue_api_push($type = NULL){
   $end_timer = time()-$start_timer;
   watchdog('gofast_mail_queue', 'END: Sort match. '.$end_timer.' sec was needed.');
   $i=0;
+  // Deleted once every mail is sent, whoever the recipient
+  $array_attachments_to_delete = array();
 
   foreach($sorted_notifications as $uid => $array_notifications){
     $array_notification = array();
-    $array_attachments_to_delete = array();
 
 
     foreach($array_notifications as $array_notification_item){
@@ -960,7 +1030,7 @@ function gofast_mail_build_regular_events(&$body, &$edited, &$count_updates, $me
 
     foreach($message as $message_k => $message_item){
       if(count($message_item) == 2 && $message_k != "changed" && $message_k != "ruid"){ //Format for each event
-        $isTaxoTerm = $message_k == "criticity" || $message_k == "state" || $message_k == "criticity" || $message_k == "category" || $message_k == "tags";
+        $isTaxoTerm = $message_k == "classification" || $message_k == "criticity" || $message_k == "state" || $message_k == "category" || $message_k == "tags";
         $isNodeRef = $message_k == "targets" || $message_k == "groups";
         if($isTaxoTerm){ //Translating ids in name
           $from = gofast_message_ext_api_get_term($message_item['from']);
@@ -1125,11 +1195,13 @@ function gofast_mail_queue_format_mail($notifications, $notification_type = "reg
         }
 
         $body[$group_index]['items'][$item_index]['events'][$event_index]['timestamp'] = $event->timestamp;
+        $author_name = gofast_user_display_name($user);
+        $author_login = gofast_user_display_name($user, TRUE);
 
         if ($notification_type == "comment") {
           $body[$group_index]['items'][$item_index]['events'][$event_index]['user'] = $user;
-          $body[$group_index]['items'][$item_index]['events'][$event_index]['author_name'] = gofast_user_display_name($user);
-          $body[$group_index]['items'][$item_index]['events'][$event_index]['author_pic'] = '<img width="40" style="border-radius: 5px; vertical-align: middle;" typeof="foaf:Image" src="' . gofast_get_url_picture_by_id($user->picture->fid) . '" alt="' . t("@user's picture", array('@user' => format_username($user)), array('context' => 'gofast:gofast_user')) . '" title="' . t("@user's picture", array('@user' => format_username($user)), array('context' => 'gofast:gofast_user')) . '" />';
+          $body[$group_index]['items'][$item_index]['events'][$event_index]['author_name'] = $author_name;
+          $body[$group_index]['items'][$item_index]['events'][$event_index]['author_pic'] = '<img width="40" style="border-radius: 5px; vertical-align: middle;" typeof="foaf:Image" src="' . gofast_get_url_picture_by_id($user->picture->fid) . '" alt="' . t("@user's picture", array('@user' => $author_login), array('context' => 'gofast:gofast_user')) . '" title="' . t("@user's picture", array('@user' => $author_login), array('context' => 'gofast:gofast_user')) . '" />';
           $body[$group_index]['items'][$item_index]['events'][$event_index]['vid'] = $message['cid']['value'];
           $body[$group_index]['items'][$item_index]['events'][$event_index]['nid'] = $message['nid']['value'];
           gofast_mail_build_comments_events($body, $commented, $edit_commented, $message, $event_name, $group_index, $item_index, $event_index);
@@ -1138,8 +1210,8 @@ function gofast_mail_queue_format_mail($notifications, $notification_type = "reg
           // if it's a regular notif, we want to group events by user so we build a temporary user-grouped events array
           $current_uid = $body[$group_index]['items'][$item_index]['events'][$event_index]['user']->uid;
           if (!isset($body[$group_index]['items'][$item_index]['users'][$current_uid]['user'])) {
-            $body[$group_index]['items'][$item_index]['users'][$current_uid]['author_name'] = gofast_user_display_name($user);
-            $body[$group_index]['items'][$item_index]['users'][$current_uid]["author_pic"] = '<img width="40" style="border-radius: 5px; vertical-align: middle;" typeof="foaf:Image" src="' . gofast_get_url_picture_by_id($user->picture->fid) . '" alt="' . t("@user's picture", array('@user' => format_username($user)), array('context' => 'gofast:gofast_user')) . '" title="' . t("@user's picture", array('@user' => format_username($user)), array('context' => 'gofast:gofast_user')) . '" />';
+            $body[$group_index]['items'][$item_index]['users'][$current_uid]['author_name'] = $author_name;
+            $body[$group_index]['items'][$item_index]['users'][$current_uid]["author_pic"] = '<img width="40" style="border-radius: 5px; vertical-align: middle;" typeof="foaf:Image" src="' . gofast_get_url_picture_by_id($user->picture->fid) . '" alt="' . t("@user's picture", array('@user' => $author_login), array('context' => 'gofast:gofast_user')) . '" title="' . t("@user's picture", array('@user' => $author_login), array('context' => 'gofast:gofast_user')) . '" />';
             $body[$group_index]['items'][$item_index]['users'][$current_uid]['user'] = $user;
           }
           $body[$group_index]['items'][$item_index]['users'][$current_uid]['actions'][] = $body[$group_index]['items'][$item_index]['events'][$event_index];
@@ -1176,6 +1248,30 @@ function gofast_mail_queue_format_mail($notifications, $notification_type = "reg
         // if it's a regular notif, we erase the events array with the new user-grouped one
         $body[$group_index]['items'][$item_index]['events'] = $body[$group_index]['items'][$item_index]['users'];
         unset($body[$group_index]['items'][$item_index]['users']);
+
+        // Filter undesired elements by removing empty actions and user sections.
+        $body[$group_index]['items'][$item_index]['events'] = gofast_array_flat_map(
+          $body[$group_index]['items'][$item_index]['events'],
+          function ($user_events, $k) {
+            // Remove empty edit actions for the user's event section.
+            // Edit actions are considered empty if the `update` key is not set.
+            $user_events['actions'] = array_filter(
+              $user_events['actions'],
+              fn ($action) =>
+                $action['type'] !== 'ECON' || isset($action['update']),
+            );
+
+            // If there is no more actions to report for the user after
+            // filtering, remove the section entirely. (filter out section.)
+            if (empty($user_events['actions'])) {
+              return [];
+            }
+
+            // There is still events to report for the user for the item/content.
+            return [$k => $user_events];
+          },
+          'replace',
+        );
       }
 
 
@@ -1371,14 +1467,14 @@ function gofast_node_deadline_notify(){
           $subscribers[$i][0] = $participant['target_id']; 
           $i++;
         }
-        
+        $node->responsible = $node->uid ? user_load($node->uid) : NULL;
         if (isset($subscribers)) {
           gofast_node_deadline_notify_accumulate_recipients($recpt, $subscribers, $node);
         }  
       }
       else{
+        $node->responsible = $node->uid ? user_load($node->uid) : NULL;
         $og_groups = $node->og_group_content_ref['und'];
-
         //get group subscriber
         if (isset($og_groups)) {
           $met_subscribers = [];
@@ -1458,6 +1554,32 @@ function gofast_node_deadline_notify(){
       $subject = '['.variable_get('site_name').'] '.t('Your deadline on @date', array('@date' => format_date($tomorrow_start->getTimestamp() , 'custom', $short_without_hours_format, NULL, $l["langcode"])), $l);
       $title = t('Deadline notification', array(), $l);
       $footer = t('Message sent from ', array(), $l) . " " . variable_get('site_name');
+      $langcode = $RecipUser->language;
+      
+      $table_deadline = "";
+      foreach ($mail_recpt[0]['nodes'] as $index => $node_array){
+        if (empty($node_array)) {
+          continue;
+        }
+        $section_title = t("Documents", array(), $l);
+        $section_icon = "other";
+        if ($index == 1) {
+            $section_title = t("Cards and tasks", array(), $l);
+            $section_icon = "trello";
+        }
+        if ($index == 0) {
+            $section_title = t("Conferences", array(), $l);
+            $section_icon = "conference";
+        }
+        $table_deadline .= theme('gofast-notifications-node-deadline-element', array(
+          'node_array' => $node_array,
+          'section_icon' => $section_icon,
+          'section_title' => $section_title,
+          'l' => $l,
+          'langcode' => $langcode,
+          'deadline' => format_date($tomorrow_start->getTimestamp() , 'custom', $short_without_hours_format, NULL, $l["langcode"]),
+        ));
+      }
 
       $body = theme('gofast-notifications-node-deadline', array(
         'user' => $RecipUser,
@@ -1465,6 +1587,7 @@ function gofast_node_deadline_notify(){
         'nodes' => $mail_recpt[0]['nodes'],
         'deadline' => format_date($tomorrow_start->getTimestamp() , 'custom', $short_without_hours_format, NULL, $l["langcode"]),
         'l' => $l,
+        'table'=> $table_deadline,
       ));
 
       // we don't need the nodes reference anymore and we really don't want to insert them into db
@@ -1923,6 +2046,9 @@ function gofast_mail_queue_theme(){
    );
    $theme['gofast-notifications-user-standby'] = array(
     'template' => 'tpl/gofast-notifications-user-standby'
+  );
+   $theme['gofast-notifications-user-subscriptions'] = array(
+    'template' => 'tpl/gofast-notifications-user-subscriptions'
   );
 
 

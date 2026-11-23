@@ -15,6 +15,10 @@ global $base_url;
 define('GOFAST_URL_WEBSCRIPT_ALFRESCO', $base_url.'/alfresco/s/');
 define('GOFAST_URL_ONLYOFFICE_CALLBACK', $base_url.'/');
 define('GOFAST_ONLYOFFICE_SOFT_LOCK', 'field_onlyoffice_lock');
+// Longest end of session save an editor opening waits for, in seconds
+define('GOFAST_ONLYOFFICE_SAVING_TIMEOUT', 30);
+// Delay kept after the save: OnlyOffice cleans the session up after the callback response, in seconds
+define('GOFAST_ONLYOFFICE_SAVING_GRACE', 5);
 
 /**
  * Implements hook_library().
@@ -100,12 +104,11 @@ function gofast_onlyoffice_menu() {
 
   $items['onlyoffice/editor/%node'] = array(
     'title' => 'Onlyoffice document editor',
-    'page callback' => 'gofast_onlyoffice_editor',
+    'page callback' => 'gofast_onlyoffice_render_editor',
     'type' => MENU_CALLBACK,
     'page arguments' => array(2),
-    'access arguments' => array('access content'),
-    'access callback' => 'user_access',
-    'delivery callback' => 'gofast_ajax_delivery',
+    'access arguments' => array('view', 2),
+    'access callback' => 'node_access',
   );
 
   $items['onlyoffice/config/%node'] = array(
@@ -195,14 +198,14 @@ function template_preprocess_onlyoffice_compare(&$variables) {
   $variables["docRequestConfig"] = json_encode($doc_request_config);
 }
 
-function gofast_onlyoffice_parashift_callback($hash, $complete_node_ref, $onlyoffice_callback_values) {
+function gofast_onlyoffice_parashift_callback($hash, $complete_node_ref, $payload) {
   global $conf;
 
   $url_attributes['nodeRef'] = $complete_node_ref;
   $url_attributes['cb_key'] = $hash;
   $alfresco_callback_url = urldecode('http://localhost:8080/alfresco/s' . '/parashift/onlyoffice/callback?' . http_build_query($url_attributes));
 
-  $token =  JWT::encode(json_decode($onlyoffice_callback_values, TRUE), $conf['oo_jwt_secret'], "HS256");
+  $token =  JWT::encode($payload, $conf['oo_jwt_secret'], "HS256");
   //Dispatching data to alfresco
   $ch = curl_init($alfresco_callback_url);
   curl_setopt($ch, CURLOPT_CUSTOMREQUEST, "POST");
@@ -259,7 +262,7 @@ function gofast_onlyoffice_get_users_editing($document_key) {
   $users_cache_key = gofast_onlyoffice_get_document_users_cache_key($document_key);
   $users = cache_get($users_cache_key);
   if ($users !== FALSE) {
-    return $users->data;
+    return $users->data ?? [];
   }
 
   // force refresh
@@ -273,7 +276,7 @@ function gofast_onlyoffice_get_users_editing($document_key) {
       [],
       WATCHDOG_ERROR,
     );
-    return FALSE;
+    return [];
   }
 
   // poll the cache retrying with a sort of exponential backoff
@@ -299,10 +302,10 @@ function gofast_onlyoffice_get_users_editing($document_key) {
 
   // Failed to load users even after polling the cache (or failed to sleep in-between polls)
   if ($users === FALSE) {
-    return FALSE;
+    return [];
   }
 
-  return $users->data;
+  return $users->data ?? [];
 }
 
 /**
@@ -317,7 +320,7 @@ function gofast_onlyoffice_get_document_users_cache_key($document_key) {
 /**
  * This function creates a soft-lock on document open and removes it when the document is closed.
  * Also dispatch the returned callback to alfresco that handles the document storage.
- * @see https://api.onlyoffice.com/editors/callback for additional info about the $decoded_values array and the meanings of the keys.
+ * @see https://api.onlyoffice.com/editors/callback for additional info about the $payload array and the meanings of the keys.
  * @param type $node_ref
  * @param type $alfresco_ticket
  * @return type
@@ -325,6 +328,7 @@ function gofast_onlyoffice_get_document_users_cache_key($document_key) {
 function gofast_onlyoffice_callback($nid, $node_ref, $alfresco_ticket) {
 
   $result = '';
+  $saving = FALSE;
 
   $complete_node_ref = 'workspace://SpacesStore/' . $node_ref;
 
@@ -337,21 +341,39 @@ function gofast_onlyoffice_callback($nid, $node_ref, $alfresco_ticket) {
   $onlyoffice_callback_values = str_replace($conf['gofast-comm_domain'], "internal-" . $conf['gofast-comm_domain'], $onlyoffice_callback_values);
 
   try {
-    // if the callback is called by the onlyoffice api, onlyoffice still expects a response from the doc server but we don't have to go further
-    $decoded_values = json_decode($onlyoffice_callback_values, TRUE);
-    if (isset($decoded_values["userdata"]) && $decoded_values["userdata"] == "gofast_onlyoffice_is_doc_being_edited") {
-      $hash = gofast_onlyoffice_get_document_key($complete_node_ref);
-      return gofast_onlyoffice_parashift_callback($hash, $complete_node_ref, $onlyoffice_callback_values);
+    $payload = json_decode($onlyoffice_callback_values, TRUE);
+    // alfresco connector expects "history" to be an object, not an array
+    if (empty($payload["history"])) {
+      $payload["history"] = new stdClass();
+    }
+    if (!empty($payload["history"]->changes)) {
+      foreach ($payload["history"]->changes as $key => $change) {
+        if (isset($change->documentSha256)) {
+          unset($payload["history"]->changes[$key]->documentSha256);
+        }
+      }
     }
 
-    if(isset($decoded_values['status'])) {
+    // if the callback is called by the onlyoffice api, onlyoffice still expects a response from the doc server but we don't have to go further
+    if (isset($payload["userdata"]) && $payload["userdata"] == "gofast_onlyoffice_is_doc_being_edited") {
+      $hash = gofast_onlyoffice_get_document_key($complete_node_ref);
+      return gofast_onlyoffice_parashift_callback($hash, $complete_node_ref, $payload);
+    }
+
+    if(isset($payload['status'])) {
 
     $node = node_load($nid);
     $lock_owner = gofast_cmis_node_is_locked($node);
     $save_continue = FALSE;
     $unlock = FALSE;
 
-      switch($decoded_values['status']) {
+      // End of session save: editors opened meanwhile must wait for it
+      if ($payload['status'] == '2' && !isset($payload['forcesavetype'])) {
+        $saving = TRUE;
+        gofast_onlyoffice_set_saving($nid, TRUE);
+      }
+
+      switch($payload['status']) {
         case '1' :
           // Document opened
           // We need to check if there is a soft_lock, if not, set it to true
@@ -359,14 +381,14 @@ function gofast_onlyoffice_callback($nid, $node_ref, $alfresco_ticket) {
           break;
         case '2':
           // Update of the document made, saving, everybody has closed
-          if(isset($decoded_values['forcesavetype'])){
+          if(isset($payload['forcesavetype'])){
               //GoFAST plugin save
               $save_continue = TRUE;
-              $onlyoffice_callback_values = json_encode($decoded_values);
-          }elseif($decoded_values["notmodified"]) {
+              $onlyoffice_callback_values = json_encode($payload);
+          }elseif($payload["notmodified"]) {
             // Don't version if no modification was made since last save on an "alone" session
-            $decoded_values['status'] = 4;
-            $onlyoffice_callback_values = json_encode($decoded_values);
+            $payload['status'] = 4;
+            $onlyoffice_callback_values = json_encode($payload);
           }else{
             $unlock = TRUE;
           }
@@ -377,24 +399,24 @@ function gofast_onlyoffice_callback($nid, $node_ref, $alfresco_ticket) {
           $unlock = TRUE;
           break;
         case '6':
-          $onlyoffice_callback_values = json_encode($decoded_values);
+          $onlyoffice_callback_values = json_encode($payload);
           $hash = gofast_onlyoffice_get_document_key($complete_node_ref);
-          return gofast_onlyoffice_parashift_callback($hash, $complete_node_ref, $onlyoffice_callback_values);
+          return gofast_onlyoffice_parashift_callback($hash, $complete_node_ref, $payload);
       }
     }
-    if ($decoded_values['status'] == 1 || $decoded_values['status'] == 4) {
+    if ($payload['status'] == 1 || $payload['status'] == 4) {
 
       // store in cache the list of users (so we can query it later) for 5 minutes
-      $cache_key = gofast_onlyoffice_get_document_users_cache_key($decoded_values['key']);
-      cache_set($cache_key, $decoded_values['users'], 'cache', time() + (5 /*minutes*/ * 60 /*seconds/min*/));
+      $cache_key = gofast_onlyoffice_get_document_users_cache_key($payload['key']);
+      cache_set($cache_key, $payload['users'], 'cache', time() + (5 /*minutes*/ * 60 /*seconds/min*/));
       // registering the number of connected users to a document.
       // getting map of doc keys => number of users
       $document_user_count_map = variable_get('oo_doc_user_count_list', array());
       //getting currently stored max value (lets us not always call max on the count map)
       $max = variable_get('oo_doc_user_count_max', 0);
-      $key = $decoded_values['key'];
+      $key = $payload['key'];
       // go through the actions to see connections and deconnections of users. Usually only one action is sent.
-      foreach ($decoded_values['actions'] as $action) {
+      foreach ($payload['actions'] as $action) {
         if ($action['type'] === 1) {
           //make sure there is a number for the document's key
           if (!isset($document_user_count_map[$key])) {
@@ -418,13 +440,13 @@ function gofast_onlyoffice_callback($nid, $node_ref, $alfresco_ticket) {
     }
 
   $hash = gofast_onlyoffice_get_document_key($complete_node_ref);
-  $result = gofast_onlyoffice_parashift_callback($hash, $complete_node_ref, $onlyoffice_callback_values);
+  $result = gofast_onlyoffice_parashift_callback($hash, $complete_node_ref, $payload);
   if ($unlock) {
     gofast_onlyoffice_document_set_soft_lock($node, FALSE);
   }
 
     //if we are in case of saving document after OnlyOffice edition, we check if the document is in old office format. If yes, convert it
-    if($decoded_values['status'] == '2'){
+    if($payload['status'] == '2'){
       usurp($lock_owner->uid);
       $cmis_object = gofast_cmis_node_edit_item_get($node);
 
@@ -444,16 +466,48 @@ function gofast_onlyoffice_callback($nid, $node_ref, $alfresco_ticket) {
       sleep(2);
       gofast_onlyoffice_document_set_soft_lock($node, TRUE);
 
-      $decoded_values['status'] = 1;
-      $onlyoffice_callback_values = json_encode($decoded_values);
+      $payload['status'] = 1;
+      $onlyoffice_callback_values = json_encode($payload);
 
-      $result = gofast_onlyoffice_parashift_callback($hash, $complete_node_ref, $onlyoffice_callback_values);
+      $result = gofast_onlyoffice_parashift_callback($hash, $complete_node_ref, $payload);
     }
 
     return $result;
   } catch(Throwable $e) {
     watchdog("gofast_onlyoffice", "Caught: " . $e->getMessage(), [], WATCHDOG_ERROR);
-    return gofast_onlyoffice_parashift_callback($hash, $complete_node_ref, $onlyoffice_callback_values);
+    return gofast_onlyoffice_parashift_callback($hash, $complete_node_ref, $payload);
+  } finally {
+    if ($saving) {
+      gofast_onlyoffice_set_saving($nid, FALSE);
+    }
+  }
+}
+
+/**
+ * Flags the end of session save of a document as running, or as done.
+ * Once done, the flag is kept a few more seconds: OnlyOffice cleans the
+ * session up only after receiving the callback response.
+ */
+function gofast_onlyoffice_set_saving($nid, $saving) {
+  $until = time() + ($saving ? GOFAST_ONLYOFFICE_SAVING_TIMEOUT : GOFAST_ONLYOFFICE_SAVING_GRACE);
+  // A dated expiry, unlike CACHE_TEMPORARY, survives cache_clear_all() and lets the cache drop the item afterwards.
+  // The data holds it too: expired items still read as valid until the end of the request.
+  cache_set('gofast_onlyoffice_saving:' . $nid, $until, 'cache', $until);
+}
+
+/**
+ * Waits for the end of session save of a document. Joining the session
+ * meanwhile makes OnlyOffice reload the previous version from Alfresco and
+ * drop the unsaved changes once the save is acknowledged.
+ */
+function gofast_onlyoffice_wait_for_saving($nid) {
+  $deadline = time() + GOFAST_ONLYOFFICE_SAVING_TIMEOUT;
+  while (time() < $deadline) {
+    $cache = cache_get('gofast_onlyoffice_saving:' . $nid);
+    if (empty($cache) || $cache->data <= time()) {
+      return;
+    }
+    sleep(1);
   }
 }
 
@@ -548,11 +602,15 @@ function gofast_onlyoffice_api_query_info_command($doc_id, $user_data = null) {
 /**
  *
  * Callback of menu item above
- * @param type $node
- * @return type template
+ * @param stdClass $node
+ * @param bool $ro Display onlyoffice editor as read-only
+ * @return string Onlyoffice editor template html
  */
 function gofast_onlyoffice_editor($node, $ro = FALSE) {
   if (user_is_logged_in()) {
+    if (!$ro) {
+      gofast_onlyoffice_wait_for_saving($node->nid);
+    }
     $node_ref = gofast_cmis_node_get_item_id($node);
     // This condition checks if the document can be edited with onlyoffice or not.
     // It should not contain a lock a no soft lock otherwise it means we have open
@@ -574,33 +632,10 @@ function gofast_onlyoffice_editor($node, $ro = FALSE) {
     }
 
     if($ro){
-        //body inline edition
-        if(node_access("update", $node)){
-              $field_node_body = array(
-                  'pk' => $node->nid,
-                  'name' => 'body',
-                  'value' => $node->body[LANGUAGE_NONE][0]['value'],
-                  'data' => $node->body[LANGUAGE_NONE][0]['value'],
-                  'type' => 'textarea',
-                  'url' => '/update_node_field',
-                  'onblur' => 'ignore',
-                  'link_value' => '',
-                  'inputclass' => 'textarea_ckeditor',
-                  'showbuttons' => 'bottom',
-                  'delegated' => 'true',
-                  'wrapper_class' => array(
-                    'manual_ckeditor',
-                  )
-              );
-              $node_body = "<div>".theme('x-editable_field', gofast_xeditable_enrich_values($field_node_body))."</div>";
-        }else{
-            $node_body = $node->body[LANGUAGE_NONE][0]['value'];
-        }
-
         $doc_config = gofast_onlyoffice_get_config($node, gofast_generate_uuid(), "", "readonly");
         $token = JWT::encode($doc_config, $conf['oo_jwt_secret'], "HS256");
   
-        return $node_body . theme('onlyoffice_ro', array(
+        return theme('onlyoffice_ro', array(
           'nid' => $node->nid,
           'filename' => $doc_name,
           'token' => $token,
@@ -628,6 +663,20 @@ function gofast_onlyoffice_editor($node, $ro = FALSE) {
   } else {
    drupal_goto('/');
   }
+}
+
+/**
+ * Render the onlyoffice editor for the given node
+ * 
+ * Proceed in the same way as in drupal_ajax_delivery, but using page_callback
+ * because delivery_callback is called even if access_callback fails.
+ *
+ * @param stdClass $node
+ * @return void
+ */
+function gofast_onlyoffice_render_editor($node) {
+  print gofast_onlyoffice_editor($node);
+  drupal_exit();
 }
 
 /**
@@ -664,7 +713,9 @@ function gofast_onlyoffice_configure_share(){
   $postfields = [
     'alfurl' => "",
     'cert' => "true",
-    'forcesave' => "false",
+    'customization' => [
+      'forcesave' => "true",
+    ],
     'innerurl' => "",
     'jwtsecret' => $conf['oo_jwt_secret'],
     'url' => "https://internal-" . $conf['gofast-comm_domain'] . "/",

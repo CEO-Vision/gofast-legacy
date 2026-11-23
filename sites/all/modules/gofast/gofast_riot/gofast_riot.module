@@ -2,6 +2,7 @@
 
 module_load_include('inc', 'gofast_riot', 'gofast_riot.api');
 
+define("GOFAST_RIOT_CHATROOM_ACTIVE_UID", -1);
 
 /**
 * Implementation of hook_permission().
@@ -89,45 +90,54 @@ function gofast_riot_block_info() {
 function gofast_riot_user_login(&$edit, $account) {
     global $user;
 
-    //Generate token
-    $uuid = gofast_generate_uuid();
-    $tokenRiot = base64_encode($uuid);
+    gofast_riot_generate_user_token($user->uid);
 
-    //Generate end timestamp
-    $timestamp = time() + 36000;
+    $chatroom_active_token = gofast_riot_generate_user_token(GOFAST_RIOT_CHATROOM_ACTIVE_UID);
 
-    //Store the token
-    db_merge('gofast_riot_token')
-        ->insertFields(array(
-            'uid' => $user->uid,
-            'token_riot' => $tokenRiot,
-            'timestamp' => $timestamp,
-        ))
-        ->updateFields(array(
-          'token_riot' => $tokenRiot,
-          'timestamp' => $timestamp,
-        ))
-        ->key(array('uid' => $user->uid))
-        ->execute();
+    $admin_access_token = gofast_riot_get_tech_token("chatroom.active", $chatroom_active_token);
+    variable_set('riot_token_admin', $admin_access_token);
+}
 
-    gofast_riot_get_tech_token();
+/**
+ * Generate and store a new riot token for the user
+ *
+ * @param int $uid
+ * @return string User riot token
+ */
+function gofast_riot_generate_user_token($uid) {
+  //Generate token
+  $uuid = gofast_generate_uuid();
+  $tokenRiot = base64_encode($uuid);
+
+  //Generate end timestamp
+  $timestamp = time() + 36000;
+
+  //Store the token
+  $fields = db_select("gofast_riot_token", "grt")
+    ->fields("grt", [])
+    ->condition("uid", $uid)
+    ->execute()->fetchAll();
+  $fields = end($fields);
+  $fields = $fields ? (array) $fields : [];
+  unset($fields["rtid"]);
+  $fields["uid"] = $uid;
+  $fields["token_riot"] = $tokenRiot;
+  $fields["timestamp"] = $timestamp;
+  $fields["access_token_riot"] = NULL;
+
+  db_delete("gofast_riot_token")
+    ->condition("uid", $uid)
+    ->condition("timestamp", time(), "<")
+    ->execute();
+  db_insert("gofast_riot_token")
+    ->fields($fields)
+    ->execute();
+
+  return $tokenRiot;
 }
 
 function gofast_riot_user_logout($account) {
-    global $conf;
-
-    //$url = "https://internal-".$conf['gofast-comm_domain']."/_matrix/client/r0/logout?access_token=".$_SESSION['TOKEN_RIOT'];
-    $url = "https://internal-".$conf['gofast-comm_domain']."/_matrix/client/r0/logout?access_token=".$_SESSION['TOKEN_RIOT'];
-
-    $ch = curl_init();
-    gofast_riot_set_post_curl_parameters($ch, $url);
-    curl_setopt($ch, CURLOPT_HTTPHEADER, array(
-        'Content-Type: application/json',
-        'Content-Length:'. strlen($data_string))
-    );
-    curl_exec($ch);
-
-    unset($_SESSION['TOKEN_RIOT']);
+  unset($_SESSION['TOKEN_RIOT']);
 }
 
 function gofast_riot_preprocess_page(&$variables) {
@@ -138,11 +148,11 @@ function gofast_riot_preprocess_page(&$variables) {
   $params['GOFAST_COMM'] = $conf['gofast-comm_domain'];
 
   if ($user->uid != 0) {
-    $tokenRiot = goFast_riot_GetToken($user->name);
+    $tokenRiot = end(goFast_riot_GetTokens($user->name));
     $params['TOKEN_RIOT'] = $tokenRiot;
-    $deviceRiot = gofast_riot_GetDevice($user->uid);
-    if ($deviceRiot) {
-      $params['DEVICE_RIOT'] = $deviceRiot;
+    $accessToken = gofast_riot_get_user_token($user->uid);
+    if ($accessToken) {
+      $params['ACCESS_TOKEN_RIOT'] = $accessToken;
     }
     $params['DISABLE_P2P_RIOT'] = $conf['disable-p2p-riot'] ?: FALSE;
 
@@ -155,19 +165,43 @@ function gofast_riot_preprocess_page(&$variables) {
     ]);
   }
   
+  // get chat visibility setting
+  $hideChat = variable_get("gofast_configuration_hide_element_chat", false);
+  $params['hide_chat'] = $hideChat;
   drupal_add_js($params, 'setting');
 }
 
-function gofast_riot_get_tech_token(){
+/**
+ * Retrieves an access token from the database for a user that is not a chatbot.
+ *
+ * @param int $uid The user ID (uid) for which to retrieve the token.
+ * @return string|bool The Matrix access token ('access_token_riot') as a string 
+ * if a token is found, or FALSE if no tokens are found.
+ */
+function gofast_riot_get_user_token($uid) {
+  $token = db_select("gofast_riot_token", "grt")
+    ->fields("grt", ["access_token_riot"])
+    ->condition("uid", $uid)
+    ->execute()
+    ->fetchCol();
+  if (empty($token)) {
+    return FALSE;
+  }
+  return (end($token));
+}
+
+/**
+ * Retrieves a Matrix access token for a given user by performing a password login.
+ *
+ * @param string $username Matrix username
+ * @param string $password Matrix password
+ *
+ * @return string Matrix access token.
+ */
+function gofast_riot_get_tech_token($username, $password){
     global $conf;
 
-    //Generate token
-    $uuid = gofast_generate_uuid();
-    $tokenRiot = base64_encode($uuid);
-
-    variable_set("gofast_riot_tech_token", $tokenRiot);
-
-    $param = array('user'=>'chatroom.active','password'=>$tokenRiot,'type'=>"m.login.password");
+    $param = array('user' => $username, 'password' => $password, 'type' => "m.login.password");
     $url = "https://internal-".$conf['gofast-comm_domain']."/_matrix/client/r0/login";
     $data_string = json_encode($param);
     $ch = curl_init();
@@ -187,7 +221,6 @@ function gofast_riot_get_tech_token(){
     }
     $resultDecode= json_decode($result);
     $TokenRiotAdmin = $resultDecode->access_token;
-    variable_set('riot_token_admin', $TokenRiotAdmin);
 
     return $TokenRiotAdmin;
 }
@@ -260,18 +293,11 @@ function gofast_riot_node_presave($node) {
  * @see https://github.com/vector-im/riot-web/issues/6978
  */
 function gofast_riot_node_delete($node) {
-  global $user;
   global $conf;
 
   if ($node->field_riot_identifier[LANGUAGE_NONE][0]['value'] != '') {
     // First kick every body except the current user (is admin of that space/room).
-    foreach (gofast_og_get_members_userlist_included($node) as $member) {
-      if ($member != $user->uid) {
-        $name = user_load($member)->name;
-        gofast_riot_UpdateUserRiotRoom('kick', $node, strtolower($name));
-      }
-    }
-    gofast_riot_UpdateUserRiotRoom('kick', $node, strtolower($user->name));
+    gofast_riot_kick_all_members_from_space_room($node);
 
     // Delete room alias.
     $roomAlias = '#' . $node->nid . ':' . $conf['gofast-comm_domain'];
@@ -394,6 +420,7 @@ function gofast_riot_synchronize_permissions($node, $roomId) {
   global $conf;
 
   $admins = gofast_userlist_og_get_node_members_by_role($node->nid, array(OG_STATE_ACTIVE), "administrator member");
+  $group_managers = gofast_userlist_og_get_node_members_by_role($node->nid, array(OG_STATE_ACTIVE), GOFAST_OG_ROLE_MANAGER);
   $members = array_merge(gofast_userlist_og_get_node_members_by_role($node->nid, array(OG_STATE_ACTIVE), "group contributor"), gofast_userlist_og_get_node_members_by_role($node->nid, array(OG_STATE_ACTIVE), "read only member"));
   $users = array();
   
@@ -405,8 +432,8 @@ function gofast_riot_synchronize_permissions($node, $roomId) {
         if (gofast_user_is_left($ul_member)) {
           continue;
         }
-        $uname = gofast_user_get_login($ul_member);
-        $users["@" . strtolower($uname) . ":" . $conf['gofast-comm_domain']] = 0;
+        $uname = gofast_riot_get_matrix_username($ul_member);
+        $users[$uname] = 0;
       }
     }
     else {
@@ -414,30 +441,31 @@ function gofast_riot_synchronize_permissions($node, $roomId) {
       if (gofast_user_is_left($uid)) {
         continue;
       }
-      $uname = gofast_user_get_login($uid);
-      $users["@" . strtolower($uname) . ":" . $conf['gofast-comm_domain']] = 0;
+      $uname = gofast_riot_get_matrix_username($uid);
+      $users[$uname] = 0;
     }
   }
 
-  foreach ($admins as $admin) {
-    if ($admin->entity_type == "userlist") {
-      $ulid = $admin->etid;
+  $room_admins = array_merge($admins, $group_managers);
+  foreach ($room_admins as $room_admin) {
+    if ($room_admin->entity_type == "userlist") {
+      $ulid = $room_admin->etid;
       $ul_members = array_keys(gofast_userlist_get_members($ulid));
       foreach ($ul_members as $ul_member) {
         if (gofast_user_is_left($ul_member)) {
           continue;
         }
-        $uname = gofast_user_get_login($ul_member);
-        $users["@" . strtolower($uname) . ":" . $conf['gofast-comm_domain']] = 50;
+        $uname = gofast_riot_get_matrix_username($ul_member);
+        $users[$uname] = 50;
       }
     }
     else {
-      $uid = $admin->etid;
+      $uid = $room_admin->etid;
       if (gofast_user_is_left($uid)) {
         continue;
       }
-      $uname = gofast_user_get_login($uid);
-      $users["@" . strtolower($uname) . ":" . $conf['gofast-comm_domain']] = 50;
+      $uname = gofast_riot_get_matrix_username($uid);
+      $users[$uname] = 50;
     }
   }
 
@@ -677,6 +705,19 @@ function gofast_riot_og_membership_delete(OgMembership $og_membership) {
   }
 }
 
+/**
+ * Returns the Matrix (Riot/Element) username for a given Drupal user ID.
+ *
+ * @param int $uid The unique identifier of the user.
+ * @return string The corresponding Matrix username for this user.
+ */
+function gofast_riot_get_matrix_username($uid) {
+  global $conf;
+  $name = gofast_user_get_login($uid);
+  $username = "@" . strtolower($name) . ":" . $conf['gofast-comm_domain'];
+  return $username;
+}
+
 function gofast_riot_get_RoomId($node){
   return $node->field_riot_identifier[LANGUAGE_NONE][0]['value'];
 }
@@ -781,8 +822,8 @@ function gofast_riot_menu() {
     'type' => MENU_CALLBACK,
   );
 
-  $items['GetRiotToken'] = array(
-    'page callback' => 'goFast_riot_GetToken',
+  $items['SaveRiotToken'] = array(
+    'page callback' => 'goFast_riot_SaveRiotToken',
     'access arguments' => array('access content'),
     'type' => MENU_CALLBACK,
   );
@@ -793,19 +834,264 @@ function gofast_riot_menu() {
     'type' => MENU_CALLBACK,
   );
 
-  $items['SaveRiotToken'] = array(
-    'page callback' => 'goFast_riot_SaveRiotToken',
+  $items['SaveRiotRecoveryKey'] = array(
+    'page callback' => 'gofast_riot_SaveRiotRecoveryKey',
     'access arguments' => array('access content'),
     'type' => MENU_CALLBACK,
   );
 
-  $items['SaveRiotDevice'] = array(
-    'page callback' => 'goFast_riot_SaveRiotDevice',
+  $items['GetRiotRecoveryKey'] = array(
+    'page callback' => 'gofast_riot_GetRiotRecoveryKey_JS',
+    'access arguments' => array('access content'),
+    'type' => MENU_CALLBACK,
+  );
+
+  $items['SaveUserMessagesBackups'] = array(
+    'page callback' => 'gofast_riot_SaveUserMessagesBackups',
+    'access arguments' => array('access content'),
+    'type' => MENU_CALLBACK,
+  );
+
+  $items['GetUserMessagesBackups'] = array(
+    'page callback' => 'gofast_riot_GetUserMessagesBackups',
     'access arguments' => array('access content'),
     'type' => MENU_CALLBACK,
   );
 
   return $items;
+}
+
+/**                                                                    
+ * Persist the user's rust-crypto backup keys.                                                                                                                                                                              
+ *                                                                                                                                                                                                                                          
+ * Body JSON: { backup_version?, backup_recovery_key? }
+ * Each field is optional — only the provided ones get updated.                                                                                                                                                                             
+ */
+function gofast_riot_SaveUserMessagesBackups()
+{
+  $body = file_get_contents('php://input');
+  $data = json_decode($body, TRUE);
+
+  $backup_version      = $data['backup_version']      ?? NULL;
+  $backup_recovery_key = $data['backup_recovery_key'] ?? NULL;
+
+  if ($backup_version === NULL && $backup_recovery_key === NULL) {
+    drupal_add_http_header('Status', '400 Bad Request');
+    drupal_json_output(array('success' => FALSE, 'error' => 'no fields to save'));
+    drupal_exit();
+  }
+
+  global $user;
+  $uid = $user->uid;
+
+  if ($uid == 0) {
+    drupal_add_http_header('Status', '401 Unauthorized');
+    drupal_json_output(array('success' => FALSE, 'error' => 'not authenticated'));
+    drupal_exit();
+  }
+
+  lock_wait("riot_save_user_messages_backups_" . $uid, 10);
+  if (!lock_acquire("riot_save_user_messages_backups_" . $uid, 10)) {
+    drupal_add_http_header('Status', '503 Service Unavailable');
+    drupal_json_output(array('success' => FALSE, 'error' => 'lock_acquire failed'));
+    drupal_exit();
+  }
+
+  $fields = array();
+  if ($backup_version !== NULL) {
+    $fields['backup_version'] = $backup_version;
+  }
+  if ($backup_recovery_key !== NULL) {
+    // Sensitive: decrypts all room messages from key backup.                                                                                                                                                                               
+    $fields['backup_recovery_key'] = gofast_encrypt(CIPHER_KEY, $backup_recovery_key);
+  }
+
+  $rows_updated = db_update("gofast_riot_token")
+    ->fields($fields)
+    ->condition('uid', $uid)
+    ->execute();
+
+  lock_release("riot_save_user_messages_backups_" . $uid);
+
+  if ($rows_updated === 0) {
+    drupal_add_http_header('Status', '404 Not Found');
+    drupal_json_output(array('success' => FALSE, 'error' => 'no token row found for this user'));
+    drupal_exit();
+  }
+
+  drupal_json_output(array('success' => TRUE));
+  drupal_exit();
+}
+
+/**
+ * Retrieve the current logged user's backup keys.                                                                                                                                                                          
+ *                                     
+ * Returns: { success: true, backup_version?, backup_recovery_key?, }
+ *   - missing fields = not yet persisted (treat as absent)
+ * Or: { success: false, error: "..." } on error / no row.
+ */
+function gofast_riot_GetUserMessagesBackups()
+{
+  global $user;
+
+  if ($user->uid == 0) {
+    drupal_add_http_header('Status', '401 Unauthorized');
+    drupal_json_output(array('success' => FALSE, 'error' => 'not authenticated'));
+    drupal_exit();
+  }
+
+  $row = db_select("gofast_riot_token", "grt")
+    ->fields("grt", array("backup_version", "backup_recovery_key"))
+    ->condition("uid", $user->uid)
+    ->execute()
+    ->fetchAssoc();
+
+  if (!$row || empty($row['backup_version']) && empty($row['backup_recovery_key'])) {
+    drupal_add_http_header('Status', '404 Not Found');
+    drupal_json_output(array('success' => FALSE, 'error' => 'no row found'));
+    drupal_exit();
+  }
+
+  $response = array('success' => TRUE);
+  if (!empty($row['backup_version'])) {
+    $response['backup_version'] = $row['backup_version'];
+  }
+  if (!empty($row['backup_recovery_key'])) {
+    $response['backup_recovery_key'] = gofast_decrypt(CIPHER_KEY, $row['backup_recovery_key']);
+  }
+
+  drupal_json_output($response);
+  drupal_exit();
+}
+
+/**
+ * Save the recovery_key to the database.
+ * 
+ * Save it to the gofast_riot_token table on every row containing the user id.
+ * 
+ * Check if the key already exist for the user and return if it's the case.
+ *
+ * @return void
+ */
+function gofast_riot_SaveRiotRecoveryKey() {
+  $body = file_get_contents('php://input');
+  $data = json_decode($body, TRUE);
+  $key = $data['recovery_key'] ?? NULL;
+
+  if (!$key) {
+    drupal_add_http_header('Status', '400 Bad Request');
+    drupal_json_output(array('success' => FALSE, 'error' => 'missing recovery_key'));
+    drupal_exit();
+  }
+
+  $key = gofast_xss_clean($key);
+
+  $encrypted_key = gofast_encrypt(CIPHER_KEY, $key);
+  global $user;
+  $uid = $user->uid;
+
+  if ($uid == 0) {
+    drupal_add_http_header('Status', '401 Unauthorized');
+    drupal_json_output(array('success' => FALSE, 'error' => 'not authenticated'));
+    drupal_exit();
+  }
+
+  lock_wait("riot_save_riot_recovery_key_" . $uid, 10);
+  if(!lock_acquire("riot_save_riot_recovery_key_" . $uid, 10)) {
+    drupal_add_http_header('Status', '503 Service Unavailable');
+    drupal_json_output(array('success' => FALSE, 'error' => 'lock_acquire failed'));
+    drupal_exit();
+  }
+
+  $existing_key = db_select("gofast_riot_token", "grt")
+    ->fields("grt", array("uid"))
+    ->condition("recovery_key", $encrypted_key)
+    ->execute()->fetchCol();
+
+  if (!empty($existing_key) && end($existing_key) != $uid) {
+    lock_release("riot_save_riot_recovery_key_" . $uid);
+    drupal_add_http_header('Status', '409 Conflict');
+    drupal_json_output(array('success' => FALSE, 'error' => 'key already assigned to another user'));
+    drupal_exit();
+  }
+
+  $rows_updated = db_update("gofast_riot_token")
+    ->fields(["recovery_key" => $encrypted_key])
+    ->condition('uid', $uid)
+    ->execute();
+
+  lock_release("riot_save_riot_recovery_key_" . $uid);
+
+  if ($rows_updated === 0) {
+    drupal_add_http_header('Status', '404 Not Found');
+    drupal_json_output(array('success' => FALSE, 'error' => 'no token row found for this user'));
+    drupal_exit();
+  }
+
+  drupal_json_output(array('success' => TRUE));
+  drupal_exit();
+}
+
+
+/**
+ * Retrieve and return the current logged user recovery_key.
+ *
+ * Returns JSON: { "success": true, "recovery_key": "..." }
+ * Or on error:  { "success": false, "error": "..." }
+ */
+function gofast_riot_GetRiotRecoveryKey_JS() {
+  global $user;
+
+  if ($user->uid == 0) {
+    drupal_add_http_header('Status', '401 Unauthorized');
+    drupal_json_output(array('success' => FALSE, 'error' => 'not authenticated'));
+    drupal_exit();
+  }
+
+  $key = gofast_riot_GetRiotRecoveryKey($user->name);
+
+  if (empty($key)) {
+    drupal_add_http_header('Status', '404 Not Found');
+    drupal_json_output(array('success' => FALSE, 'error' => 'no recovery key found'));
+    drupal_exit();
+  }
+
+  drupal_json_output(array('success' => TRUE, 'recovery_key' => $key));
+  drupal_exit();
+}
+
+/**
+ * Retrieve the user recovery_key from the database using the username.
+ *
+ * @param string $uname - The user username.
+ * @return array
+ */
+function gofast_riot_GetRiotRecoveryKey($uname) {
+  if (empty($uname)) {
+    return null;
+  }
+
+  $user = user_load_by_name($uname);
+  if (!$user) {
+    return null;
+  }
+
+  $db_tokens = db_select("gofast_riot_token", "grt")
+    ->fields('grt', array("recovery_key"))
+    ->condition("uid", $user->uid)
+    ->execute()
+    ->fetchCol();
+
+  if (empty($db_tokens)) {
+    return null;
+  }
+
+  $encrypted_token = end($db_tokens);
+  if (!is_string($encrypted_token) || $encrypted_token === '') {
+      return null;
+  }
+
+  return gofast_decrypt(CIPHER_KEY, $encrypted_token);
 }
 
 function gofast_riot_conversation(){
@@ -834,13 +1120,7 @@ function gofast_riot_theme() {
   return $themes;
 }
 
-function goFast_riot_GetToken_JS() {
-  if (isset($_POST['uname'])) {
-    echo goFast_riot_GetToken($_POST['uname']);
-  }
-}
-
-function goFast_riot_GetToken($uname = null) {
+function goFast_riot_GetTokens($uname = null) {
   if (!empty($uname)) {
     $user = user_load_by_name($uname);
   }
@@ -848,56 +1128,61 @@ function goFast_riot_GetToken($uname = null) {
     return null;
   }
 
-  if ($uname == "chatroom.active") {
-    return variable_get("gofast_riot_tech_token", null);
+  $db_tokens = [];
+  if($user) {
+    $uid = $user->uid;
   }
-  else {
-    $db_token = db_select("gofast_riot_token", "grt")
-      ->fields('grt', array("token_riot"))
-      ->condition("uid", $user->uid)
-      ->condition("timestamp", time(), ">")
-      ->execute()
-      ->fetchAll();
-    if (count($db_token) == 1) {
-      return $db_token[0]->token_riot;
-    }
+  if ($uname == "chatroom.active") {
+    $uid = GOFAST_RIOT_CHATROOM_ACTIVE_UID;
   }
 
-  return null;
+  if(!isset($uid)) {
+    return null;
+  }
+
+  $db_tokens = db_select("gofast_riot_token", "grt")
+    ->fields('grt', array("token_riot"))
+    ->condition("uid", $uid)
+    ->condition("timestamp", time(), ">")
+    ->execute()
+    ->fetchCol();
+
+  return $db_tokens;
 }
 
 function goFast_riot_SaveRiotToken() {
   if (isset($_POST['token'])) {
-    $_SESSION['TOKEN_RIOT'] = $_POST['token'];
-    gofast_riot_accept_all_invite_room();
-    gofast_riot_change_username();
-  }
-}
-
-function gofast_riot_GetDevice($uid = null) {
-  if (!isset($uid)) {
+    $token = gofast_xss_clean($_POST['token']);
     global $user;
     $uid = $user->uid;
+    lock_wait("riot_save_riot_token_" . $uid, 10);
+    if(!lock_acquire("riot_save_riot_token_" . $uid, 10)) {
+      gofast_api_not_authorized();
+    }
+
+    $existing_token = db_select("gofast_riot_token", "grt")
+      ->fields("grt", array("uid"))
+      ->condition("access_token_riot", $token)
+      ->execute()->fetchCol();
+    if (!empty($existing_token) && end($existing_token) != $uid) {
+      return;
+    }
+
+    $_SESSION['TOKEN_RIOT'] = $token;
+    gofast_riot_accept_all_invite_room();
+    gofast_riot_change_username();
+    db_update("gofast_riot_token")
+      ->fields(["access_token_riot" => $token])
+      ->condition('uid', $uid)
+      ->execute();
+    lock_release("riot_save_riot_token_" . $uid, 10);
   }
-  $device_id = db_select("gofast_riot_token", "grt")
-    ->fields("grt", array("device_riot"))
-    ->condition("uid", $uid)
-    ->execute()->fetchCol();
-  if (!empty($device_id)) {
-    return $device_id[0];
-  }
-  return FALSE;
 }
 
-function goFast_riot_SaveRiotDevice() {
-  if (isset($_POST['device'])) {
-    global $user;
-    $device_id = gofast_xss_clean($_POST['device']);
-    db_update("gofast_riot_token")
-      ->fields(["device_riot" => $device_id])
-      ->condition("uid", $user->uid)
-      ->execute();
-  }
+function goFast_riot_GetToken_JS() {
+  global $user;
+  echo end(goFast_riot_GetTokens($user->name));
+  drupal_exit();
 }
 
 function gofast_riot_accept_all_invite_room() {
@@ -965,6 +1250,9 @@ function gofast_riot_change_username() {
 
 function gofast_riot_change_avatar($account){
   global $conf;
+  $username = "@" . strtolower($account->name) . ":" . $conf['gofast-comm_domain'];
+  $user_token = end(goFast_riot_GetTokens($account->name));
+  $user_riot_token = gofast_riot_get_tech_token($username, $user_token);
   //Retrieve picture of the current user
   $picture = $account->picture;
   $url = file_create_url($picture->uri);
@@ -979,7 +1267,7 @@ function gofast_riot_change_avatar($account){
   curl_setopt($ch, CURLOPT_HTTPHEADER, array(
     'Content-Type: ' . $filetype,
     'Content-Length:' . strlen($file),
-    'Authorization: Bearer ' . $_SESSION['TOKEN_RIOT']
+    'Authorization: Bearer ' . $user_riot_token,
   ));
 
   $result = curl_exec($ch);
@@ -987,8 +1275,7 @@ function gofast_riot_change_avatar($account){
   curl_close($ch);
   
   //Upload the avatar
-  $username = "@" . strtolower($account->name) . ":" . $conf['gofast-comm_domain'];
-  $url = "https://internal-" . $conf['gofast-comm_domain'] . "/_matrix/client/r0/profile/" . $username . '/avatar_url?access_token=' . $_SESSION['TOKEN_RIOT'];
+  $url = "https://internal-" . $conf['gofast-comm_domain'] . "/_matrix/client/r0/profile/" . $username . '/avatar_url?access_token=' . $user_riot_token;
   $data_string = json_encode(["avatar_url" => $avatar_uri]);
   
   $ch = curl_init();
@@ -1104,6 +1391,9 @@ function gofast_riot_entity_update($entity, $type) {
 
   $added = array_diff($members, $old_members);
   $removed = array_diff($old_members, $members);
+  if (empty($added) && empty($removed)) {
+    return;
+  }
 
   foreach ($affected_og as $key => $v) {
     $og_node = node_load($v['target_id']);
@@ -1140,7 +1430,12 @@ function gofast_api_matrix_login($params){
     if($params['method'] != "POST"){
         gofast_api_not_implemented("This method");
     }
-    
+
+    lock_wait("api_matrix_login_" . $params['auth']['localpart'], 10);
+    if(!lock_acquire("api_matrix_login_" . $params['auth']['localpart'], 10)) {
+      gofast_api_not_authorized();
+    }
+
     $response = new stdClass();
     $response->auth = new stdClass(); 
     $response->auth->id = new stdClass(); 
@@ -1148,19 +1443,21 @@ function gofast_api_matrix_login($params){
       $user_check = user_load_by_name($params['auth']['localpart']);
       if($user_check->status == 0 && $params['auth']['localpart'] !== "chatroom.active"){             
         $response->auth->success = false;
+        lock_release("api_matrix_login_" . $params['auth']['localpart'], 10);
         gofast_api_success($response);
         exit;
       }
     
-    $token = goFast_riot_GetToken($params['auth']['localpart']);
+    $tokens = goFast_riot_GetTokens($params['auth']['localpart']);
 
-    if($token !== null && $token == $params['auth']['password']){ //Try token authentication      
+    if(!empty($tokens) && in_array($params['auth']['password'], $tokens)){ //Try token authentication      
         $response->auth->success = true;   
         $response->auth->id->type = "localpart";
         $response->auth->id->value = $params['auth']['localpart'];
 
         //$response->auth->profile->display_name = "";
 
+        lock_release("api_matrix_login_" . $params['auth']['localpart'], 10);
         gofast_api_success($response);
     }else{
         $user_check = user_load_by_name($params['auth']['localpart']);
@@ -1171,7 +1468,7 @@ function gofast_api_matrix_login($params){
             $LdapServer = gofast_ldap_server_load(GOFAST_LDAP_INT_SERVER);
             $LdapServer->connectAndBindIfNotAlready();
 
-            if($LdapServer->bind(gofast_ldap_user_dn($user_check), $params['auth']['password'], FALSE) == LDAP_SUCCESS && $user_check->status == 1){ //Authentify against drupal
+            if(strlen((string) $params['auth']['password']) > 0 && $LdapServer->bind(gofast_ldap_user_dn($user_check), $params['auth']['password'], FALSE) == LDAP_SUCCESS && $user_check->status == 1){ //Authentify against drupal
               usurp(FALSE);
               
               //Register successful authrntication
@@ -1184,6 +1481,7 @@ function gofast_api_matrix_login($params){
               $response->auth->success = true;
               $response->auth->id->type = "localpart";
               $response->auth->id->value = $params['auth']['localpart'];
+              lock_release("api_matrix_login_" . $params['auth']['localpart'], 10);
               gofast_api_success($response);
           }
           usurp(FALSE);
@@ -1206,6 +1504,7 @@ function gofast_api_matrix_login($params){
     $response->auth = new stdClass();
     $response->auth->success = false;
 
+    lock_release("api_matrix_login_" . $params['auth']['localpart'], 10);
     gofast_api_success($response);
 
 }
@@ -1267,6 +1566,9 @@ function gofast_api_matrix_search($params){
     if($conf["synapse_has_whatsapp_bridge"] == 1 && (str_contains($str, "gofast") || str_contains($str, "whatsapp"))) {
       $outputs[] = ["login" => "gofastwhatsapp", "displayname" => "GoFAST WhatsApp bridge bot"]; 
     }
+    if(module_exists("gofast_mistral") && (str_contains($str, "gofast") || str_contains($str, "ai"))) {
+      $outputs[] = ["login" => "gofast_ai", "displayname" => "GoFAST AI"]; 
+    }
 
     foreach ($outputs as $output){
         $userReponse = new stdClass();
@@ -1304,8 +1606,6 @@ function gofast_riot_api_get_avatar_uri($matrix_user_id){
 }
 
 function gofast_api_matrix_displayname($params){
-    global $user;
-    global $conf;
     //Check content type
     if(strpos($params['Content-Type'], "application/json") === FALSE){
         return gofast_api_not_implemented("This Content-Type");
@@ -1316,7 +1616,13 @@ function gofast_api_matrix_displayname($params){
         gofast_api_not_implemented("This method");
     }
 
-     $response = new stdClass();
+    $user = user_load_by_name($params['auth']['localpart']);
+
+    if ($user->status == 0) {
+      gofast_api_not_authorized();
+    }
+
+    $response = new stdClass();
 
     $response->profile->display_name = $user->displayName;
     $threepids=array();
@@ -1356,6 +1662,9 @@ function gofast_riot_can_remove_room($node){
 function gofast_riot_fix_rooms_memberships($rebuild_premissions = FALSE) {
   $EFQuery = new EntityFieldQuery();
   $EFQuery->entityCondition('entity_type', 'node')
+          // Do not attempt to "fix" memberships of soft-deleted nodes.
+          // FIXME make it check no one except "chatroom.active" is in the room.
+          ->propertyCondition('status', NODE_PUBLISHED)
           ->fieldCondition('field_riot_identifier');
 
   $ids = $EFQuery->execute();
@@ -1434,15 +1743,25 @@ function gofast_riot_fix_rooms_memberships($rebuild_premissions = FALSE) {
 /**
  * Returns all room members (as drupal username) given a $roomID.
  */
-function gofast_riot_get_room_members($roomID) {
+function gofast_riot_get_room_members($roomID, $access_token = NULL, $use_cache = TRUE) {
   global $conf;
+  $md5_room = md5($roomID);
+  $cid = "room_members_{$md5_room}";
+  if ($use_cache) {
+    $cache_value = cache_get($cid, "cache_gofast_riot");
+    if ($cache_value->data) {
+      return $cache_value->data;
+    }
+  }
 
   $roomID = urlencode($roomID);
   $path = "/_matrix/client/r0/rooms/{$roomID}/members";
+  if (!$access_token) {
+    $access_token = variable_get('riot_token_admin');
+  }
 
   $query = http_build_query([
-    'access_token' => variable_get('riot_token_admin'),
-//    'membership' => 'join,invite'
+    'access_token' => $access_token,
   ]);
 
   $url = 'https://internal-' . $conf['gofast-comm_domain'] . $path . '?' . $query;
@@ -1476,6 +1795,10 @@ function gofast_riot_get_room_members($roomID) {
       continue; // not a real user
 
     $members[] = $username;
+  }
+
+  if ($use_cache) {
+    cache_set($cid, $members, "cache_gofast_riot");
   }
 
   return $members;
@@ -1689,4 +2012,144 @@ function gofast_riot_get_username_by_token($access_token){
   }
   
   return $result;
+}
+
+/**
+ * Kicks all space members from the associated chat room if it exists
+ *
+ * This function does effectively nothing if the room did not exist or the node
+ * cannot have a chat room.
+ *
+ * This function notably DOES NOT kick the administration bot user.
+ *
+ * @param numeric|object|EntityDrupalWrapper $node Node ID, object or wrapper of
+ *  the space node for which all members should be kicked from the associated
+ *  chat room.
+ * @return EntityDrupalWrapper A new node wrapper for the given node.
+ */
+function gofast_riot_kick_all_members_from_space_room($node) {
+  global $user;
+  /** @var EntityDrupalWrapper */
+  $wrapper = entity_metadata_wrapper('node', $node);
+
+  if (!isset($wrapper->field_riot_identifier) || !$wrapper->field_riot_identifier->value()) {
+    return $wrapper;
+  }
+
+  $node_obj = $wrapper->value();
+
+  // First kick all members except current.
+  $member_uids = gofast_og_get_members_userlist_included($node_obj);
+  foreach ($member_uids as $member_uid) {
+    if ($member_uid == $user->uid) {
+      continue;
+    }
+    $member_user = user_load($member_uid);
+    $member_name = $member_user->name;
+    gofast_riot_UpdateUserRiotRoom('kick', $node_obj, strtolower($member_name));
+  }
+  // Then kick current user.
+  gofast_riot_UpdateUserRiotRoom('kick', $node_obj, strtolower($user->name));
+
+  return $wrapper;
+}
+
+/**
+ * Invite all members of a given space node to the associated chat room.
+ *
+ * The associated chat room of the space must still exist and have the
+ * administration bot user as a member.
+ *
+ * This function does effectively nothing if the node has no associated chat
+ * room or cannot have one.
+ *
+ * @param numeric|object|EntityDrupalWrapper $node Node ID, object or wrapper of
+ *  the space node for which all members should be invited to the associated
+ *  chat room.
+ * @return EntityDrupalWrapper New metadata wrapper for the passed node.
+ */
+function gofast_riot_invite_all_space_members_to_room($node) {
+  /** @var EntityDrupalWrapper */
+  $wrapper = entity_metadata_wrapper('node', $node);
+
+  if (!isset($wrapper->field_riot_identifier) || !$wrapper->field_riot_identifier->value()) {
+    return $wrapper;
+  }
+
+  $node_obj = $wrapper->value();
+  $members = gofast_og_get_members_userlist_included($node_obj);
+  gofast_riot_UpdateUserRiotRoom('invite', $node_obj, NULL, TRUE, $members);
+
+  return $wrapper;
+}
+
+/**
+ * Implements hook_form_FormID_alter()
+ */
+function gofast_riot_form_user_profile_form_alter(&$form, &$form_state) {
+  global $user;
+  if ($user->uid == 1) {
+    return;
+  }
+
+  $editing_user = $form['#user'];
+
+  // Add an element to the user profile form to display it's Element/Matrix recovery key.
+  if ($editing_user->uid == $user->uid) {
+    $form['group_element'] = array(
+      '#type' => 'fieldset',
+      '#title' => t('Element chat settings', array(), array('context' => 'gofast:gofast_riot')),
+      '#keen-accordion' => TRUE,
+      '#collapsible' => TRUE,
+      '#collapsed' => FALSE,
+      '#weight' => 14,
+      '#attributes' => array(
+        'class' => array('form-group')
+      )
+    );
+    $recovery_key = gofast_riot_GetRiotRecoveryKey($editing_user->name);
+
+    $form['group_element']['recovery_group'] = [
+      '#type' => 'container',
+      '#prefix' => '<label class="control-label">'.t('Recovery key', array(), array('context' => 'gofast:gofast_riot')).'</label>',
+      '#attributes' => array("class" => array("d-flex", "recovery-key-wrapper")),
+      '#attached' => array(
+        'js' => array(
+          drupal_get_path('module', 'gofast_riot') . '/js/recovery_key.js',
+        ),
+      ),
+    ];
+    $form['group_element']['recovery_group']['recovery_key'] = array(
+      '#type' => 'password_eye',
+      '#wrapper_attributes' => [
+        'class' => ['mb-0']
+      ],
+      '#maxlength' => 255,
+      '#inner_input' => [
+        '#maxlength' => 255,
+        '#attributes' => [
+          'value' => $recovery_key,
+          'readonly' => 'readonly',
+          'autocomplete' => 'off',
+          'class' => [
+            'form-control',
+            'h-auto',
+          ]
+        ]
+      ],
+      '#inner_button' => [
+        '#attributes' => [
+          'class' => [
+            'no-footer'
+          ]
+        ]
+      ]
+    );
+    $form['group_element']['recovery_group']['copy'] = [
+      '#markup' => '
+        <span class="no-footer btn btn-icon password-eye-btn h-auto btn-secondary form-text recovery-key-copy" style="margin-left:10px; cursor:pointer;" title="' . t('Copy recovery key to clipboard', array(), array('context' => 'gofast:gofast_riot')) . '">
+          <i class="fa fa-files-o"></i>
+        </span>'
+    ];
+  }
 }

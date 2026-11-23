@@ -36,7 +36,7 @@ function gofast_api_menu(){
  * CORE FUNCTION - DO NOT MODIFY UNLESS YOU KNOW WHAT YOU DO
  * 
  * Entry point for the GoFAST API
- * This function will check if a ressource and an action are mentionned as POST or GET param
+ * This function will check if a ressource and an action are mentioned as POST or GET param
  * Then, it will check if the function gofast_api_RESSOURCE_ACTION exists
  * Then, it will call the function and ask the output rendering
  */
@@ -44,8 +44,28 @@ function gofast_api($ressource = null, $action = null){
   $output = array();
   global $user;
 
+  //Check if mandatory parameters are mentioned
+  if(empty($ressource)){
+    $ressource = gofast_api_get_request_param('ressource');
+  }
+  if(empty($action)){
+    $action = gofast_api_get_request_param('action');
+  }
+
+  //No ressource requested
+  if(empty($ressource)){ 
+    $output = gofast_api_mandatory_parameter("ressource");
+    gofast_api_output($output);
+  }
+
+  //No action requested
+  if(empty($action)){ 
+    $output = gofast_api_mandatory_parameter("action");
+    gofast_api_output($output);
+  }
+
   //Prevent using a ressource that is actually a method
-  if(in_array(strtoupper($ressource), array('GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'))){
+  if(in_array(strtoupper($ressource), array('GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'))){
       gofast_api_forbidden("Forbidden usage of a method as a ressource");
   }
   
@@ -62,19 +82,8 @@ function gofast_api($ressource = null, $action = null){
   
   $authorization = $_SERVER['REDIRECT_HTTP_AUTHORIZATION'];
   $token = isset($params['Token']) ? $params['Token'] : $params['token'];
-  
-  //Check if mandatory parameters are mentionned
-  $ressource = empty($ressource) ? $_GET['ressource'] : $ressource;
-  $action = empty($action) ? $_GET['action'] : $action;
-  $ressource = empty($ressource) ? $_POST['ressource'] : $ressource;
-  $action = empty($action) ? $_POST['action'] : $action;
-  if(empty($ressource)){ //No ressource requested
-    $output = gofast_api_mandatory_parameter("ressource");
-    gofast_api_output($output);
-  }
-  if(empty($action)){ //No action requested
-    $output = gofast_api_mandatory_parameter("action");
-    gofast_api_output($output);
+  if($user->uid == 0 && str_contains($authorization, "Bearer")){
+    $token = str_replace('Bearer ', '', $authorization);
   }
   
   if(empty($params)){ //No params
@@ -85,7 +94,7 @@ function gofast_api($ressource = null, $action = null){
   $_POST['API_PARAMS'] = $params;
   
   //Check if we need authentication
-  if($user->uid == 0 && !empty($authorization)){
+  if($user->uid == 0 && str_contains($authorization, "Basic")){
     //Decode authentication header
     $authorization = str_replace('Basic ', '', $authorization);
     $authorization = base64_decode($authorization);
@@ -100,7 +109,7 @@ function gofast_api($ressource = null, $action = null){
     $LdapServer = gofast_ldap_server_load(GOFAST_LDAP_INT_SERVER);
     $LdapServer->connectAndBindIfNotAlready();
     
-    if($LdapServer->bind(gofast_ldap_user_dn($user_check), $password, FALSE) == LDAP_SUCCESS && $user_check->status == 1){ //Authentify against drupal
+    if(strlen((string) $password) > 0 && $LdapServer->bind(gofast_ldap_user_dn($user_check), $password, FALSE) == LDAP_SUCCESS && $user_check->status == 1){ //Authentify against drupal
       //Authentication successfull
       gofast_cmis_retrieve_and_store_ticket($user);
       $LdapServer->disconnect();
@@ -140,7 +149,13 @@ function gofast_api($ressource = null, $action = null){
           $usurped = TRUE;
           usurp($db_token[0]->uid);
           gofast_cmis_retrieve_and_store_ticket($user);
-      }else{
+      }elseif (!count($db_token) && str_starts_with($token, "impersonate_")) {
+        //Request is coming from a chatbot
+        $chat_b64 = substr($token, strlen("impersonate_"));
+        $uid = gofast_riot_parse_authentication_string($chat_b64);
+        usurp($uid);
+      }
+      if($user->uid == 0){
           usurp(FALSE);
           $output = gofast_api_forbidden("Bad authentication method provided");
           gofast_api_output($output);
@@ -187,6 +202,19 @@ function gofast_api($ressource = null, $action = null){
 }
 
 /*
+ * Return a request parameter, from GET first then POST
+ */
+function gofast_api_get_request_param($name){
+  if(!empty($_GET[$name])){
+    return $_GET[$name];
+  }
+  if(!empty($_POST[$name])){
+    return $_POST[$name];
+  }
+  return NULL;
+}
+
+/*
  * CORE FUNCTION - DO NOT MODIFY UNLESS YOU KNOW WHAT YOU DO
  * 
  * Answer to an OPTIONS request
@@ -220,7 +248,9 @@ function gofast_api_output($output){
   }
   
   drupal_add_http_header('Status', $code);
-  
+
+  $browser_previewable_mimetypes = array_map(fn($ext) =>  gofast_cmis_get_mimetype_extension_match_array()[$ext], gofast_cmis_browser_previewable_extensions());
+
   switch($content_type){ //Fetch into content types and render
     case 'application/json':
     case 'application/json; charset=UTF-8':
@@ -230,7 +260,7 @@ function gofast_api_output($output){
       exit;
       break;
     case 'application/octet-stream';
-    case 'application/pdf';
+    case in_array($content_type, $browser_previewable_mimetypes);
       print($output);
       exit;
       break;

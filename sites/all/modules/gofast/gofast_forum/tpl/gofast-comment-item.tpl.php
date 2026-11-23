@@ -61,7 +61,7 @@ if ($item['is_private']) {
         <!-- END TITLE --->
 
         <!-- BEGIN TEXT BODY --->
-        <div class="timeline-content__body mt-2">
+        <div class="timeline-content__body mt-2 ck-content">
             <?php
             print $item['text'];
             ?>

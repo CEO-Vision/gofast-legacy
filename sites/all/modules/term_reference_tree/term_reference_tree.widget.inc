@@ -199,7 +199,7 @@ function theme_term_tree_list($variables) {
  * display.
  */
 function _term_reference_tree_output_list_level(&$element, &$tree) {
-  if (isset($tree['children']) && is_array($tree['children']) && count($tree['children'] > 0)) {
+  if (isset($tree['children']) && is_array($tree['children']) && count($tree['children']) > 0) {
     $output = '<ul class="term">';
     $settings = $element['#display']['settings'];
     $tokens_selected = $settings['token_display_selected'];
@@ -209,15 +209,14 @@ function _term_reference_tree_output_list_level(&$element, &$tree) {
     foreach ($tree['children'] as &$item) {
       $term = $taxonomy_term_info['load hook']($item['tid']);
       $uri = $taxonomy_term_info['uri callback']($term);
-      $uri['options']['html'] = TRUE;
       $class = $item['selected'] ? 'selected' : 'unselected';
       $output .= "<li class='$class'>";
       if ($tokens_selected != '' && module_exists('token')) {
         $replace = $item['selected'] ? $tokens_selected : $tokens_unselected;
-        $output .= token_replace($replace, array('term' => $term), array('clear' => TRUE));
+        $output .= check_plain(token_replace($replace, array('term' => $term), array('clear' => TRUE, 'sanitize' => FALSE)));
       }
       else {
-        $output .= l(filter_xss(entity_label('taxonomy_term', $term)), $uri['path'], $uri['options']);
+        $output .= l(entity_label('taxonomy_term', $term), $uri['path']);
       }
       if (isset($item['children'])) {
         $output .= _term_reference_tree_output_list_level($element, $item);

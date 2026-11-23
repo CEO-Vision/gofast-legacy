@@ -1,0 +1,9 @@
+name = "Empty jQuery Update"
+description = "An empty module that satisfies dependencies on jquery_update but does nothing."
+core = 7.x
+package = "Hidden"
+hidden = TRUE
+
+version = 7.x-4.5
+project = tag1d7es_jquery_update
+datestamp = 1768423185

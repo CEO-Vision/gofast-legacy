@@ -94,6 +94,10 @@
     display: none;
 }
 
+.is-mobile :where(#side-content-toggle, #side-content-toggle-top-30) {
+    background-color: #242939 !important; // same color as mobile topbar
+}
+
 #side-content-container {
     height: inherit;
 }

@@ -1,5 +1,5 @@
 <!-- START gofast-side-file-browser.tpl.php -->
-<div class="side-explorer-wrapper side-explorer-main d-flex flex-column w-100 max-h-100" id="<?= $tab_id ?>-side-explorer">
+<div class="side-explorer-wrapper side-explorer-main d-flex flex-column w-100 max-h-100" id="<?= $tab_id ?>">
     <div id="side_explorer_header">
         <div id="side_explorer_toolbar_search" class="input input-group-sm">
             <div class="input-group">
@@ -21,7 +21,7 @@
 <script>
     jQuery(document).ready(function() {
         // uncollapse on link click
-        jQuery("#<?= $tab_id ?>-side-explorer .side-explorer-element-name:not(.processed)").on("click", function(e) {
+        jQuery("#<?= $tab_id ?> .side-explorer-element-name:not(.processed)").on("click", function(e) {
             $(this).addClass("processed");
             const arrow = jQuery(e.currentTarget).closest('tr').find(".side-explorer-element-open");
             if (arrow.hasClass("ki-bold-arrow-next")) {
@@ -29,11 +29,11 @@
             }
         });
         // uncollapse on icon click
-        jQuery("#<?= $tab_id ?>-side-explorer .side-explorer-element-open:not(.side-explorer-processed)").addClass("side-explorer-processed").on("click", Gofast.sideFileBrowser.treeWidgetItemCollapseCallback);
+        jQuery("#<?= $tab_id ?> .side-explorer-element-open:not(.side-explorer-processed)").addClass("side-explorer-processed").on("click", Gofast.sideFileBrowser.treeWidgetItemCollapseCallback);
         if(jQuery("#webform").hasClass("active")) {
-            jQuery("#<?= $tab_id ?>-side-explorer .explorer-main-container .nav.nav-tabs a.active:not('#<?= $tab_id ?>')").removeClass('active');
+            jQuery("#<?= $tab_id ?> .explorer-main-container .nav.nav-tabs a.active:not('#<?= $tab_id ?>')").removeClass('active');
         }
-        jQuery("#<?= $tab_id ?>-side-explorer [id='side_explorer_toolbar_search_input']").on("keyup", Gofast.sideFileBrowser.searchBrowser);
+        jQuery("#<?= $tab_id ?> [id='side_explorer_toolbar_search_input']").on("keyup", Gofast.sideFileBrowser.searchBrowser);
         jQuery("[data-toggle='tooltip']").tooltip();
     });
 </script>

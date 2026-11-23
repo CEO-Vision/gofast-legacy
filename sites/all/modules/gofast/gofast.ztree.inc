@@ -436,6 +436,9 @@ class ztree_tree {
 
   public $children = [];
 
+  /** @var stdClass|null */
+  public $pagination = NULL;
+
   public function getChild($name) {
     foreach ($this->children as $child) {
       if ($child->id === $name) {
@@ -451,7 +454,10 @@ class ztree_tree {
   }
 
   public function __toString() {
-    return json_encode($this->children);
+    return json_encode([
+      'children' => $this->children,
+      'pagination' => $this->pagination
+    ]);
   }
 
   public function obfuscateName() {
@@ -1385,6 +1391,10 @@ function gofast_ztree_after_build($form, &$form_state) {
       if ($form_id === 'alfresco_item_node_form' /*|| $form_id === 'article_node_form'*/) {
         $ztree_options += array("alfresco_document" => "true", "chkStyle" => "checkbox");
       }
+      // Prevent webform form from allowing multiple locations.
+      if ($form_id === 'webform_node_form') {
+        $ztree_options += ['chkStyle' => 'radio', 'radioType' => 'all', 'single_location' => TRUE];
+      }
       break;
     case GOFAST_OG_PARENT_GROUP_FIELD:
       $type = 'space';
@@ -1488,9 +1498,17 @@ function gofast_ztree_after_build($form, &$form_state) {
       $form_field[LANGUAGE_NONE][0]["default"]["#options"]["Public"] = array();
 
       $field = $form_field[LANGUAGE_NONE];
-      if(isset($form_state['values'][$ztree_field][LANGUAGE_NONE][0]['default']) || isset($form_field[LANGUAGE_NONE][0]['default']['#default_value'])){
-        if (count($form_state['values'][$ztree_field][LANGUAGE_NONE][0]['default']) > 0) {
-          $selected = $form_state['values'][$ztree_field][LANGUAGE_NONE][0]['default'];
+      if(isset($form_state['values'][$ztree_field][LANGUAGE_NONE][0]) || isset($form_field[LANGUAGE_NONE][0]['default']['#default_value'])){
+        $ztree_field_value = $form_state['values'][$ztree_field][LANGUAGE_NONE][0] ?? NULL;
+        // In case the tree was limited to only allow one value,
+        // $ztree_field_value is a string of the nid, wrap it in an array like
+        // a normal response.
+        // NOTE: this still feels wrong but afaik from looking at the data is right, probably some other bug lurking.
+        $ztree_field_value = isset($ztree_field_value) && !is_array($ztree_field_value) ?
+          ['target_id' => $ztree_field_value, 'field_mode' => 'default']
+          : $ztree_field_value;
+        if (isset($$ztree_field_value) && count($$ztree_field_value) > 0) {
+          $selected = $ztree_field_value;
         }
         else {
           $selected = $form_field[LANGUAGE_NONE][0]['default']['#default_value'];
@@ -1959,6 +1977,13 @@ function gofast_ztree_async_json($print = true){
   $is_internal = $_REQUEST["is_internal"] ? TRUE : FALSE;
   $is_confidential = $_REQUEST["is_confidential"] ? TRUE : FALSE;
 
+  // pagination control
+  $skip_until_after_path = $_REQUEST['skip_until_after_path'];
+
+  $max_items = isset($_REQUEST['max_items']) ?
+    intval($_REQUEST['max_items'])
+    : NULL;
+
   if (count((array) $array_node) > 1) {
 
     $path_options = gofast_get_node_locations_async($node, $origine, $template,null,$ispublication);
@@ -1991,16 +2016,20 @@ function gofast_ztree_async_json($print = true){
         }
         $path_options['spaces_members']['displayUserRole'] = TRUE;
     }else{
+        $pagination = [
+          'max_items' => $max_items,
+          'skip_until_after_path' => $skip_until_after_path,
+        ];
         if(is_object($node) && $node->type === "conference"){
           
           unset($path_options["selected_paths"]);
           foreach($node->field_linked_folders[LANGUAGE_NONE] as $selected_folder){
             $path_options['selected_paths'][$selected_folder['value']] = $selected_folder['value'];
           }
-            $path_options = gofast_get_node_locations_async($node, $origine, $template , $browser_path, $ispublication, $node->field_linked_folders[LANGUAGE_NONE]);
+            $path_options = gofast_get_node_locations_async($node, $origine, $template , $browser_path, $ispublication, $node->field_linked_folders[LANGUAGE_NONE], pagination: $pagination);
         }else{
             
-            $path_options = gofast_get_node_locations_async($node, $origine, $template, $browser_path, $ispublication, NULL, $is_confidential, $is_internal);
+            $path_options = gofast_get_node_locations_async($node, $origine, $template, $browser_path, $ispublication, NULL, $is_confidential, $is_internal, $pagination);
         }
     }
   }
@@ -2030,7 +2059,28 @@ function gofast_ztree_async_json($print = true){
 
   // If there is no data, return empty array
   if (empty($array_paths) && empty($path_options['selected_paths']) && empty($path_options['disabled_paths']) && empty($path_options['obfuscated_paths']) && empty($path_options['templates_paths'])) {
-    return $content;
+    $result = [
+      'children' => [],
+      'pagination' => NULL,
+    ];
+
+    // Make sure result value has pagination if requested.
+    if(isset($path_options['has_more'])) {
+      $result['pagination'] = [
+        'hasMore' => FALSE,
+        'lastSeen' => NULL,
+        'fetchCount' => 0,
+      ];
+    }
+
+    $result_json = json_encode($result);
+
+    if ($print) {
+      print $result_json;
+      exit;
+    } else {
+      return $result_json;
+    }
   }
 
   // Then, we prepare the Json to be used by the ztree component
@@ -2078,6 +2128,8 @@ function gofast_ztree_async_json($print = true){
            }
       }
   }
+
+  /** @var ztree_tree */
   $tree = gofast_ztree_array_path_to_nested_objects_async($selected_and_selectable_og, $path_options, '/', $origine, $node->nid , $ispublication);
 
   //Fix GF4.0, /Sites checkbox appeared for some reason when selecting a space during Article creation so we make it impossible to check, and desactivate it.
@@ -2085,8 +2137,17 @@ function gofast_ztree_async_json($print = true){
     $tree->{'children'}[0]->{"chkDisabled"} = TRUE;
     $tree->{'children'}[0]->{"nocheck"} = TRUE;
   }
-  if (isset($_REQUEST["path_warnings"])) {
-    $tree->{'children'}[0]->{"path_warnings"} = $_REQUEST["path_warnings"];
+
+  // Allow front-end to know about paginated results
+  if (isset($path_options['has_more'])) {
+    $tree->pagination = (object) array_replace(
+      (array) $tree->pagination,
+      [
+        'hasMore' => $path_options['has_more'],
+        'lastSeen' => end($path_options['all_paths']),
+        'fetchCount' => count($path_options['all_paths']),
+      ],
+    );
   }
 
   $json = $tree->__toString();

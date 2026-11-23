@@ -45,6 +45,34 @@ function gofast_cmis_poll($poll_name, $poll_info, $context) {
       $alfresco_infos = gofast_cmis_alfresco_get_infos($node);
       $version = $alfresco_infos['last_version'];
       $version_date = $alfresco_infos['last_modified'];
+      if( count(array_diff((array)$node->field_publication, (array)$old_node->field_publication)) > 0 ||count(array_diff((array)$old_node->field_publication, (array)$node->field_publication)) > 0){
+          // publication is deleted, empty corresponding information into metadata bloc on client side    
+          if(count($node->field_publication) === 0){
+               $render = "";
+               $commands[] = ajax_command_html("#node_metadata_publications", $render);   
+               $old_node->field_publication = $node->field_publication;
+               $context['entity'] = $old_node;
+               gofast_set_context($context);  
+          }
+      }
+      
+      // check if there is at least one modification into links data
+      // check field_publication, field_target_link, field_external_page_url
+      $is_field_publication_changed = count(array_diff((array)$node->field_publication, (array)$old_node->field_publication)) > 0 ||count(array_diff((array)$old_node->field_publication, (array)$node->field_publication)) > 0;
+      $is_field_target_link_changed = count(array_diff((array)$node->field_target_link, (array)$old_node->field_target_link)) > 0 ||count(array_diff((array)$old_node->field_target_link, (array)$node->field_target_link)) > 0;
+      $is_field_external_page_url_changed = count(array_diff((array)$node->field_external_page_url, (array)$old_node->field_external_page_url)) > 0 ||count(array_diff((array)$old_node->field_external_page_url, (array)$node->field_external_page_url)) > 0;
+      if($is_field_publication_changed || $is_field_target_link_changed || $is_field_external_page_url_changed){
+              $infos = gofast_metadata_get_node_infos_async($node->nid,false,true);
+              $theme_links = theme('gofast_node_metadata_links', ['node_infos' => $infos]);
+              $separator = '<div class="separator separator-solid"></div>';
+              $commands[] = ajax_command_html("#gofast-node-info-links", $separator.$theme_links); 
+              $old_node->field_publication = $node->field_publication;
+              $old_node->field_target_link = $node->field_target_link;
+              $old_node->field_external_link_custom_data = $node->field_external_link_custom_data;
+              $context['entity'] = $old_node;
+              gofast_set_context($context);        
+      }
+      
       if ($old_version != $version && $old_version != null && $version != null && $old_node->nid == $node->nid) {
         $modification_date = (int) $node->changed;
         if (isset($alfresco_infos['versions'][0]->modifiedDate)) {

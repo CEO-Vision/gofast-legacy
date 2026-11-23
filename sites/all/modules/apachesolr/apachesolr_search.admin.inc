@@ -522,7 +522,7 @@ function apachesolr_search_page_settings_form_submit($form, &$form_state) {
   apachesolr_search_page_save($search_page);
 
   // Menu rebuild needed to pick up search path.
-  if ($form_state['values']['search_page']['search_path'] != $search_page['search_path']) {
+  if (isset($form_state['values']['search_page']['search_path']) && $form_state['values']['search_page']['search_path'] != $search_page['search_path']) {
     variable_set('menu_rebuild_needed', TRUE);
   }
 

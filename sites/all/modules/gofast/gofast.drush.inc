@@ -116,6 +116,15 @@ function gofast_drush_command() {
     'aliases' => array('pre-updb'),
   );
 
+  $items['write-alfresco-shared-files'] = array(
+    'description' => 'Write Alfresco / Drupal pivot files (e.g. for shared translations)',
+    'bootstrap' => DRUSH_BOOTSTRAP_DRUPAL_SITE,
+    'global-options' => array(
+      'cache-clear',
+    ),
+    'aliases' => array('write-alf-shared'),
+  );
+
   return $items;
 }
 
@@ -307,73 +316,26 @@ function drush_gofast_full_reindex($action = 'start') {
 function drush_gofast_import_translations(){
   set_time_limit(0);
 
-  //FR
-  //default po
-  $file = new stdClass();
-  $file->filename = "fr_default.po";
-  $file->uri = "/var/www/d7/sites/all/modules/gofast/po/fr_default.po";
+  $langcodes = ["fr", "de"];
+  foreach ($langcodes as $langcode) {
+    foreach([
+      "default" => "default",
+      "taxonomy" => "taxonomy",
+      "menu" => "menu",
+      "cs" => "current_search",
+      "facetapi" => "facetapi",
+      "nt" => "node"
+    ] as $suffix => $group) {
+      $file = new stdClass();
+      $file->filename = "{$langcode}_{$suffix}.po";
+      $file->uri = "/var/www/d7/sites/all/modules/gofast/po/{$langcode}_{$suffix}.po";
+      $mode = 0;
 
-  $langcode = "fr";
-  $mode = 0;
-  $group = "default";
-
-  _locale_import_po($file, $langcode, $mode, $group);
-
-  //taxonomy po
-  $file = new stdClass();
-  $file->filename = "fr_taxonomy.po";
-  $file->uri = "/var/www/d7/sites/all/modules/gofast/po/fr_taxonomy.po";
-
-  $langcode = "fr";
-  $mode = 0;
-  $group = "taxonomy";
-
-  _locale_import_po($file, $langcode, $mode, $group);
-
-  //menu po
-  $file = new stdClass();
-  $file->filename = "fr_menu.po";
-  $file->uri = "/var/www/d7/sites/all/modules/gofast/po/fr_menu.po";
-
-  $langcode = "fr";
-  $mode = 0;
-  $group = "menu";
-
-  _locale_import_po($file, $langcode, $mode, $group);
-
-
-  //current search po
-  $file = new stdClass();
-  $file->filename = "fr_cs.po";
-  $file->uri = "/var/www/d7/sites/all/modules/gofast/po/fr_cs.po";
-
-  $langcode = "fr";
-  $mode = 0;
-  $group = "current_search";
-
-  _locale_import_po($file, $langcode, $mode, $group);
-
-  //facetapi po
-  $file = new stdClass();
-  $file->filename = "fr_facetapi.po";
-  $file->uri = "/var/www/d7/sites/all/modules/gofast/po/fr_facetapi.po";
-
-  $langcode = "fr";
-  $mode = 0;
-  $group = "facetapi";
-
-  _locale_import_po($file, $langcode, $mode, $group);
-
-  //nodetype po
-  $file = new stdClass();
-  $file->filename = "fr_nt.po";
-  $file->uri = "/var/www/d7/sites/all/modules/gofast/po/fr_nt.po";
-
-  $langcode = "fr";
-  $mode = 0;
-  $group = "node";
-
-  _locale_import_po($file, $langcode, $mode, $group);
+      if (file_exists(($file->uri))) {
+        _locale_import_po($file, $langcode, $mode, $group);
+      }
+    }
+  }
 }
 
 // main difference between vanilla "import-translations" command is that it only imports technical strings and removes all previously existing translations of given context before importing them again
@@ -596,4 +558,39 @@ function drush_gofast_riot_sync_avatars () {
   }
 
   drush_log('mx_content_id: ' . $output . "\n", $status);
+}
+
+/**
+ * Write updated files contents to /etc/gofast/shared
+ */
+function drush_gofast_write_alfresco_shared_files() {
+  $langcodes = ["fr", "de"];
+  $terms = [];
+  foreach ($langcodes as $langcode) {
+    foreach (["gofast_categories_", "gofast_states_"] as $file_prefix) {
+      $file_path = "/etc/gofast/shared/{$file_prefix}{$langcode}.json";
+      $file = fopen($file_path, "r+");
+      if (!$file) {
+        drush_log("Failed to open file: $file_path (Check permissions or existence).", 'error');
+        continue;
+      }
+      ftruncate($file, 0);
+      fclose($file);
+      drush_log("File cleared: $file_path", 'ok');
+    }
+    $terms = [];
+    foreach ([GOFAST_VID_CATEGORY, GOFAST_VID_STATE] as $vid) {
+      $tree = taxonomy_get_tree($vid, 0, 1, TRUE);
+      $terms = [...$terms, ...$tree];
+      foreach ($tree as $child) {
+        $children = taxonomy_get_children($child->tid);
+        $terms = [...$terms, ...$children];
+      }
+    }
+    foreach ($terms as $term) {
+      $translated_name = i18n_string_object_translate('taxonomy_term', $term, ["langcode" => $langcode])->name;
+      $translated_name = trim($translated_name);
+      gofast_taxonomy_write_alfresco_translation($term, $langcode, $translated_name);
+    }
+  }
 }

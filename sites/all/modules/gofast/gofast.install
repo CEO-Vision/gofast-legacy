@@ -167,3 +167,15 @@ function gofast_update_7334(){
     db_add_index("userpoints_txn", "gfindex_userpoints_txn_1", array('entity_id', 'entity_type', "operation"));
   }
 }
+
+/** GOFAST-6706 - Change type of locales source column from BLOB to LONGTEXT so it's easier to query */
+function gofast_update_7335(){
+  db_change_field('locales_source', 'source', 'source', array(
+    'type' => 'text',
+    'size' => 'big', // This maps to LONGTEXT
+    'not null' => TRUE,
+  ));
+  // Important to alter the collation so search can remain case-sensitive
+  db_query("ALTER TABLE locales_source COLLATE=utf8mb3_bin;");
+  db_query("ALTER TABLE locales_source MODIFY source LONGTEXT CHARACTER SET utf8mb3 COLLATE utf8mb3_bin NOT NULL;");
+}

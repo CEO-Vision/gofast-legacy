@@ -29,6 +29,7 @@
       'container_id' => 'popup_block_' . $nid,
       'container_class' => NULL,
       'relative_positioning' => TRUE,
+      'nid' => $nid,
     ];
     echo theme('node_locations', $pop_over_option);
 } ?>

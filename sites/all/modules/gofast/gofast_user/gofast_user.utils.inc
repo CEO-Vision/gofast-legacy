@@ -215,7 +215,7 @@ function gofast_user_load_all($full = TRUE)
  *  Any additional properties and fields goes here.
  *
  * @return boolean
- *  Whether error(s) occured or not.
+ *  TRUE if the account was created, FALSE if validation error(s) occured.
  */
 function gofast_user_create($name, $role_name = GOFAST_ROLE_CONTRIBUTOR, array $options = array(), $sasl = TRUE, $creation_method = "form_gui")
 {
@@ -447,14 +447,6 @@ function gofast_user_get_request_actions($account, $include_subscription = TRUE,
   if ($account->uid !== $user->uid) {
     //Check if we are administrator
     if (!$exclude_bulk && user_access("gofast administer users")) {
-     if (gofast_user_is_left($account) && gofast_user_is_business_admin()) { //The user has left the org
-        $actions[] = theme('gofast_link_generic', array(
-          'icon_class' => "fas fa-check",
-          'href' => "/modal/nojs/user/$account->uid/unleave",
-          'link_class' => 'ctools-use-modal',
-          'text' => t('Re-enable', array(), array('context' => 'gofast'))
-        ));
-     }
      if (!gofast_user_is_left($account) && gofast_user_is_business_admin()) { //The user has left the org
       $actions[] = theme('gofast_link_generic', array(
         'icon_class' => "fas fa-ban",
@@ -472,7 +464,7 @@ function gofast_user_get_request_actions($account, $include_subscription = TRUE,
       ));   
     }
      // DELETE User system link -- if logged user is an admin and the user that we will delete never connecte
-      if ($account->access == 0) { // the user never connect
+      if ($account->login == 0) { // the user never connect
         $actions[] = theme('gofast_link_generic', array(
           'icon_class' => "fas fa-trash",
           'href' => "/modal/nojs/user/$account->uid/delete",
@@ -769,7 +761,8 @@ function gofast_user_leave_user($account_uid){
        $last_event_unserialized["mod_author"] = $user->uid;
 
        //Insert inton audit
-       gofast_audit_insert_line_audit(0, 'user_leave', $last_event_serialized, $last_event_unserialized); //The value 0 is define in order to not render node in the audit
+       $psid = gofast_og_get_user_private_space($account, FALSE) ?: 0;
+       gofast_audit_insert_line_audit($psid, 'user_leave', $last_event_serialized, $last_event_unserialized);
 
        //implement hook to allow custom module to add custom actions when a user leave
         foreach(module_implements('gofast_user_leave') as $module){
@@ -794,7 +787,8 @@ function gofast_user_unleave_user($account_uid){
        $last_event_unserialized["mod_author"] = $user->uid;
 
        //Insert inton audit
-       gofast_audit_insert_line_audit(0, 'user_unleave', $last_event_serialized, $last_event_unserialized); //The value 0 is define in order to not render node in the audit
+       $psid = gofast_og_get_user_private_space($account, FALSE) ?: 0;
+       gofast_audit_insert_line_audit($psid, 'user_unleave', $last_event_serialized, $last_event_unserialized);
 
       //implement hook to allow custom module to add custom actions when a user is unleaved
       foreach(module_implements('gofast_user_unleave') as $module){
@@ -967,6 +961,7 @@ function gofast_get_permissions_key_value_map() {
     "extranet" => t("External", array(), array('context' => 'gofast')),
     "broadcaster" =>  t("Broadcaster", array(), array('context' => 'gofast')),
     "comment_restricted" => t("Restricted comments", array(), array('context' => 'gofast')),
+    "granted_confidential_access" => t("Confidential clearance", [], ['context' => 'gofast']),
   );
 }
 
@@ -1005,6 +1000,7 @@ function gofast_get_global_permissions_and_profiles() {
   $permissions_and_profiles["extranet"] = $permissions_key_value_map["extranet"];
   $permissions_and_profiles["broadcaster"] = $permissions_key_value_map["broadcaster"];
   $permissions_and_profiles["comment_restricted"] = $permissions_key_value_map["comment_restricted"];
+  $permissions_and_profiles["granted_confidential_access"] = $permissions_key_value_map['granted_confidential_access'];
   return $permissions_and_profiles;
 }
 
@@ -1014,6 +1010,8 @@ function gofast_get_global_permissions_and_profiles() {
  * @param $add is the operation to perform: TRUE for add and FALSE for remove
 */
 function gofast_change_user_global_permissions_and_profiles($account, $options, $add = TRUE) {
+  $setter_options = ['op' => $add ? 'add' : 'remove'];
+  $errors = [];
   foreach ($options as $option) {
       // global permissions are found in the form of "{rid}role name"
       if (preg_match("/\{(\d+)\}((?:\w+\h*)+)/", $option, $matches)) {
@@ -1033,6 +1031,19 @@ function gofast_change_user_global_permissions_and_profiles($account, $options, 
         $option = "extranet";
         $reverse = TRUE;
       }
+
+      // Try to delegate setting and possibly saving the user to a custom callback.
+      // The callback is called if found and should return an array of errors.
+      // The callback should not update and save the user if it returns errors.
+      $setter = 'gofast_user_try_set_' . $option;
+      if (function_exists($setter)) {
+        $result = $setter($account, $setter_options);
+        if (!empty($result)) {
+          $errors = array_merge($errors, $result);
+        }
+        continue;
+      }
+
       // if it's not a Drupal role but a field, we take advantage of the consistency regarding the fields naming and related functions
       $field = "is_" . $option;
       $function = "gofast_user_" . $field;
@@ -1055,6 +1066,36 @@ function gofast_change_user_global_permissions_and_profiles($account, $options, 
       $wrapper->{$field}->set($account->{$field}[LANGUAGE_NONE][0]["value"]);
       $wrapper->save();
   }
+
+  return $errors;
+}
+
+/**
+ * Read counterpart of gofast_change_user_global_permissions_and_profiles():
+ * which of the options a user currently holds.
+ *
+ * @param $account is a Drupal user entity
+ * @return array of option keys, formatted as the keys returned by gofast_user_get_and_order_profile_options
+ */
+function gofast_user_get_global_permissions_and_profiles($account) {
+  $held = array();
+  foreach (array_keys(gofast_user_get_and_order_profile_options()) as $option) {
+    if (preg_match("/^\{\d+\}((?:\w+\h*)+)/", $option, $matches)) {
+      $granted = gofast_user_has_role(trim($matches[1]), $account);
+    }
+    elseif ($option === "internal") {
+      // Synthetic option, the strict opposite of "extranet".
+      $granted = !gofast_user_is_extranet($account);
+    }
+    else {
+      $granted = call_user_func("gofast_user_is_" . $option, $account);
+    }
+    if ($granted) {
+      $held[] = $option;
+    }
+  }
+
+  return $held;
 }
 
 function gofast_user_get_and_order_profile_options() {
@@ -1147,4 +1188,386 @@ function gofast_user_get_gofast_token_count(){
   $query = db_select("gofast_token", "gft");
   $count = $query->countQuery()->execute()->fetchField();
   return $count;
+}
+
+/**
+ * Load an active user given its email.
+ *
+ * @param string $email The email address of the user to load.
+ * @return array{user:?object,users_with_email_exist:bool}
+ *  An array containing the user (or null if no user matches the conditions) and
+ *  whether any user (active or not) has the given email.
+ */
+function gofast_user_load_active_user_by_email($email) {
+  // We make sure to load every user with the given email to check if at
+  // least one is activated.
+  $users_with_email = user_load_multiple([], ['mail' => $email]);
+  if (empty($users_with_email)) {
+    return [
+      'user' => NULL,
+      'users_with_email_exist' => FALSE,
+    ];
+  }
+
+  // keep only active users
+  $active_users_with_email = array_filter($users_with_email, fn($u) => !gofast_user_is_left($u));
+  if (empty($active_users_with_email)) {
+    return [
+      'user' => NULL,
+      'users_with_email_exist' => TRUE,
+    ];
+  }
+
+  // return first (and hopefully only) active user
+  return [
+    'user' => reset($active_users_with_email),
+    'users_with_email_exist' => TRUE,
+  ];
+}
+
+function gofast_user_reporting_get_counts(){
+  $domain = '%@ceo-vision.com';
+
+  $query = db_select('users', 'u');
+  $query->distinct();
+  $query->fields('u', ['uid']);
+  $query->leftJoin('field_data_is_extranet', 'e', 'e.entity_id = u.uid');
+  $query->leftJoin('field_data_field_left', 'l', 'l.entity_id = u.uid');
+  $query->condition('u.uid', [0, 1], 'NOT IN');
+  $query->condition('l.field_left_value', 0, '=');
+  
+  $or = db_or();
+  $or->condition('e.is_extranet_value', 0);
+  $or->isNull('e.is_extranet_value');
+  $query->condition($or);
+  
+  $query->condition('u.mail', $domain, 'NOT LIKE');
+  
+  $active_users_count = count($query->execute()->fetchAllAssoc('uid'));
+  
+  
+  $query = db_select('users', 'u');
+  $query->distinct();
+  $query->fields('u', ['uid']);
+  $query->leftJoin('field_data_is_extranet', 'e', 'e.entity_id = u.uid');
+  $query->leftJoin('field_data_field_left', 'l', 'l.entity_id = u.uid');
+  $query->condition('u.uid', [0, 1], 'NOT IN');
+  $query->condition('e.is_extranet_value', 1);
+  $query->condition('u.mail', $domain, 'NOT LIKE');
+  $query->condition('l.field_left_value', 0, '=');
+  
+  $active_users_count_extranet = count($query->execute()->fetchAllAssoc('uid'));
+  
+  
+  $query = db_select('users', 'u');
+  $query->distinct();
+  $query->fields('u', ['uid']);
+  $query->leftJoin('field_data_is_extranet', 'e', 'e.entity_id = u.uid');
+  $query->leftJoin('field_data_field_left', 'l', 'l.entity_id = u.uid');
+  $query->condition('u.uid', [0, 1], 'NOT IN');
+  $query->condition('l.field_left_value', 1, '=');
+  
+  $or = db_or();
+  $or->condition('e.is_extranet_value', 0);
+  $or->isNull('e.is_extranet_value');
+  $query->condition($or);
+  
+  $query->condition('u.mail', $domain, 'NOT LIKE');
+  
+  $inactive_users_count = count($query->execute()->fetchAllAssoc('uid'));
+  
+  
+  $query = db_select('users', 'u');
+  $query->distinct();
+  $query->fields('u', ['uid']);
+  $query->leftJoin('field_data_is_extranet', 'e', 'e.entity_id = u.uid');
+  $query->leftJoin('field_data_field_left', 'l', 'l.entity_id = u.uid');
+  $query->condition('u.uid', [0, 1], 'NOT IN');
+  $query->condition('l.field_left_value', 0, '=');
+
+  $query->condition('e.is_extranet_value', 1);
+  $query->condition('u.mail', $domain, 'NOT LIKE');
+  
+  $inactive_users_count_extranet = count($query->execute()->fetchAllAssoc('uid'));
+  
+  return array('active_users_count' => $active_users_count,
+                'active_users_count_extranet' => $active_users_count_extranet,
+                'inactive_users_count' => $inactive_users_count,
+                'inactive_users_count_extranet' => $inactive_users_count_extranet);
+}
+
+function gofast_user_reporting_get_last_stored_data(){
+  $last_line= db_query("select * from {gofast_users_reporting} order by id desc limit 0,1")->fetch();
+  
+  return array('active_users_count' => $last_line->count_internal_actives,
+                'active_users_count_extranet' => $last_line->count_external_actives,
+                'inactive_users_count' => $last_line->count_internal_inactives,
+                'inactive_users_count_extranet' => $last_line->count_external_inactives,
+                'timestamp' => $last_line->timestamp
+        );
+}
+
+function gofast_user_reporting_get_stored_data_history(){
+  $history= db_query("select * from {gofast_users_reporting} order by id")->fetchAll();
+
+ return $history;
+}
+
+function gofast_user_reporting_get_stored_data_history_formated(){
+  $all_data = gofast_user_reporting_get_stored_data_history();
+  $html_data =  theme('gofast_user_reporting_infos_table', ["all_data" => $all_data]);
+
+  return $html_data;
+ 
+}
+
+function gofast_user_reporting_get_subscription_end_date(){
+  $license_info = gofast_get_licence_infos();
+  if($license_info === null){
+      return false;
+  }
+  
+  // file is corrupted
+  if($license_info === false){
+    $add_message = true;
+    $warning_message = t("The Gofast license file is corrupted. Please contact your administrator", array(), array('context' => 'gofast'));
+    $all_messages = drupal_get_messages("warning", false);
+    if(count((array) $all_messages["warning"]) > 0){
+        foreach($all_messages["warning"] as $message){
+            if($warning_message == $message){
+                $add_message = false;
+            }
+        }
+    }
+    if($add_message){
+      drupal_set_message($warning_message, 'warning');
+    }
+    return false;
+  }
+
+  $targetDate = DateTime::createFromFormat('d/m/Y', $license_info->expiration_date ); 
+  
+  return $targetDate;
+}
+
+/**
+ * Checks whether the given user (or current) can grant another access to confidential spaces.
+ *
+ * NOTE: This function has different semantics than `gofast_user_can_user_access_confidential_content`
+ * despite currently having the same implementation, do not mix them up.
+ *
+ * @param object|null $account Account to check permission for. If not given, defaults to current user.
+ * @return bool True if the user can grant confidential access, false otherwise.
+ */
+function gofast_user_can_user_grant_confidential_access($account = NULL) {
+  if (!isset($account)) {
+    $account = $GLOBALS['user'];
+  }
+
+  // Anonymous user can never grant confidential access.
+  if ($account->uid === 0) {
+    return FALSE;
+  }
+
+  // Allow admin to manage clearances.
+  if ($account->uid == 1) {
+    return TRUE;
+  }
+
+  // GOFAST-14769: granting also requires editing profiles, like the other
+  // permission flags; a cleared standard user must not change their own.
+  return user_access('administer roles', $account)
+    && gofast_user_can_user_access_confidential_content($account);
+}
+
+/**
+ * Checks if a user can access confidential content
+ *
+ * @param object|numeric|EntityDrupalWrapper|null $account The user to check
+ *  confidential access permission for, defaults to the current user. Allows
+ *  passing either the user's id, object (including global $user) or wrapper.
+ * @return bool True if the user can access confidential content, false otherwise
+ */
+function gofast_user_can_user_access_confidential_content($account = NULL) {
+  if (!isset($account)) {
+    $account = $GLOBALS['user'];
+  }
+
+  /** @var EntityDrupalWrapper */
+  $account_wrapper = entity_metadata_wrapper('user', $account);
+
+  // Anonymous user can never access confidential content.
+  if ($account_wrapper->getIdentifier() === 0) {
+    return FALSE;
+  }
+
+  return (bool) $account_wrapper->{GOFAST_USER_HAS_CONFIDENTIAL_ACCESS_FIELD}->value();
+}
+
+/**
+ * Checks if a user can set or unset content (spaces) as confidential
+ *
+ * NOTE: This function has different semantics than `gofast_user_can_user_grant_confidential_access`
+ * despite currently having the same implementation, do not mix them up.
+ *
+ * @param object|numeric|EntityDrupalWrapper|null $account The user to check
+ *  confidential access update permission for. Defaults to the current user.
+ * @return bool True if the user can change content confidentiality, false otherwise
+ */
+function gofast_user_can_user_change_content_confidentiality($account = NULL) {
+  if (!isset($account)) {
+    $account = $GLOBALS['user'];
+  }
+
+  /** @var EntityDrupalWrapper */
+  $account = entity_metadata_wrapper('user', $account);
+
+  // Anonymous user can never change content confidentiality.
+  if ($account->getIdentifier() === 0) {
+    return FALSE;
+  }
+
+  // For now, users with access to confidential spaces (i.e: have confidential
+  // clearance) can make spaces confidential.
+  return gofast_user_can_user_access_confidential_content($account);
+}
+
+/**
+ * Checks permission for having confidential access.
+ *
+ * Called from `gofast_user_preprocess_user_profile`.
+ *
+ * Alias of `gofast_user_can_user_access_confidential_content`.
+ *
+ * @param object|null $account Account to check. Defaults to current user.
+ * @return bool True if user was granted confidential access.
+ */
+function gofast_user_is_granted_confidential_access($account = NULL) {
+  return gofast_user_can_user_access_confidential_content($account);
+}
+
+/**
+ * Checks if a user is in any confidential space.
+ *
+ * @param object|numeric|EntityDrupalWrapper|null $account Loaded user object,
+ *  id, or wrapper defaults to current user.
+ * @return bool True if the user is in a confidential space, false otherwise.
+ */
+function gofast_user_is_user_in_confidential_spaces($account = NULL) {
+  if (!isset($account)) {
+    $account = $GLOBALS['user'];
+  }
+
+  /** @var EntityDrupalWrapper */
+  $account_w = entity_metadata_wrapper('user', $account);
+
+  // Get spaces the user is a member of.
+  $user_spaces = gofast_og_get_spaces_by_user(
+    $account_w->value(),
+    // Public space cannot be confidential
+    FALSE,
+    // Full (load)?
+    FALSE,
+    // Not from API
+    FALSE,
+    // Confidential spaces do not accept user lists currently, ergo a user
+    // cannot be in a confidential space because of a userlist, we do not need
+    // to check them for confidentiality as of now.
+    FALSE,
+  );
+
+  // Is any space the user is in confidential?
+  return gofast_iterable_any($user_spaces, fn($space) => gofast_group_is_confidential($space));
+}
+
+/**
+ * Tries to set the confidential access/clearance permission for a user.
+ *
+ * @param object|numeric|EntityDrupalWrapper $account User for which to set the confidential clearance.
+ * @param array{op:'add'|'remove'} $options
+ * @return array{code:string,message:string}[] Array of errors preventing the setting of confidential access on the given user.
+ */
+function gofast_user_try_set_granted_confidential_access($account, $options) {
+  /** @var EntityDrupalWrapper */
+  $account_w = entity_metadata_wrapper('user', $account);
+  $errors = [];
+
+  // Common validations:
+  // Is current user is allowed to update this field?
+  if (!gofast_user_can_user_grant_confidential_access()) {
+    $errors[] = [
+      'code' => 'unauthorized',
+      'message' => t(
+        'You cannot grant or revoke users confidential clearance.',
+        [],
+        ['context' => 'gofast'],
+      ),
+    ];
+    return $errors;
+  }
+
+  switch ($options['op']) {
+    // ----- Add clearance if not already present. -----
+    case 'add':
+      // Already has clearance? Nothing to do.
+      if (gofast_user_can_user_access_confidential_content($account_w)) {
+        break;
+      }
+
+      $account_w->{GOFAST_USER_HAS_CONFIDENTIAL_ACCESS_FIELD}->set(TRUE);
+      break;
+
+    // ----- Remove clearance if not already lacking. -----
+    case 'remove':
+      // Already lacks clearance? Nothing to do.
+      if (!gofast_user_can_user_access_confidential_content($account_w)) {
+        break;
+      }
+
+      // User is in confidential spaces: cannot remove their clearance because
+      // of the risk of setting the platform in an invalid state.
+      if (gofast_user_is_user_in_confidential_spaces($account_w)) {
+        $errors[] = [
+          'code' => 'confidential_space_member',
+          'message' => t(
+            "You cannot remove a user's confidential clearance if they are a member of a confidential space",
+            [],
+            ['context' => 'gofast'],
+          ),
+        ];
+        break;
+      }
+
+      $account_w->{GOFAST_USER_HAS_CONFIDENTIAL_ACCESS_FIELD}->set(FALSE);
+      break;
+
+    default:
+      // Unknown operation.
+      throw new \Exception(strtr(
+        'This operation (@op) is not implemented in @function',
+        [
+          '@op' => var_export($options['op'], TRUE),
+          '@function' => __FUNCTION__,
+        ],
+      ));
+      break;
+  }
+
+  // No errors occurred, the wrapper may have been updated and needs to be saved.
+  if (empty($errors)) {
+    $account_w->save();
+  }
+
+  return $errors;
+}
+
+/**
+ * Check if SASL delegation is active for a user account.
+ *
+ * @param object $account Loaded user object to check if the SASL delegation is
+ *  active or not.
+ * @return bool True if SASL delegation is active for the account, false otherwise
+ */
+function gofast_user_is_sasl_auth_active($account) {
+  return isset($account->sasl_auth[LANGUAGE_NONE][0]['value']) && boolval($account->sasl_auth[LANGUAGE_NONE][0]['value']);
 }

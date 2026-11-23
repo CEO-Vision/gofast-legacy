@@ -58,7 +58,70 @@ function gofast_features_mail_field_default_field_instances() {
     ),
     'entity_type' => 'node',
     'field_name' => 'field_acknowledge_number',
-    'label' => 'Acknoledge number',
+    'label' => 'Acknowledge number',
+    'required' => FALSE,
+    'settings' => array(
+      'text_processing' => 0,
+      'user_register_form' => FALSE,
+    ),
+    'widget' => array(
+      'module' => 'text',
+      'settings' => array(
+        'size' => 60,
+      ),
+      'type' => 'text_textfield',
+      'weight' => -10,
+    ),
+  );
+
+  // Exported field_instance: 'node-alfresco_item-field_arrival_departure_date'.
+  $field_instances['node-alfresco_item-field_arrival_departure_date'] = array(
+    'bundle' => 'alfresco_item',
+    'default_value' => NULL,
+    'deleted' => 0,
+    'description' => '',
+    'display' => array(
+      'custom_gofast' => array(
+        'label' => 'above',
+        'settings' => array(),
+        'type' => 'hidden',
+        'weight' => 0,
+      ),
+      'default' => array(
+        'label' => 'above',
+        'module' => 'text',
+        'settings' => array(),
+        'type' => 'text_default',
+        'weight' => 48,
+      ),
+      'gofast_node_infos' => array(
+        'label' => 'above',
+        'settings' => array(),
+        'type' => 'hidden',
+        'weight' => 0,
+      ),
+      'print' => array(
+        'label' => 'above',
+        'settings' => array(),
+        'type' => 'hidden',
+        'weight' => 0,
+      ),
+      'search_index' => array(
+        'label' => 'above',
+        'settings' => array(),
+        'type' => 'hidden',
+        'weight' => 0,
+      ),
+      'teaser' => array(
+        'label' => 'above',
+        'settings' => array(),
+        'type' => 'hidden',
+        'weight' => 0,
+      ),
+    ),
+    'entity_type' => 'node',
+    'field_name' => 'field_arrival_departure_date',
+    'label' => 'Date and time of arrival/departure of the mail',
     'required' => FALSE,
     'settings' => array(
       'text_processing' => 0,
@@ -578,6 +641,69 @@ function gofast_features_mail_field_default_field_instances() {
     ),
   );
 
+  // Exported field_instance: 'node-alfresco_item-field_user_recipient'.
+  $field_instances['node-alfresco_item-field_user_recipient'] = array(
+    'bundle' => 'alfresco_item',
+    'default_value' => NULL,
+    'deleted' => 0,
+    'description' => '',
+    'display' => array(
+      'custom_gofast' => array(
+        'label' => 'above',
+        'settings' => array(),
+        'type' => 'hidden',
+        'weight' => 0,
+      ),
+      'default' => array(
+        'label' => 'above',
+        'module' => 'text',
+        'settings' => array(),
+        'type' => 'text_default',
+        'weight' => 52,
+      ),
+      'gofast_node_infos' => array(
+        'label' => 'above',
+        'settings' => array(),
+        'type' => 'hidden',
+        'weight' => 0,
+      ),
+      'print' => array(
+        'label' => 'above',
+        'settings' => array(),
+        'type' => 'hidden',
+        'weight' => 0,
+      ),
+      'search_index' => array(
+        'label' => 'above',
+        'settings' => array(),
+        'type' => 'hidden',
+        'weight' => 0,
+      ),
+      'teaser' => array(
+        'label' => 'above',
+        'settings' => array(),
+        'type' => 'hidden',
+        'weight' => 0,
+      ),
+    ),
+    'entity_type' => 'node',
+    'field_name' => 'field_user_recipient',
+    'label' => 'User recipient',
+    'required' => FALSE,
+    'settings' => array(
+      'text_processing' => 0,
+      'user_register_form' => FALSE,
+    ),
+    'widget' => array(
+      'module' => 'text',
+      'settings' => array(
+        'size' => 60,
+      ),
+      'type' => 'text_textfield',
+      'weight' => -10,
+    ),
+  );
+
   // Exported field_instance: 'node-extranet-field_mail_subspace_nid'.
   $field_instances['node-extranet-field_mail_subspace_nid'] = array(
     'bundle' => 'extranet',
@@ -988,8 +1114,9 @@ function gofast_features_mail_field_default_field_instances() {
 
   // Translatables
   // Included for use with string extractors like potx.
-  t('Acknoledge number');
+  t('Acknowledge number');
   t('Arrival / Departure Link');
+  t('Date and time of arrival/departure of the mail');
   t('Impute');
   t('Mail Object');
   t('Mail instruction');
@@ -999,6 +1126,7 @@ function gofast_features_mail_field_default_field_instances() {
   t('Mail userlist ID');
   t('Mandatory answer');
   t('Service / Direction recipient');
+  t('User recipient');
 
   return $field_instances;
 }

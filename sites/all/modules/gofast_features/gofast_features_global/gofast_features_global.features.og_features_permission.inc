@@ -2523,5 +2523,10 @@ function gofast_features_global_og_features_default_permissions()
     ),
   );
 
+  // Exported og permission: 'node:userlist:subscribe'
+  $permissions['node:userlist:subscribe'] = array(
+    'roles' => array(),
+  );
+
   return $permissions;
 }

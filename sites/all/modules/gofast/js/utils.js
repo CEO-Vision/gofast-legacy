@@ -147,6 +147,11 @@ var Gofast = (function($) {
       settings: function (ajax, response, status) {
         if (response.merge) {
           $.extend(true, Drupal.settings, response.settings);
+          var newContext = response.settings.gofast?.context;
+          if (newContext && newContext.__replace) {
+            Gofast.overwriteObjectPaths(Drupal.settings.gofast.context, newContext, newContext.__replace);
+            delete Drupal.settings.gofast.context.__replace;
+          }
         }
         else {
           ajax.settings = response.settings;
@@ -202,7 +207,11 @@ var Gofast = (function($) {
 
       scrollToComment: function(ajax, response, status) {
         Gofast.scrollToComment(response.hrefComment);
-      }
+      },
+
+      modalNoBlur: function(ajax, response, status) {
+        Drupal.CTools.Modal.closeOnBlur(false);
+      },
     },
 
     display_modal_form: function(form_url, title){
@@ -570,10 +579,15 @@ var Gofast = (function($) {
       } else {
         ext = src.split(".").pop();
       }
-      // canvas.toDtaURL returns JPEG format if mimeType = image/jpeg, otherwise, it returns PNG format for the others mimeType.
+      // canvas.toDataURL returns JPEG format if mimeType = image/jpeg, otherwise, it returns PNG.
+      // maxWidth/maxHeight can be overridden per-caller via data attributes on #image (e.g. space logo needs higher resolution than a kanban avatar).
+      var maxWidth = parseInt($("#image").attr("data-max-width")) || 300;
+      var maxHeight = parseInt($("#image").attr("data-max-height")) || 300;
+      // "jpg" is not a valid MIME subtype — must be "jpeg" to avoid silent PNG fallback.
+      const mimeExt = ext === "jpg" ? "jpeg" : ext;
       var result = cropper
-        .getCroppedCanvas({ maxWidth: 300, maxHeight: 300 })
-        .toDataURL("image/" + ext, 1, 0);
+        .getCroppedCanvas({ maxWidth: maxWidth, maxHeight: maxHeight })
+        .toDataURL("image/" + mimeExt, 1);
       var endpoint = $("#image").attr("data-target-endpoint");
       let body = {
         data: result.substring(result.indexOf(",") + 1),
@@ -618,9 +632,9 @@ var Gofast = (function($) {
           Gofast.toast(Drupal.t('Image successfully changed!'), "success")
           // Refresh board to use updated image
           window.ktKanbanItem.reload();
-          var doneEvent = $("#image").attr("data-done-event");
+          var doneEvent = $("[data-done-event]").data("done-event");
           if (doneEvent) {
-            $(document).trigger(doneEvent, [result.src]);
+            $(document).trigger(doneEvent, result);
           }
           var redirectUrl = $("#image").attr("data-redirect-url");
           if (redirectUrl) {
@@ -637,7 +651,8 @@ var Gofast = (function($) {
         // Cropper
         var cropper = new Cropper($image, {
           aspectRatio: 1,
-          viewMode: 1,
+          // viewMode: 0 means cropping area is unrestricted (can select anything, even outside image)
+          viewMode: 0,
           crop(event) {
             var lg = document.getElementById('cropper-preview-lg');
             lg.innerHTML = '';
@@ -1066,6 +1081,16 @@ var Gofast = (function($) {
             $("#file_browser_tooolbar_refresh").prop("disabled", false);
             $("#file_browser_tooolbar_refresh").css("cursor", "pointer");
             Gofast.ITHit.tree.removeNode(fakeTreeNode);
+
+            // notify space creation
+            window.dispatchEvent(
+              new CustomEvent("gofast:node_create", {
+                detail: {
+                  nid: nodeId,
+                },
+              })
+            );
+
             Gofast.ITHit.navigate(path);
           }
         });
@@ -1282,6 +1307,10 @@ var Gofast = (function($) {
 
     //If we are on the dashboard and there is a tasks block, reload it
     refreshDashboardTasksBlock : function(){
+        // The dashboard block iframe shares its id with the menu one: reload it directly.
+        $(".dashboard-workflows-placeholder iframe").each(function(){
+            this.contentWindow?.location?.reload();
+        });
         if($("#refresh-lightdashboard").length === 1){
              $("#refresh-lightdashboard").click();
         }
@@ -1394,6 +1423,23 @@ var Gofast = (function($) {
         return false;
       }
     },
+
+    /**
+     * Check if a string is a valid URL
+     * @param {string} string string to check if it contains a valid parsable URL
+     * @returns {boolean} `true` if {@linkcode string} is a valid URL, `false` otherwise.
+     */
+    isValidUrl: (string) => {
+      try {
+        // URL constructor throws if the given argument is not a valid URL
+        // We don't need the constructed object for further refinements so it is ignored
+        new URL(string);
+        return true;
+      } catch {
+        return false;
+      }
+    },
+
     gofast_saml_sp_drupal: function (event, cookie_domain) {
       $.cookie('gofast_version_login_selected', // cookie name
        jQuery('#edit-simplified-login').val(), // version button value
@@ -1496,11 +1542,17 @@ var Gofast = (function($) {
     incrementMetadataEditCounter: function() {
       // prevent lock poll refresh breaking the select
       Drupal.settings.gofast.metadataEditCount = typeof Drupal.settings.gofast.metadataEditCount == "undefined" ? 1 : (Drupal.settings.gofast.metadataEditCount + 1); // do not use ++ operator: it will not work with advagg
+      // Make sure we have positive count even if actual count is negative
+      if(Drupal.settings.gofast.metadataEditCount <= 0){
+        Drupal.settings.gofast.metadataEditCount = 1;
+      }
       Gofast.Poll.abort();
     },
     decrementMetadataEditCounter: function() {
       Drupal.settings.gofast.metadataEditCount =  typeof Drupal.settings.gofast.metadataEditCount == "undefined" ?  0 : (Drupal.settings.gofast.metadataEditCount - 1); // do not use -- operator: it will not work with advagg
-      if (Drupal.settings.gofast.metadataEditCount == 0) {
+      // Trigger poll if count is 0 or less
+      if (Drupal.settings.gofast.metadataEditCount <= 0) {
+        Drupal.settings.gofast.metadataEditCount = 0;
         Gofast.Poll.run();
       }
     },
@@ -1510,7 +1562,7 @@ var Gofast = (function($) {
         target.classList.remove("open");
         target.querySelector("i").classList.remove("fa-chevron-right");
         target.querySelector("i").classList.add("fa-chevron-left");
-        $(".mainContent[class*=--collapsible-side] > .gofast-content__node").css("gridTemplateColumns", "97% 3%");
+        $(target).closest(".gofast-content__node").css("gridTemplateColumns", "97% 3%");
         $(target).parent().parent().find(".card-body").css("visibility", "hidden");
         $(target).parent().parent().find(".card-body").addClass("collapsed");
         // if metadata panel is collapsed, there is not enough room anymore for the contextual submenu to be shown on the right
@@ -1527,7 +1579,7 @@ var Gofast = (function($) {
         if($(target).attr("id") == "collapsible-space-metadata-panel-toggle"){
           gridRatio = "80% 20%";
         }
-        $(".mainContent[class*=--collapsible-side] > .gofast-content__node").css("gridTemplateColumns", gridRatio);
+        $(target).closest(".gofast-content__node").css("gridTemplateColumns", gridRatio);
         $(target).parent().parent().find(".card-body").css("visibility", "visible");
         $(target).parent().parent().find(".card-body").removeClass("collapsed");
         $(".gofastDropdown > .dropdown-menu").removeClass("dropleft");
@@ -1540,6 +1592,46 @@ var Gofast = (function($) {
         $("#file_browser_full_files").trigger("resize");
       }, 500)
     },
+    /**
+     * Fetches the currently logged-in user's lofin.
+     * @returns {Promise<string|undefined>} A promise that resolves to the user's login string, 
+     * or undefined if the user is not found.
+     * @throws {Error} Will throw an error if the network request fails.
+    */
+    whoAmI: async function() {
+      const me = await $.get("/gofast/user/whoami");
+      return me?.login;
+    },
+    /**
+     * Overwrites the value at each dot-path in `target` with the one from `source`.
+     * The matched node is fully replaced rather than deep-merged.
+     *
+     * @param {Object} target The object to mutate.
+     * @param {Object} source The object to read replacement values from.
+     * @param {string|string[]} paths One or more dot-paths, e.g. "a.b.c".
+     * @return {Object} The mutated target object.
+     */
+    overwriteObjectPaths: function (target, source, paths) {
+      [].concat(paths || []).forEach(function (path) {
+        var keys = path.split('.');
+        var lastKey = keys.pop();
+        var sourceNode = source;
+        var targetNode = target;
+
+        // Walk down to the parent of the node to overwrite, on both sides.
+        keys.forEach(function (key) {
+          sourceNode = sourceNode && sourceNode[key];
+          targetNode = targetNode[key] = targetNode[key] || {};
+        });
+
+        // Direct assignment (no merge) of the targeted node.
+        if (sourceNode) {
+          targetNode[lastKey] = sourceNode[lastKey];
+        }
+      });
+
+      return target;
+    }
   };
 })(jQuery);
 

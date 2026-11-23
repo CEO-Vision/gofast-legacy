@@ -40,13 +40,20 @@
 function bootstrap_keen_select($variables) {
   $element = $variables['element'];
   element_set_attributes($element, array('id', 'name', 'size'));
-  if(!in_array('simple-select',$element['#attributes']['class']) && !in_array('gofast_display_none',$element['#attributes']['class'])){
+
+  $has_classes = isset($element['#attributes']['class']);
+
+  $has_simple_select_class = $has_classes && in_array('simple-select',$element['#attributes']['class']);
+  $has_gf_display_none_class = $has_classes && in_array('gofast_display_none',$element['#attributes']['class']);
+
+  $should_add_select2_classes = !$has_simple_select_class && !$has_gf_display_none_class;
+  if ($should_add_select2_classes) {
     _form_set_class($element, array('select2 gofastSelect2'));
   }
   return '<select' . drupal_attributes($element['#attributes']) . '>' . bootstrap_keen_form_select_options($element) . '</select>';
 }
 
-function bootstrap_keen_form_select_options($element, $choices = NULL) {
+function bootstrap_keen_form_select_options($element, $choices = NULL, $parent_keys = []) {
   if (!isset($choices)) {
     $choices = $element ['#options'];
   }
@@ -57,13 +64,44 @@ function bootstrap_keen_form_select_options($element, $choices = NULL) {
   $dataAttr = isset($element['#extra_option_attributes']) ? $element['#extra_option_attributes'] : null;
 
   foreach ($choices as $key => $choice) {
-    if (is_array($choice)) {
-      $options .= '<optgroup label="' . check_plain($key) . '">';
-      $options .= form_select_options($element, $choice);
-      $options .= '</optgroup>';
+    if (is_object($choice)) {
+      $options .= bootstrap_keen_form_select_options($element, $choice->option, $parent_keys);
+      continue;
     }
-    elseif (is_object($choice)) {
-      $options .= form_select_options($element, $choice->option);
+
+    // Compute path within '#option_properties' where option's properties are found.
+    $properties_path = [];
+    // Push each parent followed by '#children', effectively adding a
+    // '#children' value in between each parent key and...
+    foreach ($parent_keys as $parent) {
+      $properties_path[] = $parent;
+      $properties_path[] = '#children';
+    }
+    // ...the current child key added alone at the end of the path.
+    $properties_path[] = $key;
+
+    $option_has_properties = FALSE;
+    $option_properties_ref = NULL;
+    if (isset($element['#options_properties'])) {
+      $option_properties_ref = &drupal_array_get_nested_value(
+        $element['#options_properties'],
+        // Basically should switch between [$parent_key[0], '#children', $key] and [$key] as needed.
+        $properties_path,
+        $option_has_properties,
+      );
+    }
+    $option_has_attributes = $option_has_properties && isset($option_properties_ref['#attributes']);
+
+    $attributes = $option_has_attributes ? $option_properties_ref['#attributes'] : [];
+
+    if (is_array($choice)) {
+      $attributes_string = drupal_attributes($attributes);
+      $options .= '<optgroup label="' . check_plain($key) . '"' . $attributes_string . '>';
+      // Recurse for <optgroup>'s <option> elements, parent_keys array is
+      // intentionally not reused as any element nested more than one level are
+      // ignored in HTML's <select> element. (Same applies to select2 lib.)
+      $options .= bootstrap_keen_form_select_options($element, $choice, [$key]);
+      $options .= '</optgroup>';
     }
     else {
       $key = (string) $key;
@@ -73,9 +111,22 @@ function bootstrap_keen_form_select_options($element, $choices = NULL) {
       else {
         $selected = '';
       }
-      $groupid = $dataAttr !== null ? ' data-groupid="'. $dataAttr[$key] .'"' : '';
-      $options .= '<option value="' . check_plain($key) . '"' . $selected . '' . $groupid . '>' . check_plain($choice) . '</option>';
+
+      if ($dataAttr !== null) {
+        $attributes['data-groupid'] = $dataAttr[$key];
+      }
+
+      $attributes_string = drupal_attributes($attributes);
+      $options .= '<option value="'
+        . check_plain($key)
+        . '"'
+        . $selected
+        . $attributes_string
+        . '>'
+        . check_plain($choice)
+        . '</option>';
     }
+    unset($option_properties_ref);
   }
   return $options;
 }
@@ -847,9 +898,7 @@ function bootstrap_keen_preprocess_user_picture(&$variables) {
       $filepath = variable_get('user_picture_default', '');
     }
     if (isset($filepath)) {
-      $alt = t("@user's picture", array(
-        '@user' => format_username($account),
-      ));
+      $alt = gofast_user_display_name($account, TRUE);
 
       // If the image does not have a valid Drupal scheme (for eg. HTTP),
       // don't load image styles.
@@ -870,7 +919,7 @@ function bootstrap_keen_preprocess_user_picture(&$variables) {
           'attributes' => $variables['attributes']
         ));
       }
-      if (!empty($account->uid) && user_access('access user profiles')) {
+      if (!empty($account->uid) && $account->uid > 1 && user_access('access user profiles')) {
         $attributes = array(
           'attributes' => array(
             'title' => t('View user profile.'),

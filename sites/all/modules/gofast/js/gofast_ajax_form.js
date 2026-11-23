@@ -78,6 +78,12 @@
     if (response.type && ["private_space", "public", "extranet", "organisation", "group"].includes(response.type)) {
       overrideEssentialAjax = true;
     }
+
+    // Force refresh webform browser tab so new form appears dynamically
+    if (response.type === 'webform') {
+      Gofast.sideFileBrowser.refreshBrowser('webform-browser', { open: false });
+    }
+
     Drupal.CTools.Modal.dismiss();
     if(Gofast.isMobile() && !Gofast.isTablet()){
         window.location.href = location.origin + "/" + response.data;

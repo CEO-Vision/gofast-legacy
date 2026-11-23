@@ -64,8 +64,20 @@ body .tagify__dropdown {
 }
 
 /* Tags items */
-.tagify__tag{
+.tagify__tag {
     white-space: nowrap;
+}
+
+.EditableInput .tagify__tag {
+    /* Theme wants to handle gaps and spacing from container using tag margins,
+    but its implementation yields inconsistent spacing so we handle it ourselves
+    with more modern straight-forward CSS (flexbox gap) */
+    margin: 0;
+}
+
+.EditableInput .tagify {
+    gap: 5px;
+    padding: 5px;
 }
 
 .tagify__tag:hover .tagify__tag__avatar-wrap{
@@ -100,14 +112,27 @@ body .tagify__dropdown {
 }
 
 /** fix sizing and alignment when an icon is inserted before the tag text */
-.tagify__tag > div {
+.tagify tag.tagify__tag > div {
     position: relative;
     display: flex;
     align-items: center;
     gap: .25rem;
+
+    /* Parent tag element already has plenty of horizontal padding */
+    padding-left: 0;
+    padding-right: 0;
 }
 .tagify__tag > div > div {
     order: 0 !important;
+}
+
+.tagify__tag .gf_tagify__tag_icon {
+    /* Force width to at least contain icon to not cut it off.
+    The 2ch size minimum should contain most icons independently of their own
+    size. This should make the size of the container generally more consistent. */
+    min-width: 2ch;
+    flex-basis: 2ch;
+    flex-shrink: 0;
 }
 
 /** prevent glitches on small inputs */
@@ -127,17 +152,17 @@ body .tagify__dropdown {
 }
 
 /** tagify overrides for small filtering inputs */
-:where(#alfresco-item-node-form, .datatable-header) .tagify{
+:where(.datatable-header) .tagify{
     max-height: 6ch;
     overflow: hidden;
     flex-wrap: unset !important;
 }
 
-:where(#alfresco-item-node-form, .datatable-header) tag + span.tagify__input{
+:where(.datatable-header) tag + span.tagify__input{
     min-width: 0;
 }
 
-:where(#alfresco-item-node-form, .datatable-header) .tagify--focus{
+:where(.datatable-header) .tagify--focus{
     width: 110px !important;
     min-width: min-content !important;
     z-index: 10;

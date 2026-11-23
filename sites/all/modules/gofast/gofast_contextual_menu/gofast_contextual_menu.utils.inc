@@ -7,6 +7,7 @@ function gofast_contextual_menu_get_all_items($node, $browser_path, $from_tree, 
   $detect = new Mobile_Detect;
   
   // Get path 
+  $browser_path = addslashes($browser_path);
   $browser_path_link_folder = parse_url($browser_path);
   
   // Encode path
@@ -31,7 +32,10 @@ function gofast_contextual_menu_get_all_items($node, $browser_path, $from_tree, 
   $bookmark_is_flagged = $bookmark_flag->is_flagged($node->nid);
   $webform_is_closed = gofast_webform_is_closed($node);
   if($node == null || $node->type == "folder"){
-    while($parent_nid == false){
+    // Try to get a space node id for each parent folders until either a space
+    // node has been found or we reached the root path which has no node and
+    // no parent.
+    while (!$parent_nid && $parent_path !== '/') {
       $parent_nid = gofast_ajax_file_browser_get_nid_from_href($parent_path);
       $parent_path = dirname($parent_path);
     }
@@ -84,7 +88,7 @@ function gofast_contextual_menu_get_all_items($node, $browser_path, $from_tree, 
       'href' => '',
       'icon_class' => 'fa fa-arrow-right',
       'target' => '',
-      'onClick' => 'Gofast.ITHit.linkToFolder(\''.str_replace("'", "\'", $browser_path).'\','.$nid.')',
+      'onClick' => 'Gofast.ITHit.linkToFolder(\'' . $browser_path .'\','.$nid.')',
       'title' => t('Copy the link from this location to the clipboard'),
       'page' => array('gofast_contextual_menu_is_from_browser'),
       'type' => array('group', 'organisation', 'extranet', 'public', 'folder'),
@@ -131,7 +135,11 @@ function gofast_contextual_menu_get_all_items($node, $browser_path, $from_tree, 
       'title' => t('Ask to join this space', array(), array('context' => 'gofast')),
       'page' => array('gofast_contextual_menu_all_pages', 'gofast_contextual_menu_node_is_not_delete'),
       'type' => array('group','organisation', 'extranet'),
-      'access_function' => array('gofast_contextual_menu_is_not_root_space', 'gofast_contextual_menu_is_not_member'),
+      'access_function' => array(
+        'gofast_contextual_menu_is_not_root_space',
+        'gofast_contextual_menu_is_not_member',
+        'gofast_contextual_menu_require_confidential_clearance_in_confidential_space',
+      ),
       'divider' => TRUE,
       'hide_from_essential' => TRUE
     ],
@@ -147,6 +155,21 @@ function gofast_contextual_menu_get_all_items($node, $browser_path, $from_tree, 
       'page' => array('gofast_contextual_menu_node_is_delete'),
       'type' => array('alfresco_item', 'article', 'webform', 'forum', 'conference'),
       'access_function' => array('gofast_contextual_menu_user_can_delete_node', 'gofast_contextual_menu_node_not_locked', 'gofast_contextual_menu_node_not_archived', 'gofast_contextual_menu_can_restore_node'),
+      'hide_from_mobile' => TRUE,
+      'hide_from_essential' => FALSE
+     ],
+     'restore_space' => [
+      'text' =>  t('Restore space', array(), array('context' => 'gofast')) ,
+      'title' => t('Restore space', array(), array('context' => 'gofast')),
+      'link_id' => "restore_space",
+      'link_class' => 'ctools-use-modal',
+      'href' => '/modal/nojs/gofast_og/restore_space/' . $node->nid,
+      'icon_class' => "fas fa-trash-undo",
+      'target' => '',
+      'onClick' => '',
+      'page' => array('gofast_contextual_menu_node_is_delete'),
+      'type' => array('group', 'extranet', 'organisation'),
+      'access_function' => array('gofast_contextual_menu_user_can_delete_space'),
       'hide_from_mobile' => TRUE,
       'hide_from_essential' => FALSE
      ],
@@ -179,7 +202,7 @@ function gofast_contextual_menu_get_all_items($node, $browser_path, $from_tree, 
       'text' => t('Share/Edit locations', array(), array('context' => 'gofast:gofast_views')) . '&nbsp;<span class="label label-lg label-light-warning label-inline">BETA</span>',
       'link_id' => "manage-folder-locations",
       'link_class' => 'ctools-use-modal',
-      'href' => '/modal/nojs/folder/manage-locations?path=' . $browser_path,
+      'href' => '/modal/nojs/folder/manage-locations?path=' . $browser_path_link_folder,
       'onclick' => 'Gofast.ITHit.bulkSelected(event)',
       'icon_class' => "fa fa-share-alt n-color",
       'title' => t('Manage locations of this folder'),
@@ -267,7 +290,7 @@ function gofast_contextual_menu_get_all_items($node, $browser_path, $from_tree, 
       'onClick' => '',
       'title' => t("Add existing Users/Userslists to this space"),
       'page' => array('gofast_contextual_menu_all_pages', 'gofast_contextual_menu_node_is_not_delete', 'gofast_contextual_menu_space_not_archived'),
-      'type' => array('group', 'organisation', 'extranet', 'public'),
+      'type' => array('group', 'organisation', 'extranet'),
       'access_function' => array('gofast_contextual_menu_is_not_root_space', 'gofast_contextual_menu_user_is_administrator'),
     ],
     'create_user_into_group' => [
@@ -279,8 +302,8 @@ function gofast_contextual_menu_get_all_items($node, $browser_path, $from_tree, 
       'onClick' => '',
       'title' => t("Create user in this group"),
       'page' => array('gofast_contextual_menu_all_pages', 'gofast_contextual_menu_node_is_not_delete', 'gofast_contextual_menu_space_not_archived'),
-      'type' => array('group', 'organisation', 'extranet', 'public'),
-      'access_function' => array('gofast_contextual_menu_user_is_administrator')
+      'type' => array('group', 'organisation', 'extranet'),
+      'access_function' => array('gofast_contextual_menu_user_is_administrator', 'gofast_contextual_menu_group_is_confidential')
     ],
     'add_subspace' => [
       'text' => t("Add Sub-space"),
@@ -291,7 +314,7 @@ function gofast_contextual_menu_get_all_items($node, $browser_path, $from_tree, 
       'onClick' => '',
       'title' => t("Add " . gofast_og_node_types()[$node->type] . " Sub-space"),
       'page' => array('gofast_contextual_menu_all_pages', 'gofast_contextual_menu_node_is_not_delete', 'gofast_contextual_menu_space_not_archived'),
-      'type' => array('group', 'organisation', 'extranet'),
+      'type' => array('group', 'organisation', 'extranet', 'public'),
       'access_function' => array('gofast_contextual_menu_user_can_create_subspace')
     ],
     'manage_chat_room' => [
@@ -320,7 +343,7 @@ function gofast_contextual_menu_get_all_items($node, $browser_path, $from_tree, 
       'href' => $bookmark_folder_is_flagged ? "" : "/modal/nojs/bookmark_collection/flag/0/bookmark_folder_flag_tree?folder_reference={$folder_reference}",
     ],
     'co-edit_onlyoffice' => [
-      'text' => t('Co-edit with onlyoffice', array(), array('context' => 'gofast')),
+      'text' => t('Co-edit with OnlyOffice', array(), array('context' => 'gofast')),
       'link_id' => 'contextual_btn_onlyoffice',
       'link_class' => 'gofast-non-ajax contextual_link_onlyoffice',
       'href' => $base_url . '/onlyoffice/editor/' . $node->nid . '?start=' . time(),
@@ -345,7 +368,7 @@ function gofast_contextual_menu_get_all_items($node, $browser_path, $from_tree, 
       'title' => '',
       'page' => array('gofast_contextual_menu_all_pages', 'gofast_contextual_menu_node_is_not_delete'),
       'type' => array('alfresco_item'),
-      'access_function' => array('gofast_contextual_menu_user_can_update_node', 'gofast_contextual_menu_node_not_archived', 'gofast_contextual_menu_node_not_locked', 'gofast_contextual_menu_node_is_desktop_edition_enabled'),
+      'access_function' => array('gofast_contextual_menu_user_can_update_node', 'gofast_contextual_menu_node_not_archived', 'gofast_contextual_menu_node_not_locked', 'gofast_contextual_menu_node_is_desktop_edition_enabled', 'gofast_contextual_menu_is_not_confidential_internal'),
       'hide_from_mobile' => TRUE,
       "hide_from_tablet" => TRUE,
     ],
@@ -401,8 +424,8 @@ function gofast_contextual_menu_get_all_items($node, $browser_path, $from_tree, 
       'icon_class' => "fa fa-share-alt n-color",
       'title' => $node->type == "article" ? t('Manage location of this wiki article') : t('Manage locations of this document'),
       'page' => array('gofast_contextual_menu_all_pages', 'gofast_contextual_menu_node_is_not_delete'),
-      'type' => array('alfresco_item', 'article', 'webform', 'external_page', 'forum'),
-      'access_function' => array('gofast_contextual_menu_user_can_update_node', 'gofast_contextual_menu_node_not_locked', 'gofast_contextual_menu_node_not_in_mirror_folder', 'gofaxt_contextual_menu_is_not_homepage', 'gofaxt_contextual_menu_wiki_is_subwiki_home'),
+      'type' => array('alfresco_item', 'article', 'external_page', 'forum'),
+      'access_function' => array('gofast_contextual_menu_user_can_update_node', 'gofast_contextual_menu_node_not_locked', 'gofast_contextual_menu_node_not_in_mirror_folder', 'gofaxt_contextual_menu_is_not_homepage', 'gofaxt_contextual_menu_wiki_is_subwiki_home', 'gofast_contextual_menu_is_not_confidential'),
     ],
     'share_by_mail' => [
       'text' => t('Share by email', array(), array('context' => 'gofast')),
@@ -413,7 +436,7 @@ function gofast_contextual_menu_get_all_items($node, $browser_path, $from_tree, 
       'icon_class' => "fa fa-envelope",
       'title' => t('Share by mail this document'),
       'page' => array('gofast_contextual_menu_all_pages', 'gofast_contextual_menu_node_is_not_delete'),
-      'type' => array('alfresco_item', 'article', 'external_page'),
+      'type' => array('alfresco_item', 'article', 'external_page', 'webform'),
       'access_function' => array('gofast_contextual_menu_is_not_confidential_internal'),
     ],
     'download' => [
@@ -452,7 +475,7 @@ function gofast_contextual_menu_get_all_items($node, $browser_path, $from_tree, 
       'hide_from_essential' => FALSE
     ],
     'share_webform' => [
-      'text' => t('Share webform', array(), array('context' => 'gofast')),
+      'text' => t('Share the webform', array(), array('context' => 'gofast_webform')),
       'link_id' => "share_webform",
       'link_class' => 'share-webform permalink',
       'href' => "/drupal/survey/$node->nid?hash=". gofast_webform_create_expiration_hash($node->nid),
@@ -474,7 +497,7 @@ function gofast_contextual_menu_get_all_items($node, $browser_path, $from_tree, 
       'title' => t('Rename this document'),
       'page' => array('gofast_contextual_menu_is_from_browser', 'gofast_contextual_menu_node_is_not_delete'),
       'type' => array('alfresco_item', 'article'),
-      'access_function' => array('gofast_contextual_menu_user_can_update_node', 'gofast_contextual_menu_node_not_locked'),
+      'access_function' => array('gofast_contextual_menu_user_can_update_node', 'gofast_contextual_menu_node_not_locked', 'gofaxt_contextual_menu_is_not_homepage'),
       'divider' => TRUE
     ],
     'create_from_template' => [
@@ -614,18 +637,19 @@ function gofast_contextual_menu_get_more_actions($node, $browser_path, $fromTree
       'title' => !gofast_group_is_archive($node) ? t('Archive this space', array(), array('context' => 'gofast')) :  t('Unarchive this space', array(), array('context' => 'gofast')),
       'page' => array('gofast_contextual_menu_all_pages', 'gofast_contextual_menu_node_is_not_delete'),
       'type' => array('group', 'extranet'),
-      'access_function' => array('gofast_contextual_menu_is_not_root_space', 'gofast_contextual_menu_user_is_administrator')
+      'access_function' => array('gofast_contextual_menu_is_not_root_space', 'gofast_contextual_menu_user_is_administrator', 'gofast_contextual_menu_has_no_subspace')
     ],
     'delete_space' => [
-      // if other custom text values, create function to handle displayed text
-      'text' => gofast_contextual_menu_has_no_subspace($node) ? t('Delete', array(), array('context' => 'gofast')) : t("Remove subspaces to delete", array(), array("context" => "gofast")),
+      // use access functions returning messages to display tooltips when disabled
+      // don't change label when disabling
+      'text' => t('Delete', array(), array('context' => 'gofast')),
       'link_id' => '',
       'link_class' => 'ctools-use-modal',
       'href' => "/modal/nojs/gofast_og/delete_space/{$node->nid}",
       'icon_class' => 'fa fa-trash',
       'target' => '',
       'onClick' => '',
-      'title' =>  gofast_contextual_menu_has_no_subspace($node) ? t('Delete', array(), array('context' => 'gofast')) : t("Remove subspaces to delete", array(), array("context" => "gofast")),
+      'title' => t('Delete', array(), array('context' => 'gofast')),
       'page' => array('gofast_contextual_menu_all_pages', 'gofast_contextual_menu_node_is_not_delete'),
       'type' => array('group', 'organisation', 'extranet', 'public'),
       'access_function' => array('gofast_contextual_menu_is_not_root_space', 'gofast_contextual_menu_user_is_administrator', 'gofast_contextual_menu_user_can_delete_space', 'gofast_contextual_menu_has_no_subspace', 'gofast_contextual_menu_space_not_archived'),
@@ -687,19 +711,6 @@ function gofast_contextual_menu_get_more_actions($node, $browser_path, $fromTree
       'type' => array('alfresco_item'),
       'access_function' => '',
     ],
-    'compress' => [
-      'link_class' => 'compress-files',
-      'text' => t('Compress', array(), array('context' => 'gofast')),
-      'link_id' => 'compress',
-      'href' => '',
-      'icon_class' => 'fa fa-file-archive-o n-color',
-      'target' => '',
-      'onClick' => 'Gofast.ITHit.bulkSelected(event, \'' . $browser_path .
-        '\');$(\'.gofast-node-actions.open\').click();',
-      'title' => t('Compress the selected file'),
-      'type' => array('alfresco_item', 'article'),
-      'access_function' => array('gofast_contextual_menu_node_is_not_delete'),
-    ],
     'convert_onlyoffice' => [
       'text' => t('Convert', array(), array('context' => 'gofast')),
       'link_id' => '',
@@ -719,7 +730,7 @@ function gofast_contextual_menu_get_more_actions($node, $browser_path, $fromTree
       'href' => '',
       'icon_class' => "fa fa-clone",
       'link_class' => 'gf-filebrowser-full-only',
-      'onClick' => 'Gofast.ITHit.duplicate(\'' . $node->nid . '\')',
+      'onClick' => 'Gofast.ITHit.duplicateSelected()',
       'page' => array('gofast_contextual_menu_is_from_browser', 'gofast_contextual_menu_node_is_not_delete'),
       'type' => array("alfresco_item"),
       'access_function' => array('gofast_contextual_menu_user_can_update_node'),
@@ -796,7 +807,7 @@ function gofast_contextual_menu_get_more_actions($node, $browser_path, $fromTree
       'access_function' => '',
       'divider' => TRUE,
       'hide_from_mobile' => TRUE,
-      'hide_from_essential' => TRUE
+      'hide_from_essential' => FALSE,
     ],
     'bookmarks' => [
       'text' => $bookmark_is_flagged ? t('Remove this from bookmark', array(), array("context" => "gofast:gofast_contextual_menu")) : t('Bookmark this', array(), array("context" => "gofast:gofast_contextual_menu")),
@@ -874,7 +885,10 @@ function gofast_contextual_menu_get_node_actions_dropdown($node, $browser_path =
   //Easily memorise last main entry and its index to put a divider before the "More ..." dropdown
   $last_action = array();
   $action_counter = 0;
-  $is_in_store = gofast_contextual_menu_is_in_store($node);
+  $is_in_store = TRUE;
+  if ($node->status == NODE_PUBLISHED) {
+    $is_in_store = gofast_contextual_menu_is_in_store($node);
+  }
   $is_from_browser = isset($_POST["fromBrowser"]) && gofast_contextual_menu_not_from_tree($node, $browser_path, $fromTree);
   $node_actions = array();
   foreach (gofast_contextual_menu_get_all_items($node, $browser_path, $fromTree) as $key => $action) {
@@ -1146,6 +1160,20 @@ function gofast_contextual_menu_get_node_actions_dropdown($node, $browser_path =
       }
     }
   }
+
+    if (empty($node_actions)) {
+    $node_actions[] = array(
+      'themed' => theme('gofast_link_generic', array(
+        'text'       => t('No actions available'),
+        'link_class' => 'pl-14 d-flex navi-item disabled',
+        'title'      => t('No actions available'),
+        'icon_class' => 'fas fa-ban',
+        'dropleft'   => false,
+      )),
+      'children' => array(),
+    );
+  }
+  
   // print "<pre>"; print_r($node_actions); exit;
   return $node_actions;
 }
@@ -1463,7 +1491,7 @@ function gofast_contextual_menu_folder_is_not_template($node, $browser_path, $fr
 }
 
 function gofast_contextual_menu_folder_is_not_wiki($node, $browser_path, $fromTree, $menu_item){
-  $is_wiki = substr($browser_path, -strlen("Wikis")) === "Wikis" || substr($browser_path, -strlen("Wikis/")) === "Wikis/";
+  $is_wiki = basename(urldecode($browser_path)) === "Wikis";
   if ($is_wiki) {
     return t("Wikis folders can't be deleted", [], ["context" => "gofast"]);
   } else {
@@ -1472,7 +1500,7 @@ function gofast_contextual_menu_folder_is_not_wiki($node, $browser_path, $fromTr
 }
 
 function gofast_contextual_menu_node_is_not_template($node, $browser_path, $fromTree, $menu_item){
-  $is_template = substr($browser_path, -strlen("TEMPLATES")) === "TEMPLATES" || substr($browser_path, -strlen("TEMPLATES/")) === "TEMPLATES/";
+  $is_template = basename(urldecode($browser_path)) === "TEMPLATES";
   if ($is_template) {
     return t("Template folders can't be renamed or deleted", [], ["context" => "gofast"]);
   } else {
@@ -1496,9 +1524,9 @@ function gofast_contextual_menu_user_can_delete_node($node, $browser_path, $from
   }
 }
 function gofast_contextual_menu_can_restore_node($node, $browser_path, $from_tree, $menu_item){
-  
-  $item = gofast_cmis_is_deleted_from_alfresco($node->field_reference[LANGUAGE_NONE][0]["value"]);
-  $item_is_deleted = isset($item);
+  $reference = gofast_cmis_node_get_item_id($node);
+  $item = gofast_cmis_alfresco_api_get_trashed_node($reference, TRUE);
+  $item_is_deleted = !empty($item);
   
   if(!$item_is_deleted){
     return t("This file has been removed from the trash and cannot be restored.");
@@ -1521,7 +1549,6 @@ function gofast_contextual_menu_user_can_publish_node($node, $browser_path, $fro
 
 
 function gofast_contextual_menu_rename_onclick_folder($browser_path, $from_tree, $item_type = "folder"){
-  $browser_path = addslashes($browser_path);
   if ($from_tree) {
     return "Gofast.ITHit.renameTree('{$browser_path}', '{$item_type}')";
   } else {
@@ -1648,7 +1675,7 @@ function gofast_contextual_menu_edit_link($node){
   ) : null;
 }
 
-function gofast_contextual_menu_create_flag($flag_name, $flag_icon, $array_type = "alfresco_item", $divider = FALSE,  $entity_id, $variables = array()){
+function gofast_contextual_menu_create_flag($flag_name, $flag_icon, $array_type = "alfresco_item", $divider = FALSE,  $entity_id = NULL, $variables = array()){
   $flag = flag_get_flag($flag_name);
   if (!$flag) {
     // Flag does not exist.
@@ -1681,6 +1708,7 @@ function gofast_contextual_menu_create_flag($flag_name, $flag_icon, $array_type 
   $href = isset($link['href']) ? check_url(url($link['href'], $link)) : FALSE;
   $text = isset($link['title']) ? $link['title'] : $flag->get_label($action . '_short', $entity_id);
   $title = isset($link['attributes']['title']) ? check_plain($link['attributes']['title']) : check_plain(strip_tags($flag->get_label($action . '_long', $entity_id)));
+
   return [
     'href' => $href,
     'flag' => TRUE,
@@ -1816,9 +1844,13 @@ function gofast_contextual_menu_user_can_delete_space($node, $browser_path, $fro
 // }
 
 function gofast_contextual_menu_is_not_confidential_internal($node, $browser_path, $fromTree, $menu_item){
-  $is_not_confidential = !(isset($node->field_criticity['und'][0]['tid']) && taxonomy_term_load($node->field_criticity['und'][0]['tid'])->name == "Confidential Data");
-  $is_not_internal = !(isset($node->field_criticity['und'][0]['tid']) && taxonomy_term_load($node->field_criticity['und'][0]['tid'])->name == "Internal Distribution");
-  return $is_not_confidential && $is_not_internal;
+  return !gofast_taxonomy_is_node_confidential_or_internal($node);
+}
+
+function gofast_contextual_menu_is_not_confidential($node, $browser_path, $fromTree, $menu_item) {
+  $tooltip = gofast_og_is_space($node) ? t("This space is confidential", array(), array('context' => 'gofast:gofast_cmis')) : t("This document is confidential", array(), array('context' => 'gofast:gofast_cmis'));
+
+  return gofast_taxonomy_is_node_confidential($node) ? $tooltip : TRUE;
 }
 
 function gofast_contextual_menu_is_not_member($node){
@@ -1860,9 +1892,21 @@ function gofast_contextual_menu_is_not_multifiled($node) {
     }
 }
 
+/**
+ * Access control function for denying authorization when deleting a space when
+ * said space has subspaces
+ *
+ * @param object $node The node object that is subject to access control
+ * @return bool|string true if access is granted, a string if access is refused
+ *  with a message to display, false when access is refused and no message
+ *  should be displayed
+ */
 function gofast_contextual_menu_has_no_subspace($node) {
   $children = gofast_og_get_children($node->nid);
-  return empty($children);
+  if (!empty($children)) {
+    return t("Remove subspaces to perform this action", array(), array("context" => "gofast"));
+  }
+  return TRUE;
 }
 
 function gofast_contextual_menu_is_not_picture($node) {
@@ -1913,17 +1957,14 @@ function gofaxt_contextual_menu_is_not_homepage($node, $browser_path, $fromTree,
 function gofast_contextual_menu_folder_is_not_mirroring($node, $browser_path){
   $path = str_replace('/alfresco/webdav', "", $browser_path);
 
-  $item = gofast_cmis_item_get_by_path(urldecode($path));
+  $item = gofast_cmis_item_get_by_path(rawurldecode($path));
   $reference = $item->properties['alfcmis:nodeRef'];
 
-  $folder_parents = gofast_cmis_webservice_get_node_parents($reference);
-
-  if ($folder_parents && count($folder_parents) > 1) {
-    return t('The folder have multiple locations, then you can\'t delete it.');
-    exit;
-  }else{
-    return true;
+  if (!gofast_cmis_alfresco_node_has_multiple_parents($reference)) {
+    return TRUE;
   }
+
+  return t('The folder have multiple locations, then you can\'t delete it.');
 }
 
 
@@ -1937,7 +1978,7 @@ function gofast_contextual_menu_parent_is_not_mirroring($node, $browser_path){
 
   $path = str_replace('/alfresco/webdav', "", $browser_path);
 
-  $item = gofast_cmis_item_get_by_path(urldecode($path));
+  $item = gofast_cmis_item_get_by_path(rawurldecode($path));
   $reference = $item->properties['alfcmis:nodeRef'];
 
   $folder_parents = gofast_cmis_webservice_get_node_parents($reference);
@@ -1976,31 +2017,21 @@ function gofast_contextual_menu_node_not_in_mirror_folder($node, $browser_path){
 
 function gofast_contextual_menu_folder_nodes_are_not_multified($node, $browser_path){
   
-  // Reach all documents into folder
-  
   $path = str_replace('/alfresco/webdav', "", $browser_path);
   
-  $item = gofast_cmis_item_get_by_path(urldecode($path));
+  $item = gofast_cmis_item_get_by_path(rawurldecode($path));
   $reference = $item->properties['alfcmis:nodeRef'];
   
-  $folder_parents = gofast_cmis_webservice_get_node_parents($reference);
-  
   // If it's already a mirror folder, then can share it
-  if(count($folder_parents) > 1){
+  if (count((array) gofast_cmis_webservice_get_node_parents($reference)) > 1) {
     return true;
   }
   
-  // Get descendants
-  $descendants = gofast_cmis_webservice_item_get_descendants($reference, 'documents');
-  foreach ($descendants as $key => $descendant) {
-    
-    // Get all locations of the document
-    $locations = gofast_cmis_webservice_get_node_parents($descendant->id);
-    
-    // If more than 1 locations, it's a multified
-    if (count($locations) > 1) {
-      return t('Nodes inside have multiple locations, then the folder can be a mirror folder');
-    }
+  // Check all descendants in a single server-side call to avoid N individual
+  // HTTP calls that cause gateway timeouts on large folders.
+  $check = gofast_cmis_webservice_check_folder_descendants_shareable($reference);
+  if ($check !== FALSE && $check['hasMultifiedDocuments']) {
+    return t('Nodes inside have multiple locations, then the folder can be a mirror folder');
   }
   
   return true;
@@ -2008,50 +2039,21 @@ function gofast_contextual_menu_folder_nodes_are_not_multified($node, $browser_p
 }
 
 function gofast_contextual_menu_folder_folders_are_not_mirror($node, $browser_path){
-  $res = true;
 
   // Reach all folders into folder
   $path = str_replace('/alfresco/webdav', "", $browser_path);
 
-  $item = gofast_cmis_item_get_by_path(urldecode($path));
+  $item = gofast_cmis_item_get_by_path(rawurldecode($path));
   $reference = $item->properties['alfcmis:nodeRef'];
 
-  // Get descendants
-  $descendants = gofast_cmis_webservice_item_get_descendants($reference, 'folders');
-
-  foreach ($descendants as $key => $descendant) {
-
-    // Get reference with the path 
-    $descendant_reference = gofast_cmis_item_get_by_path($descendant)->properties['alfcmis:nodeRef'];
-    // Get all locations of the folder
-    $descendants_parents = gofast_cmis_webservice_get_node_parents($descendant_reference);
-    
-    if (count($descendants_parents) > 1) {
-      // Foreach $descendants_parents
-      foreach ($descendants_parents as $key => $descendant_parent) {
-        
-        // Get item
-        $descendant_parent_item = gofast_cmis_item_get_by_path($descendant_parent);
-        
-        // Get reference
-        $descendant_parent_reference = $descendant_parent_item->properties['alfcmis:nodeRef'];
-        
-        // Get all parents of the descendant$descendant_parent
-        $descendant_parent_parents = gofast_cmis_webservice_get_node_parents($descendant_parent_reference);
-        
-        // If more than 1 parents, it's a mirroring
-        if (count($descendant_parent_parents) <= 1) {
-          $res = false;
-        }
-      }
-    }
-  }
-
-  if($res == false){
+  // Check all descendants in a single server-side call to avoid N individual HTTP calls that cause gateway timeouts on large folders. 
+  // The result is cached by gofast_cmis_webservice_check_folder_descendants_shareable so calling both check functions for the same folder only triggers one call.
+  $check = gofast_cmis_webservice_check_folder_descendants_shareable($reference);
+  if ($check !== FALSE && $check['hasMirroredFolders']) {
     return t('There are mirrors folders inside folder, then you can\'t share it.');
   }
 
-  return $res;
+  return true;
 }
 
 function gofast_contextual_menu_node_is_pdf($node, $browser_path){
@@ -2089,4 +2091,45 @@ function gofaxt_contextual_menu_wiki_is_subwiki_home($node, $browser_path){
   }
   
   return TRUE;
+}
+
+/**
+ * Contextual menu access function for only allowing users that can change content confidentiality.
+ *
+ * As of now, only spaces have this confidentiality specific flag.
+ *
+ * @see `gofast_user_can_user_change_content_confidentiality` to simply check if
+ *  a user can change a content's confidentiality.
+ */
+function gofast_contextual_menu_can_change_content_confidentiality($_node, $_browser_path) {
+  if (gofast_user_can_user_change_content_confidentiality()) {
+    return TRUE;
+  }
+
+  return t('You cannot change the confidentiality of this space', [], ['context' => 'gofast']);
+}
+
+/**
+ * Contextual menu access function for only allowing users that have confidential
+ * clearance to interact with options in confidential space.
+ *
+ * As of now, only spaces have this confidentiality specific flag.
+ */
+function gofast_contextual_menu_require_confidential_clearance_in_confidential_space($node, $_browser_path) {
+  if (!gofast_group_is_confidential($node)) {
+    return TRUE;
+  }
+
+  if (gofast_user_can_user_access_confidential_content()) {
+    return TRUE;
+  }
+
+  return t('You do not have the clearance for this action on this space', [], ['context' => 'gofast']);
+}
+
+function gofast_contextual_menu_group_is_confidential($node, $_browser_path) {
+  if (!gofast_group_is_confidential($node)) {
+    return TRUE;
+  }
+  return t('You can not perform this action on confidential spaces', [], ['context' => 'gofast']);
 }

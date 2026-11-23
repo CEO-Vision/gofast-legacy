@@ -63,8 +63,8 @@
   </div>
 <?php endif; ?>
 <?php if ($is_document_tab) : ?>
-  <div class="tab-pane fade h-100 d-flex" id="documents_stats" role="tabpanel" aria-labelledby="documents_stats_header">
-      <div id="space-stats-container" class="space-documents-stats d-flex flex-column flex-grow-1">
+  <div class="tab-pane fade h-100" id="documents_stats" role="tabpanel" aria-labelledby="documents_stats_header">
+      <div id="space-stats-container" class="space-documents-stats d-flex flex-column h-100">
         <div id="space-stats-title" class="row justify-content-end">
           <h2 class="text-center space-documents-stats-title col-4"><?= t("Space documents statistics", array(), array("context" => "gofast:gofast_stats")) ?> </h2>
           <div id="space-stats-export-container" class="col-1 d-flex align-items-center">
@@ -125,7 +125,7 @@
                       <div class="stats-loader-container">
                         <div class="loader-blog"></div>
                       </div>
-                      <div class="radar-box w-100" style="aspect-ratio: 1/1;">
+                      <div class="radar-box w-100 overflow-hidden" style="aspect-ratio: 1/1;">
                         <div id="documents_radar_category_state"></div>
                       </div>
                     </div>

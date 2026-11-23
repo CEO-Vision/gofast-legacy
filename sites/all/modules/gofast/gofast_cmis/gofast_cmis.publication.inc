@@ -393,6 +393,33 @@ function gofast_cmis_node_publish_form_submit_get_selected_groups(&$selected_gro
 }
 
 /**
+ * Lists every metadata declared through hook_declare_metadatas() (any module),
+ * keeps only those flagged with "keep_on_publication" => TRUE, and reads their
+ * value on the source node. Standard or client-specific does not matter: we
+ * trust the flag set by whoever declared the metadata.
+ *
+ * @param object $source_node
+ * @return array Flat map [field_machine_name => field value], only for fields that have a value.
+ */
+function gofast_cmis_get_publication_kept_metadata($source_node) {
+  $kept = array();
+  foreach (gofast_metadata_get_metadata_from_node($source_node) as $declarations) {
+    foreach ($declarations as $fields) {
+      foreach ($fields as $field_key => $prop) {
+        if (empty($prop['keep_on_publication']) || !$prop['keep_on_publication']) {
+          continue;
+        }
+        $field = $prop['name'] ?? $field_key;
+        if (!empty($source_node->{$field}[LANGUAGE_NONE])) {
+          $kept[$field] = $source_node->{$field}[LANGUAGE_NONE];
+        }
+      }
+    }
+  }
+  return $kept;
+}
+
+/**
  * Build the $options array used to create a publication.
  * @return array $options
  */
@@ -420,6 +447,10 @@ function gofast_cmis_node_publish_form_submit_get_options($node, $config, $file)
     $options["category"] = $source_node->field_category[LANGUAGE_NONE];
     $options["classification"] = $source_node->field_classification[LANGUAGE_NONE];
     $options["custom_date"] = $source_node->field_custom_date[LANGUAGE_NONE];
+    $options["state"] = $source_node->field_state[LANGUAGE_NONE];
+    $options["document_reference"] = $source_node->field_document_reference[LANGUAGE_NONE];
+    $options["date"] = $source_node->field_date[LANGUAGE_NONE];
+    $options["kept_metadata"] = gofast_cmis_get_publication_kept_metadata($source_node);
   }
   return $options;
 }
@@ -451,6 +482,10 @@ function gofast_cmis_node_publish_form_submit($form, &$form_state) {
   $commands = gofast_cmis_publish_get_ajax_commands($publication->nid, $form, $form_state);
   
   print(ajax_render($commands));
+  // Ensure that the user is redirected to the new node 
+  // without waiting for processes in drupal_register_shutdown_function.
+  fastcgi_finish_request();
+
   exit;
 }
 
@@ -1159,20 +1194,18 @@ function gofast_cmis_publication_create($title, $options) {
 
   $cmis_as_publisher = $options['publish_as_broadcaster'] === 1 ? TRUE : FALSE;
 
-  //Update the selected folder to allow user to write in it.
-  $location_item_ids = array();
-  if ($cmis_as_publisher) {
-    foreach ($locations as $location) {
-      //$location_item_ids[] = gofast_cmis_item_get_by_path($location['value'])->id;
-    }
-    foreach ($location_item_ids as $location_item_id) {
-      //gofast_cmis_webservice_item_set_permission($location_item_id, $options['author']->name);
-    }
-  }
-
   // Upload the file to the remote locations (main location as main for publication if possible)
   $target_item = isset($options['main_location']) ? gofast_cmis_item_get_by_path($options['main_location']) : gofast_cmis_item_get_by_path($locations[0]['value']);
-  $item = gofast_cmis_item_content_insert($target_item->id, $title, file_get_contents($options['file']->filepath), $options['file']->filemime, array(), $cmis_as_publisher);
+  $publication_contents = file_get_contents($options['file']->filepath);
+  $item = gofast_cmis_item_content_insert($target_item->id, $title, $publication_contents, $options['file']->filemime, array(), $cmis_as_publisher);
+
+  // Validate that the content insertion was successful. The return value is a
+  // DOMDocument if the operation fails for some reason, so we check the
+  // existence of a property of valid CMIS responses we plan to use.
+  if (!isset($item->properties['alfcmis:nodeRef'])) {
+    throw new Exception("Node publication document creation failed");
+  }
+
   variable_set("cmis_creating_" . $item->properties['alfcmis:nodeRef'], "true");
   // Create the drupal node
   $node = new stdClass();
@@ -1210,25 +1243,42 @@ function gofast_cmis_publication_create($title, $options) {
     $node->{'field_custom_date'}[LANGUAGE_NONE] = $options["custom_date"];
   }
 
+  if(isset($options["state"])){
+    $node->{'field_state'}[LANGUAGE_NONE] = $options["state"];
+  }
+
+  if(isset($options["document_reference"])){
+    $node->{'field_document_reference'}[LANGUAGE_NONE] = $options["document_reference"];
+  }
+
+  if(isset($options["date"])){
+    $node->{'field_date'}[LANGUAGE_NONE] = $options["date"];
+  }
+
   $tag_publication = gofast_xeditable_terms_get_from_array(GOFAST_VID_TAGS, array('Publication'));
   $node->{'field_tags'}[LANGUAGE_NONE][]['tid'] = $tag_publication[0]->tid;
 
   $node->{GOFAST_CMIS_REFERENCE_FIELD}[LANGUAGE_NONE][0]['value'] = $item->properties['alfcmis:nodeRef'];
   $node->{GOFAST_CMIS_LOCATIONS_FIELD}[LANGUAGE_NONE] = $locations;
-  $node->{GOFAST_CMIS_MAIN_LOCATION_FIELD}[LANGUAGE_NONE][0]['value'] = $locations[0];
+  $node->{GOFAST_CMIS_MAIN_LOCATION_FIELD}[LANGUAGE_NONE][0]['value'] = $locations[0]['value'];
   $node->{GOFAST_CMIS_FILENAME_FIELD}[LANGUAGE_NONE][0]['value'] = $title;
 
   //prevent automatic multifilling here, because for the moment, the $node object doesn't contains groups, so it will not work
   $_POST['prevent_automatic_multifilling'] = true;
 
-  node_save($node);
+  // Skip ai category suggestion for publications.
+  $node->skip_mistral = TRUE;
 
-  //Then restore the initial folders permissions.
-  if ($cmis_as_publisher) {
-    foreach ($location_item_ids as $location_item_id) {
-     // gofast_cmis_webservice_item_set_permission($location_item_id, $options['author']->name, TRUE);
+  // Apply metadata flagged to be kept from the source node.
+  if (!empty($options['kept_metadata'])) {
+    foreach ($options['kept_metadata'] as $field => $value) {
+      if (empty($node->{$field}[LANGUAGE_NONE])) {
+        $node->{$field}[LANGUAGE_NONE] = $value;
+      }
     }
   }
+
+  node_save($node);
 
   // Set the parents groups for the new publication
   foreach ($options['parent_spaces'] as $space) {

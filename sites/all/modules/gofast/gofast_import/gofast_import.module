@@ -116,6 +116,9 @@ define('GOFAST_IMPORT_BACKEND_TYPE_EXECUTE', 'execute');
 /** Importer back-end type value for import dry run */
 define('GOFAST_IMPORT_BACKEND_TYPE_DRY_RUN', 'dry_run');
 
+/** Minimum number of admins a space should have after import */
+define('GOFAST_IMPORT_MINIMUM_SPACE_ADMIN_COUNT', 1);
+
 /**
  * Require the PHPOffice/PhpSpreadsheet library autoload file
  *
@@ -143,6 +146,7 @@ function gofast_import__require_phpspreadsheet_autoload() {
  *  backend: string,
  *  sheet_index?: int,
  *  sheet_name?: string,
+ *  active_sheet: boolean,
  * } $options Spreadsheet import options.
  * @return array{0:array|null,1:null|mixed} A tuple with errors at
  *  index 0, and an array of commands at index 1.
@@ -184,7 +188,7 @@ function gofast_import__import_user_space_membership_spreadsheet($options) {
  *  user_lists: array{
  *    type: GOFAST_IMPORT_ITEM_TYPE_USERLIST,
  *    name: string,
- *    description?: string,
+ *    properties?: array{ description?: string },
  *    memberships: array{role: string, member: array{name: string, type: string}}[],
  *    node?: object | null,
  *  }[],
@@ -193,7 +197,7 @@ function gofast_import__import_user_space_membership_spreadsheet($options) {
  *      | GOFAST_IMPORT_ITEM_TYPE_GROUP
  *      | GOFAST_IMPORT_ITEM_TYPE_ORGANISATION,
  *    path: string,
- *    description?: string,
+ *    properties?: array{ description?: string },
  *    memberships: array{role: string, member: array{name: string, type: string}}[],
  *    name?: string,
  *    parent_path?: string | null,
@@ -309,7 +313,7 @@ function gofast_import__get_user_property_descriptors() {
  *
  * @return array{
  *    description: array{
- *      name: string,
+ *      name: string[],
  *      node: array{
  *        get: callable(object $node): string,
  *        set: callable(object &$node, string $value): void,
@@ -326,7 +330,7 @@ function gofast_import__get_user_property_descriptors() {
 function gofast_import__get_user_list_property_descriptors() {
   return [
     'description' => [
-      'name' => 'description',
+      'name' => ['properties', 'description'],
       'node' => [
         'get' => fn($n) => $n->field_description[LANGUAGE_NONE][0]['value'],
         'set' => fn(&$n, $v) => $n->field_description[LANGUAGE_NONE][0]['value'] = $v,
@@ -410,7 +414,7 @@ function _gofast_import__extract_memberships_from_space_node($node, $entity_type
  *
  * @return array{
  *    description: array{
- *      name: string,
+ *      name: string[],
  *      node: array{
  *        get: callable(object $node): string,
  *        set: callable(object &$node, string $value): void,
@@ -427,7 +431,7 @@ function _gofast_import__extract_memberships_from_space_node($node, $entity_type
 function gofast_import__get_space_property_descriptors() {
   return [
     'description' => [
-      'name' => 'description',
+      'name' => ['properties', 'description'],
       'node' => [
         'get' => fn($n) => $n->field_description[LANGUAGE_NONE][0]['value'],
         'set' => fn(&$n, $v) => $n->field_description[LANGUAGE_NONE][0]['value'] = $v,

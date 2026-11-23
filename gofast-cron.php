@@ -31,6 +31,12 @@ drupal_override_server_variables(array(
 ));
 drupal_bootstrap(DRUPAL_BOOTSTRAP_FULL);
 
+// Only the server crontab runs the cron through this script.
+if (gofast_workflows_is_external_api()) {
+  http_response_code(403);
+  exit;
+}
+
 // Override session for admin op.
 global $user;
 drupal_save_session(FALSE);

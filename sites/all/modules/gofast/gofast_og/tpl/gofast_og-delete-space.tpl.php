@@ -1,8 +1,51 @@
 <div id="delete_space_modal_container">
   <?php if(gofast_og_check_replication_delete_space($gid)): ?>
     <h3 class="confirmation_header">
-      <?php print t('Are you sure you want to delete this space ? This destructive action cannot be undone', array(), array('context' => 'gofast:og'));?>.
+      <?php print t('Are you sure you want to delete this space ? This destructive action may not be fully undone.', array(), array('context' => 'gofast:og'));?>
     </h3>
+    <p>
+      <?= t(
+        'When deleting a space, some elements will be definitively lost and '
+        . 'will not be recoverable:',
+        [],
+        ['context' => 'gofast:og'],
+      ) ?>
+      <ul>
+        <?php
+        $emphasis_tags_variables = [
+          '![em]' => '<b>',
+          '![/em]' => '</b>',
+        ];
+        ?>
+        <li>
+          <?= t(
+            'Documents with multiple locations will be removed from ![em]their '
+            . 'locations in this space![/em]. The document will still be '
+            . 'available within their other locations, ![em]including broadcasted '
+            . 'locations![/em].',
+            $emphasis_tags_variables,
+            ['context' => 'gofast:og'],
+          ) ?>
+        </li>
+        <li>
+          <?= t(
+            'Directories with multiple locations in this space which were '
+            . 'created elsewhere will be removed from ![em]their locations in '
+            . 'this space![/em].',
+            $emphasis_tags_variables,
+            ['context' => 'gofast:og'],
+          ) ?>
+        </li>
+        <li class="text-warning">
+          <?= t(
+            'Directories with multiple locations which were originally created '
+            . 'in this space will be removed from ![em]all their locations![/em].',
+            $emphasis_tags_variables,
+            ['context' => 'gofast:og'],
+          ) ?>
+        </li>
+      </ul>
+    </p>
     <br />
     <div class="form-group delete_space_confirm_name_container" >
       <label for="delete_space_confirm_name"><?php print t('Please type the name of this space to confirm this action', array(), array('context' => 'gofast:og'));?>

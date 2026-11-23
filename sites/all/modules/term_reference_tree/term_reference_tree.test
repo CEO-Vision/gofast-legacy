@@ -1,0 +1,125 @@
+<?php
+
+/**
+ * @file
+ * Simpletest coverage for Term Reference Tree.
+ */
+
+/**
+ * Security-focused tests for the Term Reference Tree widget.
+ */
+class TermReferenceTreeSecurityTest extends DrupalWebTestCase {
+
+  /**
+   * Whether the token module is available.
+   *
+   * @var bool
+   */
+  protected $tokenAvailable = FALSE;
+
+  /**
+   * {@inheritdoc}
+   */
+  public static function getInfo() {
+    return array(
+      'name' => 'Term Reference Tree security',
+      'description' => 'Ensures empty trees do not render and labels are sanitized.',
+      'group' => 'Term Reference Tree',
+    );
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  public function setUp() {
+    $modules = array('taxonomy', 'term_reference_tree');
+    $this->tokenAvailable = (bool) drupal_get_filename('module', 'token', NULL, FALSE);
+    if ($this->tokenAvailable) {
+      $modules[] = 'token';
+    }
+    parent::setUp($modules);
+    // Load the widget code that defines the functions under test.
+    module_load_include('inc', 'term_reference_tree', 'term_reference_tree.widget');
+  }
+
+  /**
+   * Token display templates should be sanitized before rendering.
+   */
+  public function testTokenTemplateIsSanitized() {
+    if (empty($this->tokenAvailable)) {
+      $this->pass('Token module is not available; skipping token template test.');
+      return;
+    }
+    $vocabulary = (object) array(
+      'name' => 'Token test',
+      'machine_name' => 'token_test',
+      'hierarchy' => 0,
+    );
+    taxonomy_vocabulary_save($vocabulary);
+
+    $term = (object) array(
+      'name' => 'Safe term',
+      'vid' => $vocabulary->vid,
+    );
+    taxonomy_term_save($term);
+
+    $element = array(
+      '#display' => array(
+        'settings' => array(
+          'token_display_selected' => "<script>alert('x')</script> [term:name]",
+          'token_display_unselected' => '',
+        ),
+      ),
+    );
+    $tree = array(
+      'children' => array(
+        $term->tid => array(
+          'tid' => $term->tid,
+          'selected' => TRUE,
+        ),
+      ),
+    );
+
+    $output = _term_reference_tree_output_list_level($element, $tree);
+    $this->assertFalse(stripos($output, '<script') !== FALSE, 'Token template markup is stripped.');
+  }
+
+  /**
+   * Term labels must be sanitized.
+   */
+  public function testTermLabelIsSanitized() {
+    $vocabulary = (object) array(
+      'name' => 'Term label test',
+      'machine_name' => 'term_label_test',
+      'hierarchy' => 0,
+    );
+    taxonomy_vocabulary_save($vocabulary);
+
+    $term = (object) array(
+      'name' => "<script>alert('term')</script> Safe Term",
+      'vid' => $vocabulary->vid,
+    );
+    taxonomy_term_save($term);
+
+    $element = array(
+      '#display' => array(
+        'settings' => array(
+          'token_display_selected' => '',
+          'token_display_unselected' => '',
+        ),
+      ),
+    );
+    $tree = array(
+      'children' => array(
+        $term->tid => array(
+          'tid' => $term->tid,
+          'selected' => FALSE,
+        ),
+      ),
+    );
+
+    $output = _term_reference_tree_output_list_level($element, $tree);
+    $this->assertFalse(stripos($output, '<script') !== FALSE, 'Term label markup is escaped.');
+  }
+
+}

@@ -19,7 +19,6 @@
   }
 
   Gofast.global = Gofast.global || {};
-  window.CKEDITOR_BASEPATH = "/sites/all/libraries/ckeditor/";
   Gofast.exclude_ajax_url = [];
   Gofast.additionalGFBNodes = [];
 
@@ -453,6 +452,21 @@
     });
   };
 
+  // Re-rendered tab headers come with Informations active: highlight the link of the pane actually shown
+  Gofast.syncNodeTabsHeader = function () {
+    $("#node-tabsHeader").each(function () {
+      const paneId = $(this).closest(".card").find(".tab-content").first().children(".tab-pane.active").attr("id");
+      if (!paneId) {
+        return;
+      }
+      $(this).find("a.active").removeClass("active");
+      $(this).children("ul").each(function () {
+        const $link = $(this).find(`a[data-toggle="tab"][href="#${paneId}"]`).first().addClass("active");
+        $link.closest(".dropdown").children(".dropdown-toggle").addClass("active");
+      });
+    });
+  };
+
   Gofast.handleActiveOnOGDropdownTabs = function () {
     if (window.location.hash == "#document__tasktab") {
       $("#lightDashboardDocumentMyParentTab").click();
@@ -558,21 +572,6 @@
     }
     return profile;
 }
-
-  // if param onlyIfIs is given, will remove only instances whose id contain the given string
-  Gofast.removeAllCKEditorInstances = function(onlyIfIs = false) {
-    let ck_keys = Object.keys(CKEDITOR.instances);
-    for (const key of ck_keys) {
-      let instance = CKEDITOR.instances[key];
-      let passesAllConditions = true;
-      if (onlyIfIs && !key.startsWith(onlyIfIs)) {
-        passesAllConditions = false;
-      }
-      if(instance && passesAllConditions){
-        CKEDITOR.remove(instance);
-      }
-    }
-  }
 
   // prevent overflow of ckeditor tooltips
   Gofast.setCKEditorTooltips = function(editor) {
@@ -1265,41 +1264,109 @@
     }
   };
 
-  Drupal.behaviors.toggleSidebar = {
-    attach: function (context, settings) {
-      if ($('.GofastNode').length) {
-        $('#kt_aside_toggle').once('kt_aside_toggle', function () {
-          $(this).click(function () {
-            if (!$(this).hasClass('active')) {
-              $(".sideContent").addClass("reduced")
-            } else {
-              if (!$('#explorer').hasClass('open')) {
-                $(".sideContent").removeClass("reduced")
-              }
-            }
-          });
-        });
-      }
+  //#region Handling side content tab labels switching to and from icon-only mode
+  /**
+   * Object of panel status values.
+   * @typedef {object} PanelStatuses
+   * @property {boolean} isKTAsideOpen `true` if the main side menu is open.
+   * @property {boolean} isSideExplorerOpen `true` if the side explorer is open.
+   * @property {boolean} isAnySidePanelOpen `true` if either the main side menu
+   *  or the explorer are open.
+   */
+
+  /**
+   * Gets the current status of opened left side panels.
+   * @returns {PanelStatuses} The status of opened left side panels.
+   */
+  function getLeftSidePanelsOpenStatuses() {
+    const isKTAsideOpen = !$("#kt_body").hasClass("aside-minimize");
+    const isSideExplorerOpen = $("#explorer").hasClass("open");
+
+    return {
+      isKTAsideOpen,
+      isSideExplorerOpen,
+      isAnySidePanelOpen: isKTAsideOpen || isSideExplorerOpen,
+    };
+  }
+
+  /**
+   * Emit a JQuery custom "gofast:side_panel_open_change" on the global window
+   * with the current status of the openable left side panels.
+   */
+  function emitSidePanelOpenStatusChange() {
+    $(window).trigger("gofast:side_panel_open_change", getLeftSidePanelsOpenStatuses());
+  }
+
+  /**
+   * Update the tab presentation of the side content according to a set of
+   * given panel status values.
+   * @param {PanelStatuses} panelStatuses object of panel status values.
+   */
+  function updateSideContentTabPresentation(panelStatuses) {
+    if (panelStatuses.isAnySidePanelOpen) {
+      $(".sideContent").addClass("reduced");
+    } else {
+      $(".sideContent").removeClass("reduced");
     }
   }
 
-  Drupal.behaviors.toggleBrowserMobile = {
-    attach: function (context, settings) {
-      if ($('.GofastNode').length) {
-        $('#explorer').once('explorer', function () {
-          $(this).click(function () {
-            if ($(this).hasClass('open')) {
-              $(".sideContent").addClass("reduced")
-            } else {
-              if ($('.sideContent .card-body').css("visibility") == "visible") {
-                $(".sideContent").removeClass("reduced")
-              }
-            }
-          });
-        });
-      }
+  // setup global listener to update side content tab presentation when opening
+  // or closing the left side panels.
+  $(window).on("gofast:side_panel_open_change", function (_event, details) {
+    if (!$(".GofastNode").length) {
+      return;
     }
-  }
+
+    updateSideContentTabPresentation(details);
+  });
+
+  // Behavior to immediately update the side content tab presentation when it is
+  // added to the page.
+  Drupal.behaviors.setupInsertedSideContentTabPresentation = {
+    attach: function (context, _settings) {
+      if (!$(".GofastNode").length) {
+        return;
+      }
+
+      $(context).find(".sideContent").once("setup_tab_presentation", function () {
+        // make sure the state is updated immediately
+        updateSideContentTabPresentation(getLeftSidePanelsOpenStatuses());
+      });
+    },
+  };
+
+  // Behavior to listen to clicks on the side menu expand button and then emit
+  // status changes
+  Drupal.behaviors.toggleSidebar = {
+    attach: function (_context, _settings) {
+      if (!$(".GofastNode").length) {
+        return;
+      }
+
+      $("#kt_aside_toggle").once("kt_aside_toggle", function () {
+        $(this).click(function () {
+          emitSidePanelOpenStatusChange();
+        });
+      });
+    },
+  };
+
+  // Behavior to listen to clicks on the side explorer button and then emit
+  // status changes
+  Drupal.behaviors.toggleBrowserMobile = {
+    attach: function (_context, _settings) {
+      if (!$(".GofastNode").length) {
+        return;
+      }
+
+      $("#explorer").once("explorer", function () {
+        $(this).click(function () {
+          emitSidePanelOpenStatusChange();
+        });
+      });
+    },
+  };
+  //#endregion
 
   Gofast.conference = Gofast.conference || {};
 
@@ -1432,7 +1499,15 @@
       let targetNid = $("#document__infotab").attr("data-nid") || node.id;
       Gofast.processAjax(location.origin + "/gofast/node-info/" + targetNid, true);
       Gofast.Poll.init();
-      
+
+      // Trigger metadata modal if needed
+      if (window.location.search.includes("manage_taxonomy")) {
+        const url = new URL(window.location.href);
+        url.searchParams.delete('manage_taxonomy');
+        window.history.replaceState({}, document.title, url.pathname + url.search);
+        Gofast.metadata.manageTaxonomy(targetNid);
+      }
+
       if(node.type != "webform"){
       //Check locations of the node 
       $.get(location.origin + "/gofast/check-locations/" + targetNid, function(data) {
@@ -1540,8 +1615,27 @@
     }, 200);
     }
 
-    if(Drupal.settings.gofast.user.password_expires){
-      Drupal.CTools.Modal.showCtoolsModal("/gofast/nojs/password_expires?timestamp=" + Drupal.settings.gofast.user.password_expires);
+    if (Drupal.settings.gofast.user.password_expires) {
+      // Preemptively add loader, should get removed once modal is loaded.
+      // If modal logic never loads, it will stay however, which indicates an issue elsewhere.
+      Gofast.addLoading();
+      const maxWaitDuration = 10_000 /* ms */;
+      const maxWaitEndTime = Date.now() + maxWaitDuration;
+      const waitForModal = setInterval(() => {
+        // Wait for modal logic to be initialised.
+        if (Drupal.ajax?.prototype?.commands?.modal_display == null) {
+          if (Date.now() >= maxWaitEndTime) {
+            console.warn('GoFAST: Excessive wait for initialisation of modal while attempting to display password expiration modal');
+
+            clearInterval(waitForModal);
+            Gofast.removeLoading();
+          }
+          return;
+        }
+        clearInterval(waitForModal);
+
+        Drupal.CTools.Modal.showCtoolsModal("/gofast/nojs/password_expires?timestamp=" + Drupal.settings.gofast.user.password_expires);
+      }, 100);
       return;
     }
 
@@ -1690,29 +1784,6 @@
     }
   };
 
-  /**
-   * All JS override for the Drupal CKEditor will be placed here
-   */
-   Drupal.behaviors.overrideCKEditor = {
-    attach: function (context) {
-      if (typeof CKEDITOR === "undefined" || typeof GofastLocal == "undefined") {
-        return;
-      }
-      CKEDITOR.config.defaultLanguage = GofastLocale;
-      CKEDITOR.config.language = GofastLocale;
-      const instancesKey = Object.keys(CKEDITOR.instances);
-      for (const instanceKey of instancesKey) {
-        CKEDITOR.instances[instanceKey].on('dialogShow', function () {
-          // resize dialog modal according to content, avoiding overflow if the content has been customized
-          if ($(".cke_dialog").length && $(".cke_dialog_tabs").length) {
-            $(".cke_dialog").width($(".cke_dialog_tabs").width() + 6);
-          }
-        });
-      }
-    }
-  };
-
-
   $(document).bind('flagGlobalAfterLinkUpdate', function (event, data) { //Reformat tag display when AJAX subscribing to it
     const closestTable = $(data.link).closest("table");
     if (closestTable && closestTable.parent() && closestTable.parent().attr("id") && closestTable.parent().attr("id").includes("dashboard")) { // we're in a dashboard table
@@ -1741,27 +1812,86 @@
   });
 
   Gofast.sideFileBrowser = {
-    initFileBrowser: function(tabId){
-      if($("#" + tabId).hasClass("processed")){
-        Gofast.sideFileBrowser.selectCurrentItem(tabId);
+    /**
+     * Checks if a given tab is initialised/
+     *
+     * This checks if the CSS class "processed" is present on the tab content
+     * element to know if a tab is initialised.
+     *
+     * @param {string} tabId HTML ID of the tab content element to check for initilisation
+     * @returns {boolean} True if tab is initialised, false otherwise
+     */
+    isTabInitialised: function(tabId) {
+      return $("#" + tabId).hasClass('processed');
+    },
+    initFileBrowser: function(tabId, { open = true } = {}){
+      if (Gofast.sideFileBrowser.isTabInitialised(tabId)) {
+        Gofast.sideFileBrowser.selectCurrentItem(tabId, open);
         return;
       }
-      $("#" + tabId).addClass("processed")
+
+      const tabHtmlId = "#" + tabId;
+      const $tabContentContainer = $(tabHtmlId);
+      // No such tab on this page (mobile, Essential...): nothing to load
+      if (!$tabContentContainer.length) {
+        return;
+      }
+
+      $tabContentContainer.addClass("processed")
       $.get(`/gofast/${tabId}/explorer`).done(function(data){
-        $("#" + tabId).html(data);
-        Gofast.sideFileBrowser.selectCurrentItem(tabId);
+        $tabContentContainer.html(data);
+        Gofast.sideFileBrowser.selectCurrentItem(tabId, open);
       });
+
+      const $tabButton = $('#explorer').find('[data-toggle="tab"][data-target="'+tabHtmlId+'"]');
+
+      // Refresh was queued and we're about to show the tab? Refresh the content.
+      $tabButton.on('show.bs.tab', () => {
+        if ($tabContentContainer.hasClass('gf-refresh-queued')) {
+          $tabContentContainer.removeClass('gf-refresh-queued');
+          Gofast.sideFileBrowser.refreshBrowser(tabId, { open: false });
+        }
+      })
+
+      // When a node is restored, refresh the tab as it may have featured the
+      // node or its contents.
+      $(window).on('gofast:node_restored', (_event) => {
+        Gofast.sideFileBrowser.queueBrowserRefresh(tabId);
+      })
     },
-    refreshBrowser: function(tabId){
+    /**
+     * Queue a tab to be refreshed.
+     *
+     * If the tab is currently active, it is immediately refreshed. Otherwise,
+     * it is marked to be refreshed when next selected to save on resources.
+     *
+     * @param {string} tabId ID of the side browser tab to queue a refresh for
+     */
+    queueBrowserRefresh: function (tabId) {
+      const $browserTab = $('#' + tabId);
+      if ($browserTab.hasClass('active')) {
+        Gofast.sideFileBrowser.refreshBrowser(tabId, { open: false });
+        return;
+      }
+      $browserTab.addClass('gf-refresh-queued');
+    },
+    /**
+     * Refreshes the content of a given tab of the side browser.
+     *
+     * @param {string} tabId ID of the side browser tab to refresh
+     * @param {object} [options] Additional options
+     * @param {boolean} [options.open] Whether to open or not the side browser. Opens by default.
+     */
+    refreshBrowser: function(tabId, { open } = {}){
 
       // find container
-      let container = $(`#${tabId}-side-explorer`);
+      let container = $("#" +  tabId);
 
       // get stuff
       container.html('<div class="d-flex min-h-200px min-w-40px h-100 w-100"><div class="spinner spinner-primary m-auto"></div></div>');
       $.get(`/gofast/${tabId}/explorer`).done(function(data){
-        container.replaceWith(data);
-        Gofast.sideFileBrowser.selectCurrentItem(tabId);
+        container.html(data);
+        Gofast.sideFileBrowser.selectCurrentItem(tabId, open);
       });
     },
     searchBrowser: function() { 
@@ -1892,6 +2022,14 @@
         Gofast.sideFileBrowser.unselectAllItems()
         return
       }
+
+      // If tab is not yet initialised, suppose we want to initialise it.
+      // This function is called again once the tab is initialised.
+      if (!Gofast.sideFileBrowser.isTabInitialised(tabId)) {
+        Gofast.sideFileBrowser.initFileBrowser(tabId, { open });
+        return;
+      }
+
       const currentNode = Gofast.get("node");
       let tabSelector = "";
       if(tabId != ""){
@@ -1919,7 +2057,7 @@
       if (open && !$("#explorer-toggle").hasClass("open")) {
         $("#explorer-toggle").click();
       }
-      $(`[data-target=#${tabId}]`).tab("show");
+      $(`[data-target="#${tabId}"]`).tab("show");
     },
     unselectAllItems: function() {
       $("#empty-home-page-wiki").addClass("d-none")
@@ -1948,6 +2086,7 @@
   Drupal.t("Download started...", {}, {context: 'gofast:gofast_link_sharing'});
   Drupal.t("Download again", {}, {context: 'gofast:gofast_link_sharing'});
   Drupal.t("Download completed", {}, {context: 'gofast:gofast_link_sharing'});
+  Drupal.t("You can filter only by one space at a time", {}, {context: "gofast:gofast_cmis"}); // sites/all/modules/gofast/gofast_cmis/tpl/gofast-cmis-template-widget.tpl.php:~194
 
   //editableInputs placeholder and other dynamic-in-context translations
   const translatableFields = ["First name", "Last name", "Job position", "Your phone number", "Your email address", "Your organisation", "Your birthdate", "Your manager", "Description", "Your skills", "Your interests", "Your hobbies", "elements", "element"];

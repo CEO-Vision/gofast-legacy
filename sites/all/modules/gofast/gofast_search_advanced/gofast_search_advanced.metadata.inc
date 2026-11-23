@@ -3,6 +3,9 @@
 function gofast_search_advanced_declare_standard_metadatas(){
   $metadatas_name = t("Standard metadata", array(), array('context' => 'gofast:gofast_search_advanced'));
   
+  $field_format_values = gofast_advanced_search_get_taxonomy('field_format');
+  asort($field_format_values);
+
   $metadata = array();
   $metadata['nid'] = array(
     'solr_field' => 'entity_id',
@@ -19,7 +22,7 @@ function gofast_search_advanced_declare_standard_metadatas(){
     'solr_field' => 'im_field_format',
     'title' => t('Type'),
     'type' => 'select',
-    'fields' => gofast_advanced_search_get_taxonomy('field_format'),
+    'fields' => $field_format_values,
   );
   $metadata['label'] = array(
     'solr_field' => 'label',
@@ -57,7 +60,7 @@ function gofast_search_advanced_declare_standard_metadatas(){
   );
   $metadata['sm_vid_Classification'] = array(
     'solr_field' => 'im_field_classification',
-    'title' => t('Classification', [], ['context' => 'gofast']),
+    'title' => GOFAST_METADATA_CLASSIFICATION_LABEL,
     'type' => 'select',
     'fields' => gofast_advanced_search_get_taxonomy('field_classification'),
   );
@@ -108,7 +111,7 @@ function gofast_search_advanced_declare_standard_metadatas(){
   );
   $metadata['tos_unr_document_reference'] = array(
     'solr_field' => 'tos_unr_document_reference',
-    'title' => t('Document reference'),
+    'title' => GOFAST_METADATA_DOCUMENT_REFERENCE_LABEL,
     'type' => 'input',
   );
   $metadata['ss_language'] = array(

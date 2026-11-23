@@ -267,3 +267,11 @@ form.jeditable-field textarea:focus, form.jeditable-field textarea[type=text]:fo
 #edit-ldap-user-prov-entries-und-add-more{
   display :none;
 }
+
+.image-input-outline {
+  box-shadow: 0 .5rem 1.5rem .5rem rgba(0,0,0,0.075);
+}
+
+.transform-center-to-top-right {
+  transform: translate(50%, -50%);
+}

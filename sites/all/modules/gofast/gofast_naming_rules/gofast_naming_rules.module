@@ -33,6 +33,17 @@ function gofast_naming_rules_library(){
           )
         ),
       );
+    $libraries['gofast_naming_rules_title_validation'] = array(
+        'title' => 'GoFAST naming rules title validation',
+        'version' => '1.0',
+        'js' => array(
+          $path . '/js/title_validation.js' => array(
+            'group' => JS_THEME,
+            'every_page' => TRUE,
+            'weight' => 1
+          )
+        ),
+      );
     return $libraries;
 }
 
@@ -43,6 +54,7 @@ function gofast_naming_rules_init()
 {
     drupal_add_library("gofast_naming_rules", "gofast_naming_rules_hooks", TRUE);
     drupal_add_library("gofast_naming_rules", "gofast_naming_rules_utils", TRUE);
+    drupal_add_library("gofast_naming_rules", "gofast_naming_rules_title_validation", TRUE);
 }
 
 /**
@@ -58,7 +70,14 @@ function gofast_naming_rules_menu()
         'type' => MENU_CALLBACK,
         'delivery callback' => 'gofast_ajax_delivery',
     );
-    $items['taxonomy/%taxonomy_term/naming_rules/get'] = array(
+    $items['taxonomy/naming_rules/validate_pending_title'] = array(
+        'page callback' => 'gofast_naming_rules_validate_pending_title',
+        'access arguments' => array('access content'),
+        'access callback' => 'user_access',
+        'type' => MENU_CALLBACK,
+        'delivery callback' => 'drupal_json_output',
+    );
+    $items['taxonomy/%/naming_rules/get'] = array(
         'page callback' => 'gofast_naming_rules_get_rule',
         'page arguments' => array(1),
         'access arguments' => array('access content'),
@@ -75,6 +94,64 @@ function gofast_naming_rules_menu()
         'delivery callback' => 'gofast_ajax_delivery',
     );
     return $items;
+}
+
+/**
+ * Endpoint. POST: nid, field, value.
+ * 
+ * Check wether if the field of a naming rule being
+ * modified will produce an invalid title.
+ * 
+ * If so return an error displaying which field 
+ * and which characters causes problems.
+ * 
+ * Used by the metadata panel for fields other than
+ * category/state (those go through the confirmation modal).
+ *
+ * @return string
+ *   JSON: {"error": string}.
+ */
+function gofast_naming_rules_validate_pending_title() {
+  $nid = gofast_xss_clean($_POST["nid"]);
+  $node = node_load($nid);
+  if (!$node) {
+    return json_encode(["ok" => TRUE]);
+  }
+  $field = gofast_xss_clean($_POST["field"]);
+  $value = gofast_xss_clean($_POST["value"]);
+
+  $fDate = DateTime::createFromFormat('!' . variable_get('date_format_short', 'm/d/Y - H:i'), $value);
+  if (!$fDate) $fDate = DateTime::createFromFormat('!' . variable_get('date_format_short_without_hours', 'm/d/Y'), $value);
+  $value = $fDate ? $fDate->format('Y-m-d H:i:s') : $value;
+
+  $new_node = clone $node;
+  // Check whether the field is a simple node attribute or a Field API field.
+  if (field_info_instance('node', $field, $node->type)) {
+    $new_node->{$field}[LANGUAGE_NONE][0]['value'] = $value;
+  } else {
+    // Plain node attributes such as created hold a Unix timestamp.
+    $new_node->{$field} = $fDate ? $fDate->getTimestamp() : $value;
+  }
+
+  $tid = $new_node->field_category[LANGUAGE_NONE][0]['tid'] ?? NULL;
+  $term = $tid ? taxonomy_term_load($tid) : NULL;
+
+  if (!$term || empty($term->field_naming_rules[LANGUAGE_NONE][0]['value'])) {
+    return json_encode(["ok" => TRUE]);
+  }
+
+  $preview_title = gofast_naming_rule_get_node_ruled_value($new_node, $term, TRUE, FALSE)['value'];
+  if (!$preview_title || !gofast_validate_node_title($preview_title, $new_node)) {
+    return json_encode(["ok" => TRUE]);
+  }
+
+  $chars = array_values(array_filter(gofast_invalid_characters(), fn($c) => mb_strpos((string) $value, $c) !== FALSE));
+  // Get the translated metadata field labels.
+  $labels = array_flip(gofast_naming_rules_metadata_get_metadata_types());
+  $label = $labels[$field] ?? $field;
+  $message = t('Naming rule not applied: "@field" contains unsupported characters (@chars).', array('@field' => $label, '@chars' => implode(' ', $chars)), array('context' => 'gofast:gofast_naming_rules'));
+
+  return ["error" => $message];
 }
 
 /**
@@ -125,6 +202,14 @@ function gofast_naming_rules_node_presave($node) {
   if(!$node_title){
     return;
   }
+
+  // Prevent applying the naming rule if the title isn't valid.
+  $errors = gofast_validate_node_title($node_title, $node);
+  if ($errors) {
+    watchdog("gofast_naming_rules", "Application of naming rule for title on node @nid skipped given the following errors: @errs", array("@nid" => $node->nid, "@errs" => implode(' | ', $errors)), WATCHDOG_WARNING);
+    return;
+  }
+
   // Remove the node from the updating queue
   $updated_nids = variable_get("gofast_naming_rules_update_nodes");
   $category_tid = $node->field_category[LANGUAGE_NONE][0]["tid"];
@@ -172,6 +257,12 @@ function gofast_naming_rules_update_nodes_cron(){
     $node_title = gofast_naming_rules_get_naming_rules_title($node);
     
     if(!$node_title){
+      continue;
+    }
+    // Skip invalid titles: the remote rename would fail silently otherwise.
+    $errors = gofast_validate_node_title($node_title, $node);
+    if ($errors) {
+      watchdog("gofast_naming_rules", "Application of naming rule for title on node @nid skipped given the following errors: @errs", array("@nid" => $node->nid, "@errs" => implode(' | ', $errors)), WATCHDOG_WARNING);
       continue;
     }
     $item_id = gofast_cmis_node_get_item_id($node);
@@ -245,9 +336,9 @@ function gofast_naming_rules_get_naming_rules_title($node, $check_siblings = FAL
     return false;
   }
   $term = taxonomy_term_load($node->field_category[LANGUAGE_NONE][0]["tid"]);
-  $ruled_value = gofast_naming_rule_get_node_ruled_value($node, $term, TRUE, FALSE);
-  // Don't apply naming rule if all rule-related fields are not filled
-  if (!$ruled_value) {
+  $ruled_value = gofast_naming_rule_get_node_ruled_value($node, $term, TRUE, FALSE)["value"];
+  // Don't validate empty title
+  if (!strlen($ruled_value)) {
     return false;
   }
   $node_title = explode(".", $node->title);

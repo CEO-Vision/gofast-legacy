@@ -35,6 +35,15 @@
                 // has naming rule: open modal and prevent close on blur (because the user MUST trigger one of the events below to end this block)
                 Gofast.modal(data.theme, data.message);
                 Drupal.CTools.Modal.closeOnBlur(false);
+
+                // Validation error: disable "Apply" so the field is not applied, and show why.
+                if (data.error) {
+                    $("#modal-content")
+                        .prepend("<div class='text-danger mx-0 mt-2 mb-3'>" + data.error + "</div>");
+                    $("#modal-footer #apply_category_confirm")
+                        .addClass("disabled")
+                        .css({"pointer-events": "none", "cursor": "not-allowed", "opacity": "0.65"});
+                }
                 // end the promise on modal buttons click
                 const closeEvent = $(".modal button.close").on("click", () => {
                     reject();

@@ -18,9 +18,16 @@
           el.attr('title', event.title)
           var skin = el.data('skin') ? 'popover-' + el.data('skin') : '';
           var triggerValue = el.data('trigger') ? el.data('trigger') : 'hover';
-          const { user, isRecurrent, humanReadableRecurrence } = event.extendedProps;
+          const { user, isRecurrent, humanReadableRecurrence, spaces } = event.extendedProps;
 
           const attributionMessage = user.assigned_to ? Drupal.t('Assigned to') : Drupal.t('Created by');
+          const spacesMessage = Drupal.t('Space(s)', {}, {context: 'gofast:gofast_calendar'});
+          const spaceList = $('<ul class="m-0 pl-4">');
+          if(spaces){
+            spaces.forEach((space_title) => {
+              spaceList.append(`<li>${space_title}</li>`)
+            })
+          }
 
           el.popover({
             trigger: triggerValue,
@@ -42,13 +49,19 @@
                     </div>`
                   : ""
               }
-              <div class="popover-footer d-flex p-2 d-flex font-size-sm">
-                <span class="text-muted mr-4">${attributionMessage}:</span>
+              <div class="popover-footer d-flex p-2 d-flex font-size-sm d-flex flex-column">
                 <div class="d-flex">
-                  <div class="symbol symbol-circle symbol-20 mr-2 d-flex align-items-center">
-                    <img alt="Pic" style="max-width: 15px; height: 15px;" src="${user.picture}"/>
+                  <span class="text-muted mr-4">${attributionMessage}:</span>
+                  <div class="d-flex">
+                    <div class="symbol symbol-circle symbol-20 mr-2 d-flex align-items-center">
+                      <img alt="Pic" style="max-width: 15px; height: 15px;" src="${user.picture}"/>
+                    </div>
+                    <div class="text-muted">${user.firstname} ${user.lastname}</div>
                   </div>
-                  <div class="text-muted">${user.firstname} ${user.lastname}</div>
+                </div>
+                <div class="d-flex pt-2">
+                  <span class="text-muted mr-4">${spacesMessage}:</span>
+                  ${spaceList[0].outerHTML}
                 </div>
               </div>
             </div>
@@ -107,10 +120,27 @@
             }
             var calendarEl = document.getElementById('kt_calendar');
             var customButtons  =  {
-              syncCalendar: {
+              importCalendar: {
+                text: '',
+                icon: " fa fa-download",
+                click: function (e) {
+                  // get the current space id and pass it in the url params for the bluemind module / conference creation
+                  const spaceId = $("#kt_calendar").attr("data-id");
+                  e.stopPropagation();
+                  Drupal.CTools.Modal.showCtoolsModal(`/modal/nojs/calendar/add_calendar?spaceId=${spaceId}`); // Use the stored reference
+                }
+              }
+            }
+            if (Gofast.get("node").type == "private_space") {
+              customButtons.syncCalendar = {
                 text: '',
                 icon: " fa fa-sync", 
                 click: function (){
+                  const isBluemindFeatureActive = Gofast._settings.gofast_bluemind_is_feature_active;
+                  const isFeatureActiveForUser = Gofast._settings.gofast_bluemind_is_feature_active_for_user;
+                  if (!isBluemindFeatureActive || !isFeatureActiveForUser) {
+                    return;
+                  }
                   $(".fc-syncCalendar-button span").addClass('fa-spin');// add the spinning wheel class
                   $.ajax({
                     type: "POST",
@@ -121,6 +151,8 @@
                       if(data.success){
                         Gofast.toast(Drupal.t("Calendar Synchronization started successfully", {}, { context: 'gofast:gofast_calendar' }), "info");
                         Gofast.getLastSyncDate(Gofast.calendar.setLastSync)
+                      } else {
+                        Gofast.toast(Drupal.t("Calendar Synchronization is not enabled on your account", {}, { context: 'gofast:gofast_calendar' }), "warning");
                       }
                     },
                     dataType: 'json'
@@ -133,15 +165,7 @@
                     }, 2000
                   )
                 }
-              },
-              importCalendar: {
-                text: '',
-                icon: " fa fa-upload",
-                click: function (e) {
-                  e.stopPropagation();
-                  Drupal.CTools.Modal.showCtoolsModal( '/modal/nojs/calendar/add_calendar'); // Use the stored reference
-                }
-              }
+              };
             }
             var buttonText = {
               today:    Drupal.t('today'),
@@ -157,10 +181,7 @@
               right: 'dayGridMonth,timeGridWeek,timeGridDay'
             }
 
-            if(Gofast._settings.gofast_bluemind_is_feature_active &&
-              Gofast._settings.gofast_bluemind_is_feature_active_for_user) {
-              header.left = header.left + ' syncCalendar';
-            }
+            header.left = header.left + ' syncCalendar';
             header.left = header.left + ' importCalendar';
 
             Gofast.calendar.calInstance = new FullCalendar.Calendar(calendarEl, {
@@ -195,6 +216,9 @@
               events: function(fetchInfo, successCallback, failureCallback) {
                 Gofast.getCalendarEvents(fetchInfo, calendarEl.dataset.id, successCallback, failureCallback);
               },
+              eventSourceSuccess: function(content, xhr) {
+                  Gofast.calendar.setToolbarEventsBadge(content);
+              },
               eventRender: function(info) {
 
                 let element = $(info.el);
@@ -222,7 +246,9 @@
                         let end = new Date(info.event.end)
                         let startHour = start.toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'})
                         let endHour = end.toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'})
-                        let el = "<div class=\"text-dark-50 mt-1 font-weight-bold\">" + startHour + " - " + endHour + "</div>";
+                        // An all-day event has no end: show the all-day label instead of hours.
+                        let hours = info.event.allDay ? Drupal.t('all-day') : startHour + " - " + endHour;
+                        let el = "<div class=\"text-dark-50 mt-1 font-weight-bold\">" + hours + "</div>";
                         element.find('.fc-content').append(el);
                         icon = '<i class="'+info.event.extendedProps.icon+' icon-nm mr-2"></i>'
                         if(info.event.extendedProps.color){ 
@@ -295,18 +321,51 @@
                 }, 
             });
             Gofast.calendar.calInstance.on("datesRender", function(info) {
-              const events = Gofast.calendar.calInstance.getEvents();
-              const activeStart = info.view.activeStart;
-              const activeEnd = info.view.activeEnd;
-              const currentEvents = events.filter(event => event.start > activeStart && event.end < activeEnd);
-              const $calendarTitleElement = $(".fc-toolbar .fc-center > *:last-child");
-              $calendarTitleElement.addClass("d-flex").append("<span class='ml-3 label label-inline font-weight-bold label-dark'>"
-              + currentEvents.length
-              + " "
-              + (currentEvents.length > 1 ? Drupal.t('events') : Drupal.t('event'))
-              + "</span>");
+              Gofast.calendar.setToolbarEventsBadge(Gofast.calendar.calInstance.getEvents());
+              const $toolbarRightContainer = $("#kt_calendar .fc-right");
+              // Add new calendar toolbar element
+              $toolbarRightContainer.prepend(`
+                <div class="d-inline-flex align-items-center align-middle justify-content-end w-50">
+                  <span class="switch switch-sm switch-icon ml-4">
+                    <label>
+                      <input id="calendar-visibility-switch-input" type="checkbox">
+                      <span></span>
+                    </label>
+                  </span>
+                  <span class="ml-2">${Drupal.t("Display children's spaces calendars", {}, {context: "gofast:gofast_calendar"})}</span>
+                </div>
+              `);
+              // Set switch state value from value stored in session storage
+              if(sessionStorage.getItem("calendar-events-visiblity") == "all"){
+                $("#calendar-visibility-switch-input").prop("checked", true)
+              }
+
+              const isBluemindFeatureActive = Gofast._settings.gofast_bluemind_is_feature_active;
+              const isFeatureActiveForUser = Gofast._settings.gofast_bluemind_is_feature_active_for_user;
+              if (!isBluemindFeatureActive) {
+                let syncDeactivatedTitle = Drupal.t('The Bluemind calendar synchronization is deactivated globally', {}, { context: 'gofast:gofast_calendar' });
+                $(".fc-syncCalendar-button").attr("title", syncDeactivatedTitle).attr("disabled", "");
+              } else if (!isFeatureActiveForUser) {
+                let syncDeactivatedTitle = Drupal.t('You deactivated the Bluemind calendar synchronization in your profile', {}, { context: 'gofast:gofast_calendar' });
+                $(".fc-syncCalendar-button").attr("title", syncDeactivatedTitle).attr("disabled", "");
+              }
+
+              // Store switch state in session storage
+              $("#calendar-visibility-switch-input").on("change", () => {
+                if($("#calendar-visibility-switch-input").is(":checked")) {
+                  sessionStorage.setItem("calendar-events-visiblity", "all")
+                } else {
+                  sessionStorage.setItem("calendar-events-visiblity", "space-only")
+                }
+                Gofast.calendar.toggleLoader(true)
+                // Delay event fetching preventing page freezing
+                setTimeout(() => {
+                  Gofast.calendar.calInstance.refetchEvents();
+                }, 500)
+              })
             });
             Gofast.calendar.calInstance.render();
+            Gofast.updateCalendarEvents()
 
             $('#tab_ogcalendar').on('shown.bs.tab', function (e) {
               // update size of calendar when the tab is showed
@@ -364,33 +423,8 @@
       }
   };
 
-  Drupal.behaviors.calendarUpdater = {
-    attach: function (context, settings) {
-
-      const isBluemindFeatureActive = Gofast._settings.gofast_bluemind_is_feature_active;
-      const isFeatureActiveForUser = Gofast._settings.gofast_bluemind_is_feature_active_for_user;
-
-      if (isBluemindFeatureActive && isFeatureActiveForUser) {
-        // Set up an interval to call Gofast.calendar.initCalendar every 5 minutes.
-        var intervalId = setInterval(function () {
-          try {
-            if (Gofast &&  Gofast.calendar.calInstance.refetchEvents() && typeof Gofast.calendar.calInstance.refetchEvents() === 'function') {
-              Gofast.calendar.calInstance.refetchEvents()
-            }
-          } catch (error) {
-            console.error('Error occurred during calendar update:', error);
-          }
-        }, 5 * 60 * 1000); // 2 minutes in milliseconds.
-
-        // To clear the interval when the page is unloaded or updated.
-        jQuery(window, context).on('unload', function () {
-          clearInterval(intervalId);
-        });
-      }
-    }
-  };
-  
   Gofast.getCalendarEvents = function (fetchInfo, nid, successCallback, failureCallback) {
+    fetchInfo.calendarEventsVisibility = sessionStorage.getItem("calendar-events-visiblity") ?? "space-only"
     var data = {
       nid: nid,
       fetchInfo: fetchInfo
@@ -399,17 +433,42 @@
       type: "GET",
       url: window.origin + "/calendar/get_calendar",
       data: data,
-      async: false,
       success: function (data) {
         successCallback(data);
+        Gofast.calendar.toggleLoader(false)
         Gofast.getLastSyncDate(Gofast.calendar.setLastSync)
       },
       dataType: 'json'
     });
   }
+
+  Gofast.updateCalendarEvents = function () {
+    const isBluemindFeatureActive = Gofast._settings.gofast_bluemind_is_feature_active;
+    const isFeatureActiveForUser = Gofast._settings.gofast_bluemind_is_feature_active_for_user;
+
+    if (!isBluemindFeatureActive || !isFeatureActiveForUser || $(".fc-syncCalendar-button.syncing").length) {
+      return;
+    }
+    $(".fc-syncCalendar-button").addClass("syncing");
+
+    const bluemindSyncCallback = function() {
+      if (!$(".fc-syncCalendar-button").length) {
+        clearInterval(Gofast.calendar?.bluemindSyncInterval);
+        return;
+      }
+      try {
+        Gofast?.calendar?.calInstance?.refetchEvents()
+      } catch (error) {
+        console.error('Error occurred during calendar update:', error);
+      }
+    };
+
+    // Set up an interval to call Gofast.calendar.initCalendar every 5 minutes.
+    bluemindSyncCallback();
+    Gofast.calendar.bluemindSyncInterval = setInterval(bluemindSyncCallback, 5 * 60 * 1000); // 5 minutes in milliseconds.
+  }
   
   Gofast.getLastSyncDate = function (successCallback) {
-    
     const isBluemindFeatureActive = Gofast._settings.gofast_bluemind_is_feature_active;
     const isFeatureActiveForUser = Gofast._settings.gofast_bluemind_is_feature_active_for_user;
     
@@ -427,7 +486,6 @@
   }
 
   Gofast.calendar.setLastSync = function (lastSyncDate = 0) {
-    console.log(lastSyncDate)
     const isBluemindFeatureActive = Gofast._settings.gofast_bluemind_is_feature_active;
     const isFeatureActiveForUser = Gofast._settings.gofast_bluemind_is_feature_active_for_user;
 
@@ -449,6 +507,28 @@
       }
     }
   };
+  Gofast.calendar.toggleLoader = function(showLoader = true) {
+    if(showLoader){
+      $("#kt_calendar > .fc-view-container > .fc-view").addClass("d-none")
+      $("#kt_calendar > .fc-view-container").append('<div class="spinner spinner-center spinner-primary spinner-lg h-100"></div>')
+    } else {
+      $("#kt_calendar > .fc-view-container > .spinner").remove();
+      $("#kt_calendar > .fc-view-container > .fc-view").removeClass("d-none")
+    }
+  }
+
+  Gofast.calendar.setToolbarEventsBadge = function(events) {
+    const $calendarTitleElement = $(".fc-toolbar .fc-center > *:last-child");
+    const $titleContainer = $('<div class="d-inline-flex align-items-center">');
+    $calendarTitleElement.wrap($titleContainer);
+    $calendarTitleElement.addClass("m-0")
+    let $calendarTitleBadge = $calendarTitleElement.parent().find("span");
+    if(!$calendarTitleBadge.length){
+      $calendarTitleBadge = $(`<span class='ml-3 label label-inline font-weight-bold label-dark'></span>`);
+      $calendarTitleElement.parent().append($calendarTitleBadge);
+    }
+    $calendarTitleBadge.html(`${events.length} ${(events.length > 1 ? Drupal.t('events') : Drupal.t('event'))}`);
+  }
 
 
 })(jQuery, Gofast, Drupal);

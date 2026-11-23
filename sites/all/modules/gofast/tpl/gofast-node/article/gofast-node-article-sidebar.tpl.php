@@ -118,10 +118,10 @@ if (count(module_implements("extra_metadata")) >= 1) {
     <?php if (gofast_book_is_node_wiki_article($node->nid) || gofast_book_is_article_homepage($nid)) : ?>
       Drupal.settings.gofast_selected_book = "<?= $node->nid ?>";
       // Explorer is out of date: reload it
-      if (!jQuery(".book-explorer-element[data-nid='" +  Drupal.settings.gofast_selected_book + "']").length) {
-        Gofast.sideFileBrowser.refreshBrowser("book-browser"); // will also highlight the current node
+      if (!jQuery("#book-browser .side-explorer-element[data-nid='" +  Drupal.settings.gofast_selected_book + "']").length) {
+        Gofast.sideFileBrowser.refreshBrowser("book-browser"); // will also highlight the current node 
       } else {
-        // Otherwise just hightlight the current node
+        // Highlight the current node
         Gofast.sideFileBrowser.selectCurrentItem("book-browser");
       }
     <?php endif; ?>

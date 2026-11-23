@@ -1,14 +1,13 @@
 <?php global $user;
 global $base_url;
 $node = node_load($gid);
-$article_homepage = gofast_og_get_article_homepage_from_og($gid);
 $can_update = node_access('update', $node);
 $custom_logo = isset($custom_logo) ? file_create_url($custom_logo) . '?rand='. rand(1, 1000) : $base_url . '/sites/all/themes/bootstrap-keen/logo.png';
 ?>
 <div class="d-flex h-100 overflow-scroll" data-parent-tab="oghome" data-gid="<?= $gid ?>" id="gofastHomePage">
     <div class="d-flex mt-4 pl-8 pr-8 align-items-center flex-column" style="gap: 1rem;">
         <?php if ($can_update) : ?>
-            <div class="image-input image-input-empty image-input-outline" id="gofast-og-home-space-logo" style="background-image: url(<?= $custom_logo ?>); background-position: center; background-size: contain;">
+            <div data-done-event="ogLogoChange" class="image-input image-input-empty image-input-outline" id="gofast-og-home-space-logo" style="background-image: url(<?= $custom_logo ?>); background-position: center; background-size: contain;">
                 <div class="image-input-wrapper" style="width: 300px; height: 300px;"></div>
                 <a href="/modal/nojs/og/edit-space-logo/<?= $gid ?>" class="ctools-use-modal">
                 <label id="gofastSpaceLogoButton" class="btn btn-xs btn-icon btn-circle btn-white btn-hover-text-primary btn-shadow" data-action="change" data-toggle="tooltip" title="" data-original-title="<?= t('Change space picture', array(), array("context" => "gofast:gofast_og")) ?>">
@@ -44,7 +43,7 @@ $custom_logo = isset($custom_logo) ? file_create_url($custom_logo) . '?rand='. r
             <div class="ogSpaceTitleContainer">
                 <h3 class="ogSpaceTitle"><?= $node->title ?></h3>
             </div>
-            <?php if (isset($description) && !empty($description)) : ?>
+            <?php if ((isset($description) && !empty($description)) || $can_update) : ?>
                 <div class="card card-custom mx-auto bg-white h-100 mb-4">
                     <div class="card-header border-0 px-4 py-2 min-h-40px bg-primary text-white">
                         <h3 class="card-title align-items-start flex-column">
@@ -72,8 +71,13 @@ $custom_logo = isset($custom_logo) ? file_create_url($custom_logo) . '?rand='. r
         <?php if($can_update && $node->type != "private_space") : ?>
             const spaceTitleElement = $(".ogSpaceTitle");
             spaceTitleElement.text("");
-            GofastEditableInput(spaceTitleElement[0], "<?= $node->title ?>", "text", {
+            const spaceTitleInput = GofastEditableInput(spaceTitleElement[0], "<?= $node->title ?>", "text", {
                 save: async (newContent) => {
+                    if (Gofast.ITHit.forbiddenCharactersPattern.test(newContent)) {
+                        Gofast.toast(Drupal.t("You can't set a title with one of these characters @characters", {"@characters": "(\\ / : * ? \" < > |)"}, {context: "gofast:gofast_ajax_file_browser"}), "warning");
+                        spaceTitleInput.setData("<?= $node->title ?>");
+                        return;
+                    }
                     // disable input while saving
                     spaceTitleElement.css("pointer-events", "none");
                     spaceTitleElement.parent().css("cursor", "not-allowed");
@@ -101,12 +105,6 @@ $custom_logo = isset($custom_logo) ? file_create_url($custom_logo) . '?rand='. r
             }
         });
         Drupal.attachBehaviors();
-        // unwrap left menu: we try to do it only if a homepage actually exists
-        <?php if ($article_homepage) : ?>
-            // but we target the gid since it's the gid which is referred in the "book" element in the left menu
-            Drupal.settings.gofast_selected_book = <?= $gid ?>;
-            Gofast.sideFileBrowser.selectCurrentItem("book-browser", false);
-        <?php endif; ?>
         // favorites block
         Gofast.og.getSpaceBookmarks("<?= $gid ?>");
         // we don't load wikis neither forums tabs for now

@@ -2,13 +2,12 @@
 
   Gofast = Gofast || {};
 
+  // Cross-tab listeners are attached once per page load (destroy() recreates Gofast.Riot)
+  let sessionCheckAttached = false;
+
   Gofast._riot = function() {
     return {
       //############### PROPERTIES ###############
-     
-     // Our GoFAST current User
-      User: Gofast.get('user'),
-      
       // Is our Riot instancied
       isInit: false,
       
@@ -23,7 +22,10 @@
       
       //Is our session ready in the browser
       sessionReady: false,
-      
+
+      //Another tab switched account while this one was hidden: re-init on next focus
+      shouldInit: false,
+
       //Our access token to Element
       accessToken: "",
       
@@ -38,14 +40,10 @@
         minimizedEventInterval: null,
         
         //Interval to apply bubble events
-        bubbleEventsInteval: null,
+        bubbleEventsInterval: null,
         
         //Interval to process tooltips
         tooltipsInterval: null,
-        
-        //Interval to check if the JS session corresponds to the localStorage session
-        //WARNING : This interval should NEVER be destroyed
-        sessionCheckInterval: null,
 
         //Wait for the full content of the window to be loaded before interferring with elements inside
         waitForFullMatrixLoadInterval: null,
@@ -54,6 +52,8 @@
         waitForBaseAvatar: null
       },
       listeners: {
+        onStorageChange: null,
+        onVisibilityChange: null,
         // If click an element outside Riot, autoclose Riot modal to "shortcut" the focus lock trap
         // which otherwise would prevent focus on any parent document element
         shortcutFocusLock: function(e) {
@@ -92,42 +92,62 @@
       /*
        * Initialize Element, check if we have a session and display
       */
-      init: function () {
+      init: async function (iframeId = false) {
+        var hide_chat = 0;
+        if (typeof Drupal.settings.hide_chat != "undefined") {
+          hide_chat = Drupal.settings.hide_chat;
+        }
+        
+        if(hide_chat == 1){
+          $('.menu-link[href="/conversation"]').attr("href", "").attr("title", Drupal.t("This feature has been disabled on your server", {}, {context: "gofast:gofast_riot"}));
+          Gofast.Riot.processHandleClickEvent();
+          return;
+        }
+
         //Inform that we are initializing Element
         Gofast.Riot.isInit = true;
         
         //Preconfiguration
         Gofast.Riot.processHandleClickEvent();
         Gofast.Riot.preconfigure();
-        
+
         //Log in
         if(!localStorage.riot_access_token){
           // Connect and save token to local storage.
-          Gofast.Riot.login();
+          await Gofast.Riot.login();
         }else{
-          Gofast.Riot.checkLogin();
+          await Gofast.Riot.checkLogin();
         }
-        
+
         //Display Element
-        Gofast.Riot.display();
+        Gofast.Riot.display(iframeId);
 
         $(document).on("mousedown", Gofast.Riot.listeners.shortcutFocusLock);
         $(document).on("call_state", Gofast.Riot.listeners.onCallStateChange);
+
+        //Start watching for logout / account switch from other tabs
+        Gofast.Riot.startSessionCheck();
       },
-      
-      /*
-       *
-      */
-      destroy: function(collapse = true){
+
+      destroy: function(collapse = true, iframeId = false){
         if (collapse) {
           Gofast.Riot.collapse();
         }
-        for (const [key, interval] of Object.entries(Gofast.Riot.intervals)) {
-          if (interval !== null && key !== "sessionCheckInterval") {
+        for (const listener of Object.values(this.listeners)) {
+          window.removeEventListener('storage', listener);
+        }
+        for (const interval of Object.values(this.intervals)) {
+          if (interval !== null) {
               clearInterval(interval);
           }
         }
-        $("#IframeRiotBloc").attr("src", "");
+        if (iframeId) {
+          $("#" + iframeId).attr("src", "");
+        } else {
+          $("#IframeRiotBloc").attr("src", "");
+          $("#IframeRiot").attr("src", "");
+          $("#gf_conversation").attr("src", "");
+        }
         Gofast.Riot = null;
         Gofast.Riot = Gofast._riot();
         $(document).off("mousedown", Gofast.Riot.listeners.shortcutFocusLock);
@@ -149,8 +169,12 @@
 
         // Localization
         let mxSettings = {};
-        if (localStorage['mx_local_settings'] && typeof localStorage['mx_local_settings'] === "object") {
-          mxSettings = JSON.parse(localStorage['mx_local_settings']); // keep already existing settings
+        if (localStorage['mx_local_settings']) {
+          try {
+            mxSettings = JSON.parse(localStorage['mx_local_settings']); // keep already existing settings
+          } catch (e) {
+            console.error(e)
+          }
         }
         mxSettings["webRtcForceTURN"] = Drupal.settings.DISABLE_P2P_RIOT; // disable P2P if configuration says so
         mxSettings["language"] = Drupal.settings.gofast.language; // for the language regardless of existing settings
@@ -158,7 +182,7 @@
 
         // Browser compatiblity check
         Gofast.Riot.checkBrowserCompatibility();
-        
+
         //Force minimized client
         localStorage['mx_lhs_size'] = 0;
         
@@ -167,7 +191,24 @@
           localStorage['mx_access_token'] = localStorage['riot_access_token'];
         }
       },
-      
+
+      /*
+       * Given an iframe DOM id attribute, set the src to a new riot instance,
+       * taking into account the room id if the iframe targets a room.
+       * This can also works as a riot instance refresh without resetting riot storage.
+       */
+      setIframeSrc: function(iframeId){
+        if (!$("#" + iframeId).length) {
+          return;
+        }
+        const roomId = $("#" + iframeId).attr("data-room");
+        if (roomId) {
+          $("#" + iframeId).attr("src", "/sites/all/libraries/riot/index.html#/room/" + roomId);
+        } else {
+          $("#" + iframeId).attr("src", "/sites/all/libraries/riot/index.html");
+        }
+      },
+
       /*
        * We make the same browser compatibility check Element does
        * except for the ES2020 check which may fail at times even with modern browsers
@@ -184,45 +225,85 @@
           window.localStorage.setItem('mx_accepts_unsupported_browser', String(true));
         }
       },
-      
+
       /*
        * Ask Element for a session
       */
-      login: function () {
-        const loginParams = {user: Gofast.Riot.User.name.toLowerCase(), password: Drupal.settings.TOKEN_RIOT, type: "m.login.password"};
-        if (typeof Drupal.settings.DEVICE_RIOT != "undefined") {
-          loginParams.device_id = Drupal.settings.DEVICE_RIOT;
-        }
-        $.ajax({
+      login: async function () {
+        const drupalUsername = await Gofast.whoAmI();
+        const loginParams = {user: drupalUsername.toLowerCase(), password: Drupal.settings.TOKEN_RIOT, type: "m.login.password"};
+        await $.ajax({
           url: "https://" + Drupal.settings.GOFAST_COMM + "/_matrix/client/r0/login",
           type: "POST",
           contentType: "application/json; charset=utf-8",
           data: JSON.stringify(loginParams),
           dataType: "json",
-          success: Gofast.Riot.onLogin,
-          error: Gofast.Riot.handleFailure,
-          timeout: Gofast.Riot.handleFailure,
+          success: await Gofast.Riot.onLogin,
+          error: function(jqXHR, textStatus, errorThrown) {
+            Gofast.Riot.handleFailure(jqXHR, textStatus, errorThrown);
+          },
+          timeout: function(jqXHR, textStatus, errorThrown) {
+            Gofast.Riot.handleFailure(jqXHR, textStatus, errorThrown);
+          },
         });
       },
-      
+
       /*
        * Check if our element session is valid
       */
-     checkLogin: function(){
-      $.ajax({
-        url: "https://" + Drupal.settings.GOFAST_COMM + "/_matrix/client/r0/account/whoami?access_token=" + localStorage.riot_access_token,
-        type: 'GET',
-        dataType: 'json',
-        success: Gofast.Riot.onLogin,
-        error: Gofast.Riot.login
-      });
-     },
-      
+      checkLogin: async function(){
+        await $.ajax({
+          url: "https://" + Drupal.settings.GOFAST_COMM + "/_matrix/client/r0/account/whoami?access_token=" + localStorage.riot_access_token,
+          type: 'GET',
+          dataType: 'json',
+          success: await Gofast.Riot.onCheckLoginSuccess,
+          error: Gofast.Riot.onCheckLoginError
+        });
+      },
+
+      onCheckLoginError: function (jqXHR, textStatus, errorThrown) {
+        delete Drupal.settings.ACCESS_TOKEN_RIOT;
+        localStorage.removeItem("riot_access_token");
+        localStorage.removeItem("mx_access_token");
+        Gofast.Riot.destroy();
+        Gofast.Riot.init();
+      },
+
+      onCheckLoginSuccess: async function(data) {
+        const hasIntegrity = await Gofast.Riot.checkTokenIntegrity(data);
+        if (!hasIntegrity) {
+          return;
+        }
+        data.access_token = localStorage.riot_access_token;
+        data.well_known = {"m.homeserver": {base_url: "https://" + Drupal.settings.GOFAST_COMM + "/"}};
+        await Gofast.Riot.onLogin(data);
+      },
+
+      /**
+       * Verifies the integrity of the user token by comparing the user ID in the
+       * provided data against the current Drupal session user.
+       * @returns {boolean} True if the token is valid and matches the session; false otherwise.
+       */
+      checkTokenIntegrity: async function(data) {
+        const riotUsername = data?.user_id?.split("@")[1].split(":")[0];
+        const drupalUsername = await Gofast.whoAmI();
+        if (riotUsername.toLowerCase() == drupalUsername.toLowerCase()) {
+          return true;
+        }
+        localStorage.removeItem("riot_access_token");
+        localStorage.removeItem("mx_access_token");
+        return false;
+      },
+
       /*
        * After getting an Element session, save it in the browser
       */
-      onLogin: function (data) {
+      onLogin: async function (data) {
         if(data.access_token){
+          const hasIntegrity = await Gofast.Riot.checkTokenIntegrity(data);
+          if (!hasIntegrity) {
+            return;
+          }
           //Save the session in the browser
           Gofast.Riot.save_user(data);
           
@@ -239,41 +320,57 @@
           Gofast.Riot.accessToken = localStorage.riot_access_token;
         }
 
-        if (typeof Drupal.settings.DEVICE_RIOT == "undefined" || data.device_id != Drupal.settings.DEVICE_RIOT) {
-          $.ajax({
-            url: window.location.origin + '/SaveRiotDevice',
-            type: 'POST',
-            data: {device: data.device_id},
-            dataType: 'html',
-          });
-        }
-        
         //Our session is ready
         Gofast.Riot.sessionReady = true;
-        
-        //Start to check for session changes (other tabs etc..)
-        Gofast.Riot.startSessionCheck();
       },
-      
+
       /*
-       * Check periodically if we have been disconnected on another tab
-       * Try to switch to a new session
+       * Watch for logout / account switch happening in other tabs
+       * ('storage' events only fire on the other tabs, not the one that made the change)
       */
       startSessionCheck: function(){
-        clearInterval(Gofast.Riot.intervals.sessionCheckInterval);
-        Gofast.Riot.intervals.sessionCheckInterval = setInterval(function(){
-          if(!localStorage.riot_access_token && Gofast.Riot.isInit){
-            Gofast.Riot.destroy();
+        if (sessionCheckAttached) {
+          return;
+        }
+        sessionCheckAttached = true;
+
+        window.addEventListener('storage', (event) => {
+          if (event.key !== 'riot_access_token') {
+            return;
           }
-          else if(localStorage.riot_access_token && localStorage.riot_access_token != Gofast.Riot.accessToken){
-            if(Gofast.Riot.isInit){
+          const newToken = event.newValue;
+          const oldToken = Gofast.Riot.accessToken;
+
+          //Logout in another tab: stop our session right away, nothing to re-init
+          if (!newToken) {
+            if (Gofast.Riot.isInit) {
               Gofast.Riot.destroy();
             }
+            return;
+          }
+
+          //Another account logged in: stop the stale session right away
+          if (newToken !== oldToken) {
+            if (Gofast.Riot.isInit) {
+              Gofast.Riot.destroy();
+            }
+            if (document.visibilityState == "visible") {
+              Gofast.Riot.init();
+            } else {
+              //Background tabs are throttled by the browser, re-init on next focus instead
+              Gofast.Riot.shouldInit = true;
+            }
+          }
+        });
+
+        window.addEventListener('visibilitychange', () => {
+          if (document.visibilityState == "visible" && Gofast.Riot.shouldInit) {
+            Gofast.Riot.shouldInit = false;
             Gofast.Riot.init();
           }
-        }, 1000);
+        });
       },
-      
+
       /*
        * Save our Element session in the local storage
       */
@@ -285,7 +382,14 @@
         localStorage.mx_hs_url = data['well_known']['m.homeserver'].base_url;
       },
 
-      handleFailure: function(){
+      handleFailure: async function(jqXHR, textStatus, errorThrown){
+        if (jqXHR && jqXHR.status === 403) {
+          Drupal.settings.TOKEN_RIOT = await $.ajax({
+            url: window.location.origin + '/GetRiotTokenJS',
+            type: 'GET',
+            dataType: 'html',
+          });
+        }
         // first we check if the COMM server is up
         const pingCommEndpoint = "https://" + Drupal.settings.GOFAST_COMM + "/.well-known/matrix/client";
         $.get(pingCommEndpoint).done(function(data, status) {
@@ -301,6 +405,8 @@
         });
         // if COMM server is up, we add a reload button to be able to re-init the riot block from scratch
         $("#IframeRiotBloc").attr("src", "");
+        $("#IframeRiot").attr("src", "");
+        $("#gf_conversation").attr("src", "");
         $("#IframeRiotBloc").hide();
         $(".gofastRiotReload").removeClass("d-none");
       },
@@ -308,7 +414,16 @@
       /*
        * Element is ready, display it
       */
-      display: function(){
+      display: function(iframeId = false){
+        var hide_chat = 0;
+        if (typeof Drupal.settings.hide_chat != "undefined") {
+          hide_chat = Drupal.settings.hide_chat;
+        }
+        
+        if(hide_chat == 1){  
+          return;
+        }
+      
         if (Gofast.Riot.intervals.displayInterval) {
           return;
         }
@@ -328,7 +443,14 @@
           
           //Display Element
           $(".gofastRiotReload").addClass("d-none");
-          $("#IframeRiotBloc").attr("src", "/sites/all/libraries/riot/index.html?v=430");
+          if (iframeId) {
+            Gofast.Riot.setIframeSrc(iframeId);
+          } else {
+            $("#IframeRiotBloc").attr("src", "/sites/all/libraries/riot/index.html");
+            $("#IframeRiot").attr("src", "/sites/all/libraries/riot/index.html");
+            $("#gf_conversation").attr("src", "/sites/all/libraries/riot/index.html#/room/" + $("#gf_conversation").attr("data-room"));
+          }
+          $("#IframeRiotBloc").show();
 
           clearInterval(Gofast.Riot.intervals.displayInterval);
 
@@ -358,9 +480,9 @@
       */
       applyBubbleEvents: function(){
         //Constantly (every 1.5s) check if the bubbles are clickable
-        clearInterval(Gofast.Riot.intervals.bubbleEventsInteval);
+        clearInterval(Gofast.Riot.intervals.bubbleEventsInterval);
         
-        Gofast.Riot.intervals.bubbleEventsInteval = setInterval(function(){
+        Gofast.Riot.intervals.bubbleEventsInterval = setInterval(function(){
           var $iframe_body = $("#IframeRiotBloc").contents().find('body');
           
           $iframe_body.find('.mx_AccessibleButton').not("click-expand-processed").on('click', function() {
@@ -511,7 +633,9 @@
   };
   
   $(document).ready(function(){
-    
+    if (Drupal.settings.ACCESS_TOKEN_RIOT && Drupal.settings.ACCESS_TOKEN_RIOT != localStorage.riot_access_token) {
+      localStorage.setItem("riot_access_token", Drupal.settings.ACCESS_TOKEN_RIOT);
+    }
     // Don't load Element if on tablet of mobile devices
     if(Gofast.isTablet() || Gofast.isMobile()){
       return;

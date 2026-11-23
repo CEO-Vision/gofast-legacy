@@ -21,14 +21,14 @@ function gofast_stats_menu() {
     'page callback' => 'gofast_stats_global_doc_stats_genere_file',
     'type' => MENU_CALLBACK,
     'page arguments' => array('gofast_admin_settings'),
-    'access arguments' => array('administer site configuration'),
+    'access arguments' => array('access statistics'),
     'access callback' => 'user_access',
   );
   $items['gofast_stats/space_stats'] = array(
     'page callback' => 'gofast_stats_space_stats_genere_file',
     'type' => MENU_CALLBACK,
     'page arguments' => array('gofast_admin_settings'),
-    'access arguments' => array('administer site configuration'),
+    'access arguments' => array('access statistics'),
     'access callback' => 'user_access',
   );
 
@@ -36,7 +36,7 @@ function gofast_stats_menu() {
     'page callback' => 'gofast_stats_global_space_stats_genere_file',
     'type' => MENU_CALLBACK,
     'page arguments' => array('gofast_admin_settings'),
-    'access arguments' => array('administer site configuration'),
+    'access arguments' => array('access statistics'),
     'access callback' => 'user_access',
   );
 
@@ -44,7 +44,7 @@ function gofast_stats_menu() {
     'page callback' => 'gofast_stats_user_stats_genere_file',
     'type' => MENU_CALLBACK,
     'page arguments' => array('gofast_admin_settings'),
-    'access arguments' => array('administer site configuration'),
+    'access arguments' => array('access statistics'),
     'access callback' => 'user_access',
   );
 
@@ -65,6 +65,7 @@ function gofast_stats_menu() {
 
    $items['gofast_stats/space_document_stats_export/%'] = array(
     'page callback' => 'gofast_stats_space_document_stats_genere_file',
+    'page arguments' => array(2),
     'type' => MENU_CALLBACK,
     'access arguments' => array(2),
     'access callback' => 'gofast_stats_download_access',
@@ -203,7 +204,54 @@ function gofast_stats_cache() {
   }
 }
 
+/**
+ * Whether the current user may see the statistics of a space: its
+ * administrators, the user support and the owner of a personal space.
+ */
+function gofast_stats_user_can_view_space_stats($gid) {
+  global $user;
+  if (gofast_user_is_business_admin()) {
+    return TRUE;
+  }
+  $gid = (int) $gid;
+  if (!$gid) {
+    return FALSE;
+  }
+  // Personal sub-spaces of the entities belong to their user, a mere member
+  if ($gid == gofast_og_get_user_private_space(NULL, FALSE)
+    || (function_exists('gofast_multitenant_is_perso_subspace') && gofast_multitenant_is_perso_subspace($gid) && node_load($gid)->uid == $user->uid)) {
+    return TRUE;
+  }
+  return in_array('administrator member', gofast_og_get_user_final_roles_for_space('node', $gid, $user->uid), TRUE);
+}
+
+/**
+ * Access to the statistics API: the statistics page sees the whole platform,
+ * the space tabs only the spaces whose statistics the user may see.
+ */
+function gofast_stats_api_access(array $gids) {
+  if (user_access('access statistics')) {
+    return TRUE;
+  }
+  $gids = array_filter($gids, function ($gid) {
+    return !empty($gid) && $gid !== 'false';
+  });
+  if (empty($gids)) {
+    return FALSE;
+  }
+  foreach ($gids as $gid) {
+    if (!gofast_stats_user_can_view_space_stats($gid)) {
+      return FALSE;
+    }
+  }
+  return TRUE;
+}
+
 function gofast_stats_space_stats_async(){
+    if (!gofast_stats_user_can_view_space_stats($_POST["currentGid"] ?? NULL)) {
+      drupal_access_denied();
+      drupal_exit();
+    }
     $render = theme("gofast_stats_space_dashboard", [
       "gid" => gofast_xss_clean($_POST["currentGid"]),
       "is_user_tab" => isset($_POST['is_user_tab']) ? gofast_xss_clean($_POST["is_user_tab"]) : FALSE,
@@ -351,7 +399,7 @@ function gofast_stats_list_genere_file_results($nids, $list_fields, &$context = 
   
   $nodes = node_load_multiple($nids, array(), TRUE);
   foreach($nodes as $key => $node){
-    if($node->type !== "alfresco_item" && $node->type !== "article"){
+    if(($node->type !== "alfresco_item" && $node->type !== "article") || !gofast_stats_user_can_export_node($node)){
       if ($context !== FALSE) {
         $context['sandbox']['progress']++;
         $context['sandbox']['current_node'] = $key+1;
@@ -746,25 +794,27 @@ function gofast_stats_user_stats_genere_file(){
   }
   // Create new PHPExcel object
   $objPHPExcel = new \PhpOffice\PhpSpreadsheet\Spreadsheet();
-  $objPHPExcel->getActiveSheet()->setTitle(t("Users", array(), array('context' => 'gofast_stats')));
+  $active_sheet = $objPHPExcel->getActiveSheet();
+  $active_sheet->setTitle(t("Users", array(), array('context' => 'gofast_stats')));
 
   $values = entity_load('user');
 
   //Users tab
   $objPHPExcel->setActiveSheetIndex(0);
-  $objPHPExcel->getActiveSheet()->SetCellValue('A1', t("User ID", array(), array('context' => 'gofast_stats')));
-  $objPHPExcel->getActiveSheet()->SetCellValue('B1', t("Login", array(), array('context' => 'gofast_stats')));
-  $objPHPExcel->getActiveSheet()->SetCellValue('C1', t("E-mail", array(), array('context' => 'gofast_stats')));
-  $objPHPExcel->getActiveSheet()->SetCellValue('D1', t("First name", array(), array('context' => 'gofast_stats')));
-  $objPHPExcel->getActiveSheet()->SetCellValue('E1', t("Last name", array(), array('context' => 'gofast_stats')));
-  $objPHPExcel->getActiveSheet()->SetCellValue('F1', t("Register date", array(), array('context' => 'gofast_stats')));
-  $objPHPExcel->getActiveSheet()->SetCellValue('G1', t("Last login"));
-  $objPHPExcel->getActiveSheet()->SetCellValue('H1', t("Status", array(), array('context' => 'gofast_stats')));
-  $objPHPExcel->getActiveSheet()->SetCellValue('I1', t(GOFAST_ROLE_SUPER_ADMIN_VALUE, array(), array('context' => 'gofast_stats')));
-  $objPHPExcel->getActiveSheet()->SetCellValue('J1', t("Space admin", array(), array('context' => 'gofast_stats')));
-  $objPHPExcel->getActiveSheet()->SetCellValue('K1', t("Broadcaster", array(), array('context' => 'gofast_stats')));
-  $objPHPExcel->getActiveSheet()->SetCellValue('L1', t("Extranet", array(), array('context' => 'gofast_stats')));
-  $objPHPExcel->getActiveSheet()->SetCellValue('M1', t(GOFAST_ROLE_BUSINESS_ADMIN_VALUE, array(), array('context' => 'gofast:stats')));
+  $active_sheet->SetCellValue('A1', t("User ID", array(), array('context' => 'gofast_stats')));
+  $active_sheet->SetCellValue('B1', t("Login", array(), array('context' => 'gofast_stats')));
+  $active_sheet->SetCellValue('C1', t("E-mail", array(), array('context' => 'gofast_stats')));
+  $active_sheet->SetCellValue('D1', t("First name", array(), array('context' => 'gofast_stats')));
+  $active_sheet->SetCellValue('E1', t("Last name", array(), array('context' => 'gofast_stats')));
+  $active_sheet->SetCellValue('F1', t("Register date", array(), array('context' => 'gofast_stats')));
+  $active_sheet->SetCellValue('G1', t("Last login"));
+  $active_sheet->SetCellValue('H1', t("Status", array(), array('context' => 'gofast_stats')));
+  $active_sheet->SetCellValue('I1', t(GOFAST_ROLE_SUPER_ADMIN_VALUE, array(), array('context' => 'gofast_stats')));
+  $active_sheet->SetCellValue('J1', t("Space admin", array(), array('context' => 'gofast_stats')));
+  $active_sheet->SetCellValue('K1', t("Broadcaster", array(), array('context' => 'gofast_stats')));
+  $active_sheet->SetCellValue('L1', t("Extranet", array(), array('context' => 'gofast_stats')));
+  $active_sheet->SetCellValue('M1', t(GOFAST_ROLE_BUSINESS_ADMIN_VALUE, array(), array('context' => 'gofast:stats')));
+  $active_sheet->SetCellValue('N1', t('SASL Authentication', [], ['context' => 'gofast'])); // Intentionally using gofast context to use already existing translated string.
 
   $position = 1;
 
@@ -777,19 +827,21 @@ function gofast_stats_user_stats_genere_file(){
     }else{
         $uaccess = format_date($user->access, "short");
     }
-    $objPHPExcel->getActiveSheet()->SetCellValue('A' . ($position+1), $user->uid);
-    $objPHPExcel->getActiveSheet()->SetCellValue('B' . ($position+1), $user->name);
-    $objPHPExcel->getActiveSheet()->SetCellValue('C' . ($position+1), $user->mail);
-    $objPHPExcel->getActiveSheet()->SetCellValue('D' . ($position+1), $user->ldap_user_givenname[LANGUAGE_NONE][0]['value']);
-    $objPHPExcel->getActiveSheet()->SetCellValue('E' . ($position+1), $user->ldap_user_sn[LANGUAGE_NONE][0]['value']);
-    $objPHPExcel->getActiveSheet()->SetCellValue('F' . ($position+1), format_date($user->created, "short"));
-    $objPHPExcel->getActiveSheet()->SetCellValue('G' . ($position+1), $uaccess);
-    $objPHPExcel->getActiveSheet()->SetCellValue('H' . ($position+1), $user->status);
-    $objPHPExcel->getActiveSheet()->SetCellValue('I' . ($position+1), gofast_user_is_adm($user));
-    $objPHPExcel->getActiveSheet()->SetCellValue('J' . ($position+1), gofast_user_is_site_manager($user));
-    $objPHPExcel->getActiveSheet()->SetCellValue('K' . ($position+1), gofast_user_is_broadcaster($user));
-    $objPHPExcel->getActiveSheet()->SetCellValue('L' . ($position+1), gofast_user_is_extranet($user));
-    $objPHPExcel->getActiveSheet()->SetCellValue('M' . ($position+1), gofast_user_is_business_admin($user));
+    $line_number = $position + 1;
+    $active_sheet->SetCellValue('A' . $line_number, $user->uid);
+    $active_sheet->SetCellValue('B' . $line_number, $user->name);
+    $active_sheet->SetCellValue('C' . $line_number, $user->mail);
+    $active_sheet->SetCellValue('D' . $line_number, $user->ldap_user_givenname[LANGUAGE_NONE][0]['value']);
+    $active_sheet->SetCellValue('E' . $line_number, $user->ldap_user_sn[LANGUAGE_NONE][0]['value']);
+    $active_sheet->SetCellValue('F' . $line_number, format_date($user->created, "short"));
+    $active_sheet->SetCellValue('G' . $line_number, $uaccess);
+    $active_sheet->SetCellValue('H' . $line_number, $user->status);
+    $active_sheet->SetCellValue('I' . $line_number, gofast_user_is_adm($user));
+    $active_sheet->SetCellValue('J' . $line_number, gofast_user_is_site_manager($user));
+    $active_sheet->SetCellValue('K' . $line_number, gofast_user_is_broadcaster($user));
+    $active_sheet->SetCellValue('L' . $line_number, gofast_user_is_extranet($user));
+    $active_sheet->SetCellValue('M' . $line_number, gofast_user_is_business_admin($user));
+    $active_sheet->setCellValue('N' . $line_number, gofast_user_is_sasl_auth_active($user));
     $position++;
   }
 
@@ -798,17 +850,17 @@ function gofast_stats_user_stats_genere_file(){
       $space = node_load($filter);
 
       //Add sheet for the space filters
-      $objPHPExcel->addSheet(new PhpOffice\PhpSpreadsheet\Worksheet\Worksheet());
+      $filter_sheet = $objPHPExcel->addSheet(new PhpOffice\PhpSpreadsheet\Worksheet\Worksheet());
       $objPHPExcel->setActiveSheetIndex($i);
-      $objPHPExcel->getActiveSheet()->setTitle(substr($space->title, 0, 30));
+      $filter_sheet->setTitle(substr($space->title, 0, 30));
 
       //Add first row
-      $objPHPExcel->getActiveSheet()->SetCellValue('A1', t("User ID", array(), array('context' => 'gofast_stats')));
-      $objPHPExcel->getActiveSheet()->SetCellValue('B1', t("Login", array(), array('context' => 'gofast_stats')));
-      $objPHPExcel->getActiveSheet()->SetCellValue('C1', t("E-mail", array(), array('context' => 'gofast_stats')));
-      $objPHPExcel->getActiveSheet()->SetCellValue('D1', t("First name", array(), array('context' => 'gofast_stats')));
-      $objPHPExcel->getActiveSheet()->SetCellValue('E1', t("Last name", array(), array('context' => 'gofast_stats')));
-      $objPHPExcel->getActiveSheet()->SetCellValue('F1', t("Role", array(), array('context' => 'gofast_stats')));
+      $filter_sheet->SetCellValue('A1', t("User ID", array(), array('context' => 'gofast_stats')));
+      $filter_sheet->SetCellValue('B1', t("Login", array(), array('context' => 'gofast_stats')));
+      $filter_sheet->SetCellValue('C1', t("E-mail", array(), array('context' => 'gofast_stats')));
+      $filter_sheet->SetCellValue('D1', t("First name", array(), array('context' => 'gofast_stats')));
+      $filter_sheet->SetCellValue('E1', t("Last name", array(), array('context' => 'gofast_stats')));
+      $filter_sheet->SetCellValue('F1', t("Role", array(), array('context' => 'gofast_stats')));
 
       $members = gofast_og_get_members_userlist_included($space);
       $j = 1;
@@ -825,12 +877,13 @@ function gofast_stats_user_stats_genere_file(){
         }
 
         //Add members informations
-        $objPHPExcel->getActiveSheet()->SetCellValue('A' . ($j+1), $uid);
-        $objPHPExcel->getActiveSheet()->SetCellValue('B' . ($j+1), $user->name);
-        $objPHPExcel->getActiveSheet()->SetCellValue('C' . ($j+1), $user->mail);
-        $objPHPExcel->getActiveSheet()->SetCellValue('D' . ($j+1), $user->ldap_user_givenname[LANGUAGE_NONE][0]['value']);
-        $objPHPExcel->getActiveSheet()->SetCellValue('E' . ($j+1), $user->ldap_user_sn[LANGUAGE_NONE][0]['value']);
-        $objPHPExcel->getActiveSheet()->SetCellValue('F' . ($j+1), $final_role);
+        $line_number = $j + 1;
+        $filter_sheet->SetCellValue('A' . $line_number, $uid);
+        $filter_sheet->SetCellValue('B' . $line_number, $user->name);
+        $filter_sheet->SetCellValue('C' . $line_number, $user->mail);
+        $filter_sheet->SetCellValue('D' . $line_number, $user->ldap_user_givenname[LANGUAGE_NONE][0]['value']);
+        $filter_sheet->SetCellValue('E' . $line_number, $user->ldap_user_sn[LANGUAGE_NONE][0]['value']);
+        $filter_sheet->SetCellValue('F' . $line_number, $final_role);
         $j++;
       }
       $i++;
@@ -1007,11 +1060,22 @@ function gofast_stats_get_step_by_period($period) {
  * Return the current gofast version
  */
 function gofast_api_stats_get_users_chart($params){
+  // The API dispatcher does not authenticate by itself; stats must never be
+  // readable anonymously, so require a logged-in user here.
+  global $user;
+  if (empty($user->uid)) {
+    gofast_api_forbidden("Authentication required");
+  }
   //Retrieve params
   $params = $params['params'];
   $period = empty($params[0]) ? "1week" : $params[0];
-  $gid = empty($params[1]) ? null : $params[1];
-  $gids = empty($params[2]) ? array() : $params[2];
+  // Entity IDs from the API caller: force integers so they can never be used
+  // to inject SQL downstream.
+  $gid = empty($params[1]) ? null : (int) $params[1];
+  $gids = empty($params[2]) ? array() : array_map('intval', (array) $params[2]);
+  if (!gofast_stats_api_access(array_merge(array($gid), $gids))) {
+    return gofast_api_forbidden("Access denied");
+  }
   $mode = empty($params[3]) ? "periodic" : $params[3];
 
   $output = array();
@@ -1063,6 +1127,9 @@ function gofast_api_stats_get_top_spaces($params){
   $params = $params['params'];
   $criteria = empty($params[0]) ? "activity" : $params[0];
   $full = empty($params[1]) ? FALSE : $params[1];
+  if (!gofast_stats_api_access(array())) {
+    return gofast_api_forbidden("Access denied");
+  }
 
   $full_string = $full ? "true" : "false";
   $cid = "gofast_stats_get_spaces_activity_values_{$criteria}_{$full_string}";
@@ -1159,6 +1226,9 @@ function gofast_api_stats_get_documents_chart($params){
   $mode = empty($params[1]) ? "evolution" : $params[1];
   $gid = empty($params[2]) ? NULL : $params[2];
   $scope = empty($params[3]) ? "all" : $params[3];
+  if (!gofast_stats_api_access(array($gid))) {
+    return gofast_api_forbidden("Access denied");
+  }
 
   //Define step between values
   $step = gofast_stats_get_step_by_period($period);
@@ -1238,6 +1308,9 @@ function gofast_api_stats_get_spaces_chart($params){
   $params = $params['params'];
   $period = empty($params[0]) ? "1week" : $params[0];
   $mode = empty($params[1]) ? "evolution" : $params[1];
+  if (!gofast_stats_api_access(array())) {
+    return gofast_api_forbidden("Access denied");
+  }
 
   $output = array();
 
@@ -1305,6 +1378,9 @@ function gofast_api_stats_get_users_doughnut_state($params){
   $params = $params['params'];
   $gid = empty($params[0]) ? NULL : $params[0];
   $gids = empty($params[1]) ? array() : $params[1];
+  if (!gofast_stats_api_access(array_merge(array($gid), (array) $gids))) {
+    return gofast_api_forbidden("Access denied");
+  }
 
   $space_filter_uids = null;
   if(!empty($gid)){
@@ -1435,6 +1511,9 @@ function gofast_stats_get_documents_metadata_chart_values($params, $vid) {
   $params = $params['params'];
   $gid = empty($params[0]) ? NULL : $params[0];
   $scope = empty($params[1]) ? "all" : $params[1];
+  if (!gofast_stats_api_access(array($gid))) {
+    gofast_api_forbidden("Access denied");
+  }
 
   $labels = array();
   $datav = array();
@@ -1480,8 +1559,11 @@ function gofast_stats_get_documents_metadata_chart_values($params, $vid) {
     if($val == 0){
       $percentage_associations = 0;
     } else {
-      $percentage_associations[intval(($val/$total)*100)] = $val;
-      $val = (intval($val/$total*100));
+      $precision = 10; 
+      $value_float = round(($val / $total) * 100, $precision); 
+      $value_string_key = "$value_float"; 
+      $percentage_associations[$value_string_key] = $val; 
+      $val = $value_float; 
     }
   }
   $total_label = "TOTAL";
@@ -1509,6 +1591,9 @@ function gofast_stats_get_documents_metadata_chart_values($params, $vid) {
  * Provide informations about the current storage of the machine
  */
 function gofast_api_stats_get_documents_storage(){
+  if (!gofast_stats_api_access(array())) {
+    return gofast_api_forbidden("Access denied");
+  }
   $free_storage = disk_free_space("/var/alfresco");
   $used_storage = (disk_total_space("/var/alfresco") - $free_storage);
 
@@ -1552,6 +1637,9 @@ function formatBytes($bytes, $precision = 2) {
  * Provide informations about the current indexation
  */
 function gofast_api_stats_get_documents_indexation(){
+  if (!gofast_stats_api_access(array())) {
+    return gofast_api_forbidden("Access denied");
+  }
   require_once drupal_get_path('module', 'gofast_search') . '/gofast_search.admin.inc';
   $output = array();
 
@@ -1563,7 +1651,7 @@ function gofast_api_stats_get_documents_indexation(){
   $indexed = $stats['indexed'];
 
   $values = array(
-    'labels' => array(t("Indexed documents", array(), array('context' => 'gofast:stats')), t("Pending for indexation", array(), array('context' => 'gofast:stats')), t("Not indexed", array(), array('context' => 'gofast:stats')), t("Only metadata indexed", array(), array('context' => 'gofast:stats'))),
+    'labels' => array(t("Indexed contents", array(), array('context' => 'gofast:gofast_stats')), t("Pending for indexation", array(), array('context' => 'gofast:gofast_stats')), t("Not indexed", array(), array('context' => 'gofast:gofast_stats')), t("Only metadata indexed", array(), array('context' => 'gofast:gofast_stats'))),
     'datasets' => array(
         'data'  => array($indexed, $pending, $not_indexed, $not_tika),
     ),
@@ -1586,6 +1674,9 @@ function gofast_api_stats_get_users_doughnut_active($params){
   $params = $params['params'];
   $gid = empty($params[0]) ? NULL : $params[0];
   $gids = empty($params[1]) ? array() : $params[1];
+  if (!gofast_stats_api_access(array_merge(array($gid), (array) $gids))) {
+    return gofast_api_forbidden("Access denied");
+  }
 
   if(!empty($gid)){
     $label = "members";
@@ -1603,6 +1694,10 @@ function gofast_api_stats_get_users_doughnut_active($params){
 
   $users_query = db_select("users", "u")
                   ->fields("u", array("uid"));
+
+  $users_query->leftJoin("field_data_field_left", "fdfl", "u.uid = fdfl.entity_id"); 
+  $users_query->condition("u.status", 1, "=") // Only active users 
+                ->condition("fdfl.field_left_value", 1, "!="); // Exclude left users, doublon but safer 
 
   if($space_filter_uids != null) {
     $users_query->condition("u.uid", $space_filter_uids, "IN");
@@ -1638,6 +1733,9 @@ function gofast_api_stats_get_users_doughnut_roles($params){
 
   $params = $params['params'];
   $gids = empty($params[0]) ? array() : $params[0];
+  if (!gofast_stats_api_access((array) $gids)) {
+    return gofast_api_forbidden("Access denied");
+  }
 
   $all_spaces_uids = null;
   if(!empty($gids)){
@@ -1695,17 +1793,39 @@ function gofast_api_stats_get_users_doughnut_roles($params){
  * Provide informations about the roles of the users in a space
  */
 function gofast_api_stats_get_members_doughnut_roles($params){
+  //Check if we are authentified
+  global $user;
+  if($user->uid == 0){
+    return gofast_api_not_authorized("No authentication method provided");
+  }
+
   //Retrieve params
   $params = $params['params'];
-  $gid = $params[0];
+  $gid = filter_var($params[0], FILTER_VALIDATE_INT, array('options' => array('min_range' => 1)));
+  if($gid === FALSE){
+    return gofast_api_mandatory_parameter("gid");
+  }
+
+  //Same audience as the space statistics tab
+  $space = node_load($gid);
+  if(!gofast_og_is_space($space)){
+    return gofast_api_not_found("Space not found");
+  }
+  if(!gofast_stats_api_access(array($gid))){
+    return gofast_api_forbidden("Access denied");
+  }
 
   $output = array();
   $admins = 0;
   $contribs = 0;
   $ro = 0;
   $requesters = 0;
+  $array_filter_uids = array();
 
-  $filter_uids = db_query("SELECT etid FROM og_membership WHERE gid=".$gid." AND (field_name='og_user_node' OR field_name='og_private')")->fetchAllAssoc("etid");
+  $filter_uids = db_query(
+    "SELECT etid FROM {og_membership} WHERE gid = :gid AND (field_name = 'og_user_node' OR field_name = 'og_private')",
+    array(':gid' => $gid)
+  )->fetchAllAssoc("etid");
   $filter_uids = array_values($filter_uids);
   foreach($filter_uids as $etid){
     $array_filter_uids[] = $etid->etid;
@@ -1878,7 +1998,7 @@ function gofast_stats_get_new_members_values($times, $step, $gid, $gids = array(
     $to = gofast_stats_get_end_time_by_start_time($step, $time);
 
     if(!empty($gids)){
-      $filter_uids = db_query("SELECT etid FROM og_membership WHERE gid IN(".implode(',', $gids).") AND (field_name='og_user_node' OR field_name='og_private')")->fetchAllAssoc("etid");
+      $filter_uids = db_query("SELECT etid FROM og_membership WHERE gid IN(".implode(',', array_map('intval', $gids)).") AND (field_name='og_user_node' OR field_name='og_private')")->fetchAllAssoc("etid");
       $filter_uids = array_values($filter_uids);
       $array_filter_uids = array();
       foreach($filter_uids as $etid){
@@ -1888,7 +2008,7 @@ function gofast_stats_get_new_members_values($times, $step, $gid, $gids = array(
     }
 
     $count_attr = "COUNT(etid)";
-    $return[] = db_query("SELECT COUNT(etid) FROM og_membership where (field_name='og_user_node' OR field_name='og_private') AND gid=".$gid." AND created <=" . $to . " AND created >=" . $time . " " . $sql_filter_uids)->fetch()->$count_attr;
+    $return[] = db_query("SELECT COUNT(etid) FROM og_membership where (field_name='og_user_node' OR field_name='og_private') AND gid=".((int) $gid)." AND created <=" . $to . " AND created >=" . $time . " " . $sql_filter_uids)->fetch()->$count_attr;
   }
   return $return;
 }
@@ -2119,7 +2239,7 @@ function gofast_stats_get_active_users_values($times, $step, $gid = NULL, $gids 
     if(!empty($gid)){
       $sql_filter_space = "AND etid IN (" . implode(",", $array_filter_uids) . ")";
     }
-    $filter_uids = db_query("SELECT etid FROM og_membership WHERE gid IN(".implode(',', $gids).") AND (field_name='og_user_node' OR field_name='og_private') " . $sql_filter_space)->fetchAllAssoc("etid");
+    $filter_uids = db_query("SELECT etid FROM og_membership WHERE gid IN(".implode(',', array_map('intval', $gids)).") AND (field_name='og_user_node' OR field_name='og_private') " . $sql_filter_space)->fetchAllAssoc("etid");
     $filter_uids = array_values($filter_uids);
     $array_filter_uids = array();
     foreach($filter_uids as $etid){
@@ -2210,8 +2330,9 @@ function gofast_modal_select_document_export_fields() {
   drupal_exit();
 }
 
-function gofast_stats_space_document_stats_genere_file() {
-  $gid = gofast_xss_clean($_POST["gid"]);
+function gofast_stats_space_document_stats_genere_file($gid) {
+  // The space of the path, the one the access callback checked
+  $gid = (int) $gid;
   $fields = gofast_xss_clean($_POST["fields"]);
   $date = gofast_xss_clean($_POST["date"]);
   $get_subspaces = filter_var(gofast_xss_clean($_POST["get_subspaces"]), FILTER_VALIDATE_BOOLEAN);
@@ -2221,7 +2342,7 @@ function gofast_stats_space_document_stats_genere_file() {
   $all_gids[] = $gid;
   if($get_subspaces){
     $childrens_nids = gofast_og_get_children($gid, TRUE, FALSE, TRUE);
-    array_push($all_gids, $childrens_nids);
+    $all_gids = array_merge($all_gids, array_values((array) $childrens_nids));
   }
   
   $filters["fields"] = $fields;
@@ -2235,12 +2356,20 @@ function gofast_stats_space_document_stats_genere_file() {
  * Custom access function to allow some users downloading space statistics
  */
 function gofast_stats_download_access($gid) {
-  $access = FALSE;
-  // Allow download only if user is business admin or if it's its private space
-  if(user_access("administer site configuration") || gofast_og_get_user_private_space(null, false) == $gid){
-    $access = TRUE;
-  } else {
-    $access = FALSE;
+  return gofast_stats_user_can_view_space_stats($gid);
+}
+
+/**
+ * Whether a document may appear in the exports of the current user: one they
+ * may open, and a confidential one only with the confidential access.
+ */
+function gofast_stats_user_can_export_node($node) {
+  if (!node_access('view', $node)) {
+    return FALSE;
   }
-  return $access;
+  if (!gofast_taxonomy_is_node_confidential($node)) {
+    return TRUE;
+  }
+  // The global $user carries no confidential access field
+  return gofast_user_can_user_access_confidential_content(user_load($GLOBALS['user']->uid));
 }

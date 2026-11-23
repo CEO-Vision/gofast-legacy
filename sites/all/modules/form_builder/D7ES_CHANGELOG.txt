@@ -1,0 +1,6 @@
+Form builder 7.x-1.x, xxxx-xx-xx (development version)
+-----------------------
+
+Form builder 7.x-1.23, 2025-04-09
+-----------------------
+- Addresses XSS issue with the form builder UI.

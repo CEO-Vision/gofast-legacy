@@ -530,13 +530,41 @@
 
       var $roles = $('.user-roles-force-single input[type=checkbox]', context);
       $roles.once('single-role', function () {
+        // Role checkbox classes
+        const administratorRolCheckboxClass = 'role_administrator';
+        const supportRoleCheckboxClass = 'role_business_adm';
+        const standardRoleCheckboxClass = 'role_contributor';
+
+        /** Jquery wrapper around current checkbox. This callback is executed once for each of the checkboxes. */
+        const $this = $(this);
+
+        // Check if the external user checkbox should be disabled (the user is already support or admin)
+        const isCheckboxAdminOrSupportRole = $this.hasClass(administratorRolCheckboxClass)
+          || $this.hasClass(supportRoleCheckboxClass);
+        const isCheckboxChecked = Boolean($this.prop('checked'));
+
+        if (isCheckboxChecked && isCheckboxAdminOrSupportRole) {
+          $('.field-name-is-extranet').find('input').prop('checked', false);
+          $('.field-name-is-extranet').find('input').prop('disabled', true);
+        }
+
+        // Attach change event. Makes role checkboxes exclusive and disables
+        // external checkbox when support or administrator is selected.
         $(this).on('change', function () {
-          if ($(this).hasClass("role_contributor")) {
+          // Disallow unchecking all the roles checkboxes (at least one must be selected).
+          if (!$roles.is(':checked')) {
+            // Preventing default on a change event does not prevent the change,
+            // we have to re-check the current checkbox.
+            $(this).prop('checked', true);
+            return;
+          }
+
+          if ($(this).hasClass(standardRoleCheckboxClass)) {
             $roles.not(this).not(':disabled').prop('checked', false);
             $('.field-name-is-extranet').find('input').prop('disabled', false);
           }
-          if ($(this).hasClass("role_administrator") || $(this).hasClass("role_business_adm")) {
-            $('.role_contributor').prop('checked', false);
+          if ($(this).hasClass(administratorRolCheckboxClass) || $(this).hasClass(supportRoleCheckboxClass)) {
+            $('.' + standardRoleCheckboxClass).prop('checked', false);
             $('.field-name-is-extranet').find('input').prop('checked', false);
             $('.field-name-is-extranet').find('input').prop('disabled', true);
           }
@@ -626,128 +654,93 @@
     }
   };
   /**
-   * Check session every minutes to disconnect properly when required.
+   * Check session every minute to disconnect properly when required.
    * @see GOFAST-6538
    */
-  window.setInterval(function () {
-    var path = 'gofast/user/whoami';
-    //dont reload page if we already are on the login page to prevent multiple login form submition ( see GOFAST-6902 )
+  window.setInterval(async function () {
+    // Don't reload page if we already are on the login page to prevent multiple login form submission ( see GOFAST-6902 )
     if($("#block-user-login").size() == 0){
-        $.ajax({
-          url: Drupal.settings.basePath + path,
-          type: 'GET',
-          dataType: 'json',
-          success: function (data) {
-            if (!data.uid || data.uid === '0' && window.location.pathname !== "/Welcome") {
-              // Signed out but client still runinng, refresh the page to ensure
-              // the front-end is fully disconnected (ie. required for idle tabs).
-                 window.location.reload();
-            }
-          }
-        });
+      const drupalUsername = await Gofast.whoAmI();
+      if (!drupalUsername) {
+        // Signed out but client still runinng, refresh the page to ensure
+        // the front-end is fully disconnected (ie. required for idle tabs).
+        window.location.reload();
+      }
+      if (drupalUsername && drupalUsername != Drupal.settings.userName) {
+        window.location.reload();
+      }
     }
-  }, 600000);
+  }, 60000);
 
   Drupal.behaviors.extranetConfig = {
     attach: function (context, settings) {
-      let groups = $('#og-user-node-add-more-wrapper').find('#ztree_component_user').children('li:nth-child(2)');
-      let organizations = $('#og-user-node-add-more-wrapper').find('#ztree_component_user').children('li:nth-child(3)');
-      if(groups.length == 1 &&  organizations.length == 1 && !$("#user-register-form").hasClass("gofast-extranet-processed")){
-        $("#user-register-form").addClass("gofast-extranet-processed");
-        let groups = $('#og-user-node-add-more-wrapper').find('#ztree_component_user').children('li:nth-child(2)');
-        let organizations = $('#og-user-node-add-more-wrapper').find('#ztree_component_user').children('li:nth-child(3)');
-        let config = Drupal.settings.filterExtranet.config;
-        let html_extranet_message = "<div id='extranet_message' style='color:red;'>"+Drupal.t("The GoFast configuration doesn't allow you to add external users into some internal spaces types")+"</div>";
-        if(config && config['group_add_external_user'] === 1 && config['organization_add_external_user'] === 1){
-          var click = 2;
-          if($("[id^='edit-is-extranet-und']").is(':checked') === true){
-            click = 3;
-            groups.css("pointer-events", "none");
-            organizations.css("pointer-events", "none");
-            groups.css("background-color", "#d3d3d3");
-            organizations.css("background-color", "#d3d3d3");
-            $("#og-user-node-add-more-wrapper").before(html_extranet_message);
-          }
-          $("[id^='edit-is-extranet-und']").once("change", function() {
-            if(click % 2 === 1){
-              groups.css("pointer-events", "auto");
-              organizations.css("pointer-events", "auto");
-              groups.css("background-color", "#ffffff");
-              organizations.css("background-color", "#ffffff");
-              $("#extranet_message").remove();
-            }else{
-              let groupsChecks = [];
-              $('#ztree_component_user > li:nth-child(2) span.checkbox_true_full, #ztree_component_user > li:nth-child(2) span.checkbox_true_part').each(function( index ){
-                groupsChecks[index] = $(this);
-              });
-              groupsChecks.forEach(element => element.click());
-              let organizationsChecks = [];
-              $('#ztree_component_user > li:nth-child(3) span.checkbox_true_full, #ztree_component_user > li:nth-child(3) span.checkbox_true_part').each(function( index ){
-                organizationsChecks[index] = $(this);
-              });
-              organizationsChecks.forEach(element => element.click());
-              groups.css("pointer-events", "none");
-              organizations.css("pointer-events", "none");
-              groups.css("background-color", "#d3d3d3");
-              organizations.css("background-color", "#d3d3d3");
-              $("#og-user-node-add-more-wrapper").before(html_extranet_message);
-            }
-            click++;
-          });
-        }
-        else if(config && config['group_add_external_user'] === 1){
-          var click = 2;
-          if($("[id^='edit-is-extranet-und']").is(':checked') === true){
-            click = 3;
-            groups.css("pointer-events", "none");
-            groups.css("background-color", "#d3d3d3");
-            $("#og-user-node-add-more-wrapper").before(html_extranet_message);
-          }
-          $("[id^='edit-is-extranet-und']").once("change", function() {
-            if(click % 2 === 1){
-              $("#extranet_message").remove();
-              groups.css("pointer-events", "auto");
-              groups.css("background-color", "#ffffff");
-            }else{
-              let groupsChecks = [];
-              $('#ztree_component_user > li:nth-child(2) span.checkbox_true_full, #ztree_component_user > li:nth-child(2) span.checkbox_true_part').each(function( index ){
-                groupsChecks[index] = $(this);
-              });
-              groupsChecks.forEach(element => element.click());
-              groups.css("pointer-events", "none");
-              groups.css("background-color", "#d3d3d3");
-              $("#og-user-node-add-more-wrapper").before(html_extranet_message);
-            }
-            click++;
-          });
-        }
-        else if(config && config['organization_add_external_user'] === 1){
-          var click = 2;
-          if($("[id^='edit-is-extranet-und']").is(':checked') === true){
-            click = 3;
-            organizations.css("pointer-events", "none");
-            organizations.css("background-color", "#d3d3d3");
-            $("#og-user-node-add-more-wrapper").before(html_extranet_message);
-          }
-          $("[id^='edit-is-extranet-und']").once("change", function() {
-            if(click % 2 === 1){
-              organizations.css("pointer-events", "auto");
-              organizations.css("background-color", "#ffffff");
-              $("#extranet_message").remove();
-            }else{
-              let organizationsChecks = [];
-              $('#ztree_component_user > li:nth-child(3) span.checkbox_true_full, #ztree_component_user > li:nth-child(3) span.checkbox_true_part').each(function( index ){
-                organizationsChecks[index] = $(this);
-              });
-              organizationsChecks.forEach(element => element.click());
-              organizations.css("pointer-events", "none");
-              organizations.css("background-color", "#d3d3d3");
-              $("#og-user-node-add-more-wrapper").before(html_extranet_message);
-            }
-            click++;
-          });
-        }
+      if(!$?.fn?.zTree){
+        return;
       }
+      const extranetRoleToggle = $("[id^='edit-is-extranet-und']");
+      const userZtree = $.fn.zTree.getZTreeObj('ztree_component_user');
+
+      if(extranetRoleToggle.hasClass('gofast-extranet-checked') || !userZtree){
+        return;
+      }
+      extranetRoleToggle.addClass('gofast-extranet-checked');
+
+      // Get Extranet filter config
+      const config = Drupal.settings.filterExtranet.config;
+      // Create warning message element
+      const html_extranet_message = $(`<div id="extranet_message" class="text-danger d-none">`);
+      html_extranet_message.text(Drupal.t("The GoFast configuration doesn't allow you to add external users into some internal spaces types"));
+      $("#og-user-node-add-more-wrapper").before(html_extranet_message);
+      // Get restricted spaces from config
+      const blockedSpaceType = [
+        ...(config['group_add_external_user'] ? ['Groups'] : []),
+        ...(config['organization_add_external_user'] ? ['Organisations'] : []),
+      ];
+      // Update spaces tree display based on 'External' role toggle
+      const updateSpaceAccessForm = function() {
+        // If there is restricted space types, display a warning message
+        if(blockedSpaceType.length){
+          if(extranetRoleToggle.is(':checked')) {
+            html_extranet_message.removeClass('d-none');
+          } else {
+            html_extranet_message.addClass('d-none');
+          }
+        }
+
+        blockedSpaceType.forEach(spaceType => {
+          const spaceRootNode = userZtree.getNodesByParam('name', spaceType)[0];
+          // The tree only holds the roots the editor can see (e.g. no Organisations on an entity).
+          if(!spaceRootNode){
+            return;
+          }
+          const spaceRootElement = $("#"+spaceRootNode.tId);
+          // Update space membership tree display based on 'External' role toggle
+          if(extranetRoleToggle.is(':checked')) {
+            // Uncheck all children of restricted space
+            const checkedNodes = userZtree.getNodesByParam('checked', true, spaceRootNode);
+            checkedNodes.forEach(checkedNode => {
+              userZtree.checkNode(checkedNode, false, false, true);
+            })
+            // Disable all checkbox in the restricted space type tree
+            userZtree.setChkDisabled(spaceRootNode, true, false, true)
+            // Collapse restricted space
+            userZtree.expandNode(spaceRootNode, false, false, false);
+            spaceRootElement.addClass('bg-secondary');
+          } else {
+            // Enable all checkbox in the restricted space type tree
+            userZtree.setChkDisabled(spaceRootNode, false, false, true)
+            // Expand restricted space
+            userZtree.expandNode(spaceRootNode, true, false, false);
+            spaceRootElement.removeClass('bg-secondary');
+          }
+        })
+      }
+      // Update form on init
+      updateSpaceAccessForm();
+      // Bind event to update form when changing 'External' role toggle
+      extranetRoleToggle.on('change', function(e) {
+        updateSpaceAccessForm();
+      })
     }
   }
 

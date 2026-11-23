@@ -19,3 +19,7 @@ files[] = LdapTestFunctions.class.php
 files[] = LdapUserTestCase.class.php
 
 test_dependencies[] = og:og
+
+version = 7.x-2.7
+project = ldap
+datestamp = 1775066467

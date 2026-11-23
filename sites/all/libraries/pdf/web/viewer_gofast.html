@@ -32,7 +32,7 @@ See https://github.com/adobe-type-tools/cmap-resources
     <link rel="stylesheet" href="viewer.css?v=2266"/>
 
     <!-- GOFAST addons : annotator -->
-    <script src="/sites/all/modules/jquery_update/replace/jquery/3.1/jquery.js?v=2266"></script>
+    <script src="/sites/all/modules/tag1d7es_jquery_update/replace/jquery/3.7.1/jquery.js?v=2267"></script>
     <script src="/sites/all/libraries/annotator/annotator-full.min.js?v=2266"></script>
     <script src="/sites/all/libraries/annotator/annotator.touch.js?v=2266"></script>
     <link rel="stylesheet" href="/sites/all/libraries/annotator/annotator.min.css?v=2266" />
@@ -209,7 +209,7 @@ is_no_print = function () {
             })
           }
           let delayCall
-          PDFViewerApplication.eventBus.on("pagechanging",()=>{
+          PDFViewerApplication.eventBus.on("pagechanging", (evt) => {      
             clearTimeout(delayCall);
             // Load annotations if we don't change page in 2 seconds
             delayCall = setTimeout(()=>{

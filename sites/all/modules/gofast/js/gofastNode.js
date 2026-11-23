@@ -73,6 +73,15 @@ var _gofastPostSimulator = async (
           Gofast.ITHit.reload();
         }
       }
+
+      // notify node has been renamed
+      window.dispatchEvent(
+        new CustomEvent("gofast:node_rename", {
+          detail: {
+            nid: props["pk"],
+          },
+        })
+      );
     }
     Gofast.removeLoading();
   } catch (e) {
@@ -128,6 +137,11 @@ window.initBreadCrumb = () => {
           nodeType = jsonData.type
         }
       })
+      if (Gofast.ITHit.forbiddenCharactersPattern.test(newTitle)) {
+        Gofast.toast(Drupal.t("You can't set a title with one of these characters @characters", {"@characters": "(\\ / : * ? \" < > |)"}, {context: "gofast:gofast_ajax_file_browser"}), "warning");
+        _crumbTitleInput.setData(title);
+        return;
+      }
       _gofastPostSimulator({
         pk: nid,
         name: "title",
@@ -173,7 +187,14 @@ window.initTitleInput = () => {
   const titleMetadata = titleItem.innerText.trim();
   titleItem.innerHTML = "";
   _titleFieldInput = GofastEditableInput(titleItem, titleMetadata, "text", {
-    save: async (newTitle) => _gofastPostSimulator({pk: nid, name: "field_title", value: newTitle}),
+    save: async (newTitle) => {
+      if (Gofast.ITHit.forbiddenCharactersPattern.test(newTitle)) {
+        Gofast.toast(Drupal.t("You can't set a title with one of these characters @characters", {"@characters": "(\\ / : * ? \" < > |)"}, {context: "gofast:gofast_ajax_file_browser"}), "warning");
+        _titleFieldInput.setData(titleMetadata);
+        return;
+      }
+      _gofastPostSimulator({pk: nid, name: "field_title", value: newTitle});
+    },
     placeholder: Drupal.t("Click here to change the title metadata", {}, {'context' : 'gofast'}),
     showConfirmationButtons: $("#gofast-node-title-editable-input"),
     widenInput: true,
@@ -282,6 +303,11 @@ window.initArticleEditableInputs = async (nid = null, title = null, canUpdate = 
 
       const articleInput = GofastEditableInput(element, content, contentType, {
         save: async (newContent) => {
+          if (className == "gofastArticleTitle" && Gofast.ITHit.forbiddenCharactersPattern.test(newContent)) {
+            Gofast.toast(Drupal.t("You can't set a title with one of these characters @characters", {"@characters": "(\\ / : * ? \" < > |)"}, {context: "gofast:gofast_ajax_file_browser"}), "warning");
+            articleInput.setData(content);
+            return;
+          }
           _gofastPostSimulator({
             pk: targetNid,
             name: classToFieldIndex[className],
@@ -294,6 +320,7 @@ window.initArticleEditableInputs = async (nid = null, title = null, canUpdate = 
         showConfirmationButtons: className == "gofastArticleContent" || className == "gofastArticleDescription",
         widenInput: className == "gofastArticleDescription",
         useTextarea: className == "gofastArticleDescription",
+        placeholder: className == "gofastArticleDescription" ? "No description" : null,
       });
       if (className == "gofastArticleTitle" && _articleTitleInput) _articleTitleInput = articleInput;
   }

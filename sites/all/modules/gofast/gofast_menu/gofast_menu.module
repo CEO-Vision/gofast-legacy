@@ -476,6 +476,27 @@ function gofast_menu_form_views_exposed_form_alter(&$form, $form_state, $form_id
 
 ##### TEMPLATE PREPROCESS ######
 
+/**
+ * Prepares the CSS classes and attributes of a topbar menu item.
+ *
+ * Any item whose link has 'disabled' set to TRUE is greyed out, without
+ * dropdown, and shows its 'disabled_title' as a tooltip.
+ *
+ * @param array $variables
+ *   Theme variables; 'link' is the menu item definition. Adds 'is_disabled',
+ *   'item_class', 'item_attributes', 'button_class' and 'button_attributes'.
+ */
+function template_preprocess_gofast_menu_topbar_menu_item(&$variables) {
+  $link = $variables['link'];
+  $is_disabled = !empty($link['disabled']);
+
+  $variables['is_disabled'] = $is_disabled;
+  $variables['item_class'] = $is_disabled ? 'gofast-menu-disabled' : '';
+  $variables['item_attributes'] = $is_disabled ? 'title="' . check_plain($link['disabled_title']) . '"' : 'data-menu-toggle="hover"';
+  $variables['button_class'] = $is_disabled ? 'disabled' : '';
+  $variables['button_attributes'] = $is_disabled ? 'aria-disabled="true"' : '';
+}
+
 function template_preprocess_gofast_menu_header_topbar(&$variables){
 
   global $user;
@@ -822,6 +843,13 @@ function _gofast_normal_menu() {
     'icon' => 'fas fa-flag',
     'href' => '/workflow/dashboard',
   ];
+  if (variable_get("gofast_workflows_dashboard_legacy")) {
+    $menu2['task_legacy'] = [
+      'label' => t('Workflows & Tasks (Legacy)'),
+      'icon' => 'fas fa-flag',
+      'href' => '/workflow/dashboard/legacy',
+    ];
+  }
   $menu2['calendar'] = [
     'label' => t('Calendar'),
     'icon' => 'fas fa-calendar-alt',

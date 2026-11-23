@@ -533,3 +533,9 @@ function gofast_directory_update_7008() {
     GROUP BY
 	    (`u`.`uid`)");  
 }
+
+
+/** Add index for quicker retrieval of pending members in spaces directory */
+function gofast_directory_update_7009() {
+    db_add_index("og_membership", "gfindex_og_membership_3", array('state', 'gid'));
+}

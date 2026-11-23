@@ -1,3 +1,7 @@
+:root {
+  --gf-folder-broadcast-color: #f09f54
+}
+
 #file_browser_full_toolbar_container, #file_browser_full_tree_container, #file_browser_full_files_container, #file_browser_full_upload_container{
   margin-bottom: 0px;
 }
@@ -393,6 +397,10 @@ a[id^="file_browser_full_tree_element_"].curSelectedNode{
 
 .ztreeFa.webform{
   color: brown !important;
+}
+
+.ztreeFa.broadcast{
+  color: var(--gf-folder-broadcast-color) !important;
 }
 
 .ztree li span.button.center_close::before, .ztree li span.button.bottom_close::before{

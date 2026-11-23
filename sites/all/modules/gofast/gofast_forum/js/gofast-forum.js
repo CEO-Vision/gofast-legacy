@@ -61,4 +61,21 @@
         }, 100);
     }
 
+    // When a node is restored (e.g.: a space), reload the browser in case
+    // a forum node is made available again.
+    window.addEventListener(
+        "gofast:node_restored",
+        /** @param {CustomEvent<{nid:number}>} _event */
+        (_event) => {
+            const $forumTreeContainer = $('#expl-forum');
+            // If side explorer's current tab isn't forums, don't refresh (it
+            // will refresh when opening it)
+            if (!$forumTreeContainer.hasClass('active')) {
+                return;
+            }
+
+            Gofast.reloadForums($forumTreeContainer);
+        },
+    );
+
 })(jQuery, Gofast, Drupal);

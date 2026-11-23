@@ -18,6 +18,9 @@
             /* Retrieve uid */ 
             var uid = $(panel).find('#uid').text();
 
+            /* Retrieve items */ 
+            var items = $(panel).find('#items').text();
+
             /* Retrieve nids */ 
             var nids = $(panel).find('#nids').text();
 
@@ -34,6 +37,7 @@
             $.post(location.origin + "/linksharing/manage_linksharing/process", {
               process_uid : uid,
               process_nids : nids,
+              process_items: items,
               process_subject:subject,
               process_message:message, 
               process_folder_sharing_title: folder_sharing_title

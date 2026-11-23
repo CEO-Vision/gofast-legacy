@@ -79,57 +79,9 @@
         };
 
         var _crateTable = function (table, insertHistory) {
-            // Get all name attr and his value for $('.accordion-advanced-search-standard .form-control[name]')
-            var nameAttr = {};
-            $('.accordion-advanced-search-standard .search-advanced-filter-item[name]').each(function() {
-                let name = $(this).attr('name');
-                let value = "";
-                // If the value is select2, get the value of the select2
-                if($(this).hasClass('select2-hidden-accessible')){
-                    if($(this).hasClass('gofast-select2-ajax') || $(this).hasClass('gofast-select2-switch')){
-                        value = $(this).find('option:selected').val();
-                    }else{
-                        value = $(this).find('option:selected').attr('id');
-                    }
-                }else if($(this).hasClass('form-tagify')){
-                    // If the value is tagify, get the value of the tagify
-                    let inputValue = $(this).find("input.js-tagify").val()
-                    if(inputValue == ""){
-                      value = "";
-                    } else {
-                      value = inputValue
-                    }
-                }else{
-                    value = $(this).val();
-                }
-                if(value == ""){
-                    value = null;
-                }
-                
-                // If it's a date, get the specific operator
-                let operator = "";
-                if($(this).hasClass('form-control-date')){
-                    operator = $(this).parents('.form-search-date').find('.form-select-date').val();
-                }else{
-                    // Get the form-select-field-operator
-                    operator = $(this).parents('.form-field-operator').find('.form-select-field-operator').val();
-                }
-                
-                if(value != null){
-                    // initialize the object if it doesn't exist
-                    if (!nameAttr[name]) {
-                        nameAttr[name] = {};
-                    }
-                    
-                    // add the operator 
-                    nameAttr[name].operator = operator;
-                    
-                    // Add it to the object like this nameAttr.name = value
-                    nameAttr[name].value = value;
-                }
-                
-            });
 
+          const params = Gofast.searchAdvanced.getFiltersParams();
+          params.insertHistory = insertHistory;
             // Console log columns
             _table = $(table).KTDatatable({
                 data: {
@@ -137,15 +89,7 @@
                     source: {
                         read: {
                             url: window.origin + "/advanced/search",
-                            params : {
-                                name: $('input[id="search-name-input"]').val(),
-                                query: $('input[id="edit-search-label"]').val(),
-                                spaces: $('input[id="edit-space"]').val(),
-                                categories :$('select[id="edit-content-type"]').val(),
-                                options: JSON.stringify(nameAttr),
-                                insertHistory: insertHistory,
-                                globalOperator: $('input[name="global-operator"]:checked').val().toUpperCase(),
-                            },
+                            params : params,
                             method: 'GET',
                             contentType: 'application/json',
                             map: function(raw) {
@@ -153,7 +97,13 @@
                                 if (raw == null) {
                                     return [];
                                 }
-                                let queryUrl = new URLSearchParams(raw.filters)
+                                let queryUrl = new URLSearchParams()
+                                Object.entries(raw.filters).forEach(([key, value]) => {
+                                  if(typeof value !== 'string') {
+                                    value = JSON.stringify(value);
+                                  }
+                                  queryUrl.set(key, value);
+                                })
                                 queryUrl.set("options", JSON.stringify(raw.filters.options))
                                 if(raw.meta.sort){
                                   queryUrl.set("sort[sort]", raw.meta.sort.sort)
@@ -224,7 +174,7 @@
                 rows: {
                   afterTemplate: function(row, data, index) {
                     Object.entries(data).forEach(([key, value]) => {
-                      if(value.more){
+                      if(value && value.more){
                         row.find(`[data-field=${key}]`).append($(value.more));
                         row.find(".gofast__popover").popover();
                       }
@@ -281,6 +231,10 @@
           if (filterValue != "") {
             $('#search-form-body').find('input[name="search_label"]').val(filterValue);
           }
+        } else if(key == "globalOperator") {
+          if (filterValue != "") {
+            $(`input[name="global-operator"][value=${filterValue.toLowerCase()}]`).attr('checked', true)
+          }
         } else {
           try {
             JSON.parse(filterValue);
@@ -305,16 +259,31 @@
               
               $('#search-form-body').find('select[name="' + key + '"]').parents('.GofastForm__Field').find('.form-select-field-operator').val(operator)
               
-              // The value is an id , then find the option with this id
-              let option = select.find('option[id="' + key + "-"+ value + '"]');
+              // If the select element has a list of options, select corresponding option
+              if(select.find('option').length){
+                // The value is an id , then find the option with this id
+                let option = select.find('option[id="' + key + "-"+ value + '"]');
+                
+                // If the option exist, get the value attributes
+                let optionValue = option.attr('value');
+                // Set value
+                select.val(optionValue);
+                //Trigger change event
+                select.trigger('change');
+              } else {
+                // If Select don't have any option, fetch the corresponding item
+                select.data('select2').dataAdapter.query({term: value}, (results) => {
+                  let firstResult = results.results[0];
+                  if(!firstResult || firstResult.id == 'null'){
+                    return;
+                  }
+                  let newOption = new Option(firstResult.text, firstResult.id, true, true);
+                  select.append(newOption);
+                  //Trigger change event
+                  select.trigger('change');
+                })
+              }
               
-              // If the option exist, get the value attributes
-              let optionValue = option.attr('value');
-              // Set value
-              select.val(optionValue);
-              
-              //Trigger change event
-              select.trigger('change');
               accordion = select.parents('.accordion').first();
             }
             // If it's a date
@@ -359,12 +328,8 @@
               // for each filters 
               let select = $('#search-form-body').find('select[name="content_type"]');
               
-              let values = filterValue.map((val) => {
-                return "im_field_category-" + val;
-              })
-              
               // JSON encode values
-              select.val(values);
+              select.val(filterValue);
               select.trigger('change');
             }else if(key == "sm_og_group_content_ref"){
               const spaces_filter_element = $('#search-form-body').find('input[name="ac-list-tags-list-spaces"]');
@@ -393,6 +358,71 @@
 
       // Trigger search with added filters
       Gofast.searchAdvanced.triggerSearch(false)
+    }
+
+    Gofast.searchAdvanced.getFiltersParams = function() {
+      // Get all name attr and his value for $('.accordion-advanced-search-standard .form-control[name]')
+      var nameAttr = {};
+      $('.accordion-advanced-search-standard .search-advanced-filter-item[name]').each(function() {
+          let name = $(this).attr('name');
+          let value = "";
+          // If the value is select2, get the value of the select2
+          if($(this).hasClass('select2-hidden-accessible')){
+              if($(this).hasClass('gofast-select2-ajax') || $(this).hasClass('gofast-select2-switch')){
+                  value = $(this).find('option:selected').val();
+              }else{
+                  value = $(this).find('option:selected').attr('id');
+              }
+          }else if($(this).hasClass('form-tagify')){
+              // If the value is tagify, get the value of the tagify
+              let inputValue = $(this).find("input.js-tagify").val()
+              if(inputValue == ""){
+                value = "";
+              } else {
+                value = inputValue
+              }
+          }else{
+              value = $(this).val();
+          }
+          if(value == ""){
+              value = null;
+          }
+          
+          // If it's a date, get the specific operator
+          let operator = "";
+          if($(this).hasClass('form-control-date')){
+              operator = $(this).parents('.form-search-date').find('.form-select-date').val();
+          }else{
+              // Get the form-select-field-operator
+              operator = $(this).parents('.form-field-operator').find('.form-select-field-operator').val();
+          }
+          
+          if(value != null){
+              // initialize the object if it doesn't exist
+              if (!nameAttr[name]) {
+                  nameAttr[name] = {};
+              }
+              
+              // add the operator 
+              nameAttr[name].operator = operator;
+              
+              // Add it to the object like this nameAttr.name = value
+              nameAttr[name].value = value;
+          }
+          
+      });
+
+      const params = {
+        name: $('input[id="search-name-input"]').val(),
+        query: $('input[id="edit-search-label"]').val(),
+        spaces: $('input[id="edit-space"]').val(),
+        categories :$('select[id="edit-content-type"]').val(),
+        options: JSON.stringify(nameAttr),
+        globalOperator: $('input[name="global-operator"]:checked').val().toUpperCase(),
+      }
+
+      return params;
+      
     }
 
     // Reset function
@@ -447,15 +477,16 @@
     }
 
     Gofast.searchAdvanced.download_search_advanced_csv = function() {
-      const query = $("#advanced-search-export-results").attr("data-query");
+      const params = Gofast.searchAdvanced.getFiltersParams();
+      params.insertHistory = 'false';
       const resultCount = $("#advanced-search-export-results").attr("data-result-count");
-      if(!query || resultCount == 0){
+      if(resultCount == 0){
         Gofast.toast(Drupal.t("There is no result to export", {}, {context: "gofast:gofast_search_advanced"}), "error")
         return;
       }
       Gofast.modal('<div class="loader-sync-status"></div> ' + Drupal.t("Please hold on while your export is being generating. This process may take a few minutes.", {}, {context : "gofast_stats"}), Drupal.t("Your export is being generating", {}, {context : "gofast_stats"}));
       // Replicate last datatable query string to replicate current sorting and filtering to export
-      $.get("/search/advanced/export_to_csv?"+query, function(fid){
+      $.get("/search/advanced/export_to_csv", params, function(fid){
          var downloadInterval = setInterval(() => {
              $.get("/search/advanced/retrieve_export_file", {fid: fid}).done((file) => {
                 if(file !== "Waiting"){
@@ -693,7 +724,7 @@
             },
             {
                 field: 'im_field_criticity',
-                title: Drupal.t('Criticity'),
+                title: Drupal.t('Criticity', {}, {context: 'gofast'}),
                 width: 100,
                 textAlign: 'center',
                 autoHide: false,
@@ -708,7 +739,7 @@
             },
             {
                 field: 'im_field_classification',
-                title: Drupal.t('Classification', {}, {context: 'gofast'}),
+                title: Gofast._settings.classificationLabel ?? Drupal.t('Classification', {}, {context: 'gofast'}),
                 width: 150,
                 textAlign: 'center',
                 autoHide: false,

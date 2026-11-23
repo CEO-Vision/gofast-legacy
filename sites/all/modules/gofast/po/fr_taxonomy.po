@@ -13,76 +13,6 @@ msgstr ""
 "Content-Transfer-Encoding: 8bit\n"
 "Plural-Forms: nplurals=2; plural=(n>1);\n"
 
-#: taxonomy:term:1ce68f6c-068b-4242-bd46-904bbf7eaecc:name
-msgctxt "term:1ce68f6c-068b-4242-bd46-904bbf7eaecc:name"
-msgid "Request validation"
-msgstr ""
-
-#: taxonomy:term:2331133e-656e-4517-ac1a-208592fd84c5:description
-msgctxt "term:2331133e-656e-4517-ac1a-208592fd84c5:description"
-msgid "An ODG file"
-msgstr ""
-
-#: taxonomy:term:2331133e-656e-4517-ac1a-208592fd84c5:name
-msgctxt "term:2331133e-656e-4517-ac1a-208592fd84c5:name"
-msgid "ODG"
-msgstr ""
-
-#: taxonomy:term:39860739-843e-46e3-b448-f30dcc153c43:description
-msgctxt "term:39860739-843e-46e3-b448-f30dcc153c43:description"
-msgid "A Text file with .txt.extension"
-msgstr ""
-
-#: taxonomy:term:39860739-843e-46e3-b448-f30dcc153c43:description
-msgctxt "term:39860739-843e-46e3-b448-f30dcc153c43:description"
-msgid "A Text file with .txt extension"
-msgstr ""
-
-#: taxonomy:term:404bd087-9928-4d7e-9108-c318cd77c17d:description
-msgctxt "term:404bd087-9928-4d7e-9108-c318cd77c17d:description"
-msgid "An extranet space"
-msgstr ""
-
-#: taxonomy:term:4edad1d0-5333-4e7b-a484-6638f4fc4131:name
-msgctxt "term:4edad1d0-5333-4e7b-a484-6638f4fc4131:name"
-msgid "Autre"
-msgstr ""
-
-#: taxonomy:term:4fa7e52a-8a5a-4b92-82a3-f1382d2559b2:name
-msgctxt "term:4fa7e52a-8a5a-4b92-82a3-f1382d2559b2:name"
-msgid "Spreadsheet file"
-msgstr ""
-
-#: taxonomy:term:892a2640-8d27-495f-a665-5ceaa8e60d59:description
-msgctxt "term:892a2640-8d27-495f-a665-5ceaa8e60d59:description"
-msgid "<p>PDF non OCRisé</p>\r\n"
-msgstr ""
-
-#: taxonomy:term:892a2640-8d27-495f-a665-5ceaa8e60d59:description
-msgctxt "term:892a2640-8d27-495f-a665-5ceaa8e60d59:description"
-msgid "PDF non OCRisé\r\n"
-msgstr ""
-
-#: taxonomy:term:9fa42047-06d8-4c7c-bf94-1e6cc30ceca2:name
-msgctxt "term:9fa42047-06d8-4c7c-bf94-1e6cc30ceca2:name"
-msgid "GED"
-msgstr ""
-
-#: taxonomy:term:ae593ecb-2fcd-40dd-952c-383e7205ee8d:name
-msgctxt "term:ae593ecb-2fcd-40dd-952c-383e7205ee8d:name"
-msgid "Other"
-msgstr ""
-
-#: taxonomy:term:b674c3b8-11f4-482e-9067-205f95027afd:description
-msgctxt "term:b674c3b8-11f4-482e-9067-205f95027afd:description"
-msgid "<p>GED</p>\r\n"
-msgstr ""
-
-#: taxonomy:term:dbff1f6b-e46e-47cd-b0e9-98c89e0c1dfd:name
-msgctxt "term:dbff1f6b-e46e-47cd-b0e9-98c89e0c1dfd:name"
-msgid "economie"
-msgstr ""
-
 #: taxonomy:term:6c4054f5-4aef-4994-98d9-2b4b4bc75e8f:name
 msgid "Wiki article"
 msgstr "Article wiki"
@@ -90,14 +20,6 @@ msgstr "Article wiki"
 #: taxonomy:term;6c4054f5-4aef-4994-98d9-2b4b4bc75e8f:description
 msgid "A Wiki page"
 msgstr "Une page wiki"
-
-#: taxonomy:term:542898d5-22e2-4b1e-b74a-2cb3ba161cfc:name
-msgid "coucou"
-msgstr "BANJOUR"
-
-#: taxonomy:term;542898d5-22e2-4b1e-b74a-2cb3ba161cfc:description
-msgid ""
-msgstr ""
 
 #: taxonomy:term:0206d3a9-f180-4da2-b30f-e4c4a80abb3b:name
 msgctxt "term:0206d3a9-f180-4da2-b30f-e4c4a80abb3b:name"
@@ -153,11 +75,6 @@ msgstr "Signé"
 msgctxt "term:13dee0a7-0ba6-4ca1-98bc-0058a95ba639:name"
 msgid "Order"
 msgstr "Arreté"
-
-#: taxonomy:term:16af8a92-6b88-47d2-b2c1-8855c0869555:name
-msgctxt "term:16af8a92-6b88-47d2-b2c1-8855c0869555:name"
-msgid "Thartiflewt"
-msgstr "Tartiflete2"
 
 #: taxonomy:term:1bdfdf50-f460-4600-9662-ff1870d8db29:name
 msgctxt "term:1bdfdf50-f460-4600-9662-ff1870d8db29:name"
@@ -222,11 +139,6 @@ msgstr "Diffusion Interne"
 msgctxt "term:26badcce-87b0-4b93-9c90-c66e3df7f27c:name"
 msgid "Rejected"
 msgstr "Rejeté"
-
-#: taxonomy:term:28112763-b16a-4e5b-b12b-ea2a66463004:name
-msgctxt "term:28112763-b16a-4e5b-b12b-ea2a66463004:name"
-msgid "Krowziflette"
-msgstr "Croziflette2"
 
 #: taxonomy:term:2ae236e7-985e-4649-92dc-8d1ca56e25f6:name
 msgctxt "term:2ae236e7-985e-4649-92dc-8d1ca56e25f6:name"
@@ -297,16 +209,6 @@ msgstr "Extranet"
 msgctxt "term:40:name"
 msgid "In Progress"
 msgstr "En cours"
-
-#: taxonomy:term:430be1fb-41b3-4243-a7d7-8cdccfe5a81d:name
-msgctxt "term:430be1fb-41b3-4243-a7d7-8cdccfe5a81d:name"
-msgid "test2_en"
-msgstr "Test2"
-
-#: taxonomy:term:45f31e66-7d96-4521-927c-96aad13164b0:name
-msgctxt "term:45f31e66-7d96-4521-927c-96aad13164b0:name"
-msgid "Test JLE"
-msgstr "Test JLE FR"
 
 #: taxonomy:term:480cc27f-223e-44c8-aa77-fb2d903eab7c:description
 msgctxt "term:480cc27f-223e-44c8-aa77-fb2d903eab7c:description"
@@ -728,11 +630,6 @@ msgctxt "term:b674c3b8-11f4-482e-9067-205f95027afd:name"
 msgid "DSM-EDM"
 msgstr "GED"
 
-#: taxonomy:term:b884edaf-eece-4a28-9974-64fb1860a071:name
-msgctxt "term:b884edaf-eece-4a28-9974-64fb1860a071:name"
-msgid "YesHello"
-msgstr "OuiBonjour"
-
 #: taxonomy:term:bd095ec9-988d-43ac-b272-4e63dd6c3d2f:description
 msgctxt "term:bd095ec9-988d-43ac-b272-4e63dd6c3d2f:description"
 msgid "A form"
@@ -901,20 +798,10 @@ msgctxt "term:eac44a0c-a86f-426b-a36b-c45602e7a9e1:name"
 msgid "Study"
 msgstr "Étude"
 
-#: taxonomy:term:ebfb4e0e-6b40-469c-ab3b-3a572b9bedbc:name
-msgctxt "term:ebfb4e0e-6b40-469c-ab3b-3a572b9bedbc:name"
-msgid "51"
-msgstr "32"
-
 #: taxonomy:term:ee5c1150-a1b2-4b37-9c12-3f1dd78aa03d:name
 msgctxt "term:ee5c1150-a1b2-4b37-9c12-3f1dd78aa03d:name"
 msgid "Rule"
 msgstr "Règle"
-
-#: taxonomy:term:ef688234-1cc1-46ee-b8c9-15901fa81aed:name
-msgctxt "term:ef688234-1cc1-46ee-b8c9-15901fa81aed:name"
-msgid "Bruuuh"
-msgstr "Oui"
 
 #: taxonomy:term:ef788c9b-1b61-4a48-b604-23ed13953889:name
 msgctxt "term:ef788c9b-1b61-4a48-b604-23ed13953889:name"
@@ -930,11 +817,6 @@ msgstr "Fichier au format HTML"
 msgctxt "term:f0e01087-7832-4239-ac45-415b81730d8b:name"
 msgid "HTML"
 msgstr "HTML"
-
-#: taxonomy:term:f14d8d08-8a03-408f-bb74-371ca6376946:name
-msgctxt "term:f14d8d08-8a03-408f-bb74-371ca6376946:name"
-msgid "Fwondhue"
-msgstr "Fondue"
 
 #: taxonomy:term:f1941382-f754-47b2-b7e7-55347d874c87:name
 msgctxt "term:f1941382-f754-47b2-b7e7-55347d874c87:name"
@@ -1186,13 +1068,13 @@ msgstr "NC – Non Classifié / Public"
 
 #: taxonomy:term:d350abef-e0af-4c02-8dad-b0afa45fa041
 msgctxt "term:d350abef-e0af-4c02-8dad-b0afa45fa041:name"
-msgid "C2 – Confidential / Sensitive"
-msgstr "C2 – Confidentiel / Sensible"
+msgid "C2 – Restricted / Sensitive"
+msgstr "C2 – Restreint / Sensible"
 
 #: taxonomy:term:04ea8dab-b2d6-41ef-99bb-700182ac3e26
 msgctxt "term:04ea8dab-b2d6-41ef-99bb-700182ac3e26:name"
-msgid "C3 – Restricted / Secret / Sensitive sovereign"
-msgstr "C3 – Restreint / Secret / Sensible souverain"
+msgid "C3 – Confidential / Secret / Sensitive sovereign"
+msgstr "C3 – Confidentiel / Secret / Sensible souverain"
 
 #: taxonomy:term:8c948f9c-2c6f-40fc-8646-363e3421f96e
 msgctxt "term:8c948f9c-2c6f-40fc-8646-363e3421f96e:name"
@@ -1248,3 +1130,43 @@ msgstr "Bon de Livraison"
 msgctxt "term:ac8298ec-32c5-4e9f-b209-e0edddf66fb9:name"
 msgid "Miscellaneous"
 msgstr "Divers"
+
+#: taxonomy:term:6433437c-7f32-4188-b886-03531312837d:name
+msgctxt "term:6433437c-7f32-4188-b886-03531312837d:name"
+msgid "Awaiting"
+msgstr "En attente"
+
+#: taxonomy:term:af8ea6be-802d-4f73-bfb1-ba9d0ca13068:name
+msgctxt "term:af8ea6be-802d-4f73-bfb1-ba9d0ca13068:name"
+msgid "Receipt"
+msgstr "Reçu"
+
+#: taxonomy:term:5a297b5e-4e7f-47d4-b2f2-b163fd690575:name
+msgctxt "term:5a297b5e-4e7f-47d4-b2f2-b163fd690575:name"
+msgid "Deliberation"
+msgstr "Délibération"
+
+#: taxonomy:term:46e4e44f-fa8e-4c40-935a-e2ec145945f5:name
+msgctxt "term:46e4e44f-fa8e-4c40-935a-e2ec145945f5:name"
+msgid "Official report"
+msgstr "Procès-verbal"
+
+#: taxonomy:term:fe769a30-4ae1-49b9-8a1a-6766d27f97f4:name
+msgctxt "term:fe769a30-4ae1-49b9-8a1a-6766d27f97f4:name"
+msgid "Circular"
+msgstr "Circulaire"
+
+#: taxonomy:term:ff7021b1-ff61-49dd-96fe-5fa4afa3b6c4:name
+msgctxt "term:ff7021b1-ff61-49dd-96fe-5fa4afa3b6c4:name"
+msgid "Schematic and/or Architecture"
+msgstr "Schéma et/ou Architecture"
+
+#: taxonomy:term:1d8002d0-3004-42bd-8879-48a1da217b5e:name
+msgctxt "term:1d8002d0-3004-42bd-8879-48a1da217b5e:name"
+msgid "Identity document"
+msgstr "Pièce d’identité"
+
+#: taxonomy:term:941c95e0-8e6e-49dd-be74-2965fea6de87:name
+msgctxt "term:941c95e0-8e6e-49dd-be74-2965fea6de87:name"
+msgid "Certificate"
+msgstr "Certificat"

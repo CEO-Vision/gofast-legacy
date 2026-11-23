@@ -1,6 +1,9 @@
 <div class="GofastForm__Field">
   <?php echo render($form['group_account']); ?>
 </div>
+<div class="GofastForm__Field">
+  <?php echo render($form['group_element']); ?>
+</div>
 <div class="GofastForm__Field GofastForm__Field--Roles">
   <?php echo render($form['group_roles']); ?>
 </div>

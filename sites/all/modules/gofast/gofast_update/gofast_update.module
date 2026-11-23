@@ -440,7 +440,7 @@ function gofast_update_cron() {
         $total_disk_space+=$physical_disk;
     }
     // Convert to G
-    $gofast_disk = round($total_disk_space / pow(1024, 3));
+    $gofast_disk = round($total_disk_space / pow(1024, 2));
     // Get number of docs
     $count_docs = intval(db_query("SELECT COUNT(nid) FROM node WHERE type='alfresco_item' AND status=1")->fetchAssoc()['COUNT(nid)']);
     
@@ -525,6 +525,100 @@ function gofast_update_get_enterprise_password(){
     return base64_encode(gethostname() . ":" . $conf['enterprise-key']);
 }
 
+function gofast_license_is_active(){
+  if (module_exists('gofast_community')) {
+    return true;
+  }
+  $targetDate = gofast_user_reporting_get_subscription_end_date();
+  
+  if($targetDate === false){
+      return false;
+  }
+   
+  $now = new DateTime(); 
+  if ($targetDate < $now) { 
+     return false;
+  } 
+   return true;
+  
+}
+
+
+function gofast_get_licence_infos(){
+  $destination = 'public://license_gofast.json';
+  $filename = drupal_realpath($destination);
+    
+  if(file_exists($filename) && filesize($filename)){
+        $file = fopen($filename, "r");
+        $content = fread($file, filesize($filename));
+        fclose($file);
+        
+        // check file signature to be sur the file is official
+        if(gofast_license_check_signature($filename) === false){
+          return false;
+        }   
+        return json_decode($content);
+  }
+}
+
+function gofast_license_check_signature($filename){
+
+  $jsonFile = $filename;
+  $publicKeyPem = drupal_get_path('module', 'gofast_update').'/gofast_license_public.pem';
+
+  $raw = file_get_contents($jsonFile);
+  if ($raw === false) {
+    watchdog("Gofast license", "unable to read $jsonFile");
+    return false;
+  }
+  $data = json_decode($raw, true, 512);
+
+  $sigB64 = $data['licence_key'] ?? '';
+  unset($data['licence_key']);
+  if ($sigB64 === '') {
+    watchdog("Gofast license", "No licence_key found into the json");
+    return false;
+  }
+  $sig = base64_decode($sigB64, true);
+  if ($sig === false) {
+    watchdog("Gofast license", "Signature not decodable in Base64");
+    return false;
+  }
+
+  $canonical = json_encode($data, JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE);
+  if ($canonical === false) {
+    watchdog("Gofast license", "Canonical JSON error : ".json_last_error_msg());
+    return false;
+  }
+
+  $keyPem = file_get_contents($publicKeyPem);
+  if ($keyPem === false) {
+    watchdog("Gofast license", "Unable to read public key");
+    return false;
+  }
+  $pubkey = openssl_pkey_get_public($keyPem);
+  if ($pubkey === false) {
+    watchdog("Gofast license", "Invalid public key");
+    return false;
+  }
+
+  $ok = openssl_verify($canonical, $sig, $pubkey, OPENSSL_ALGO_SHA256);
+
+  if ($ok === 1) {
+    // check base_url
+    global $base_url;
+    if(isset($data['base_url']) && str_replace("https://", "", $base_url) === $data['base_url']){
+      return true;
+    }
+    return false;
+  } elseif ($ok === 0) {
+    return false;
+  } else {
+    return false;
+  }
+  
+}
+
 function gofast_update_fetch_tag1_updates(){
   include_once '/var/www/d7/modules/update/update.fetch.inc';
   include_once '/var/www/d7/modules/update/update.compare.inc';
@@ -555,6 +649,7 @@ function gofast_update_fetch_tag1_updates(){
       update_calculate_project_update_status(null, $project, $available);
       
       if(isset($available["recommended_alternative"])){
+        echo "################## " . strtoupper($project['info']['project']) . " ##################\n";
         drush_log("Tag1 recommand an alternative for $project_name", "warning");
         echo $available["recommended_alternative"];
         print_r($project['extra']);
@@ -564,10 +659,11 @@ function gofast_update_fetch_tag1_updates(){
       if($project['status'] == UPDATE_NOT_SECURE){
         if(isset($project['security updates'])){
           foreach($project['security updates'] as $security_update){
-            if(strpos($security_update['download_link'], "tag1.com") !== FALSE){
+            echo "################## " . strtoupper($project['info']['project']) . " ##################\n";
+            if(strpos($security_update['download_link'], "tag1.com") !== FALSE && ($project['info']['project'] . " " . $project['info']['version']) != $security_update['name']){
               drush_log("Available Tag1 Update for $project_name", "warning");
-              echo "Current version : " . $project['info']['project'] . " " ; $project['info']['version'];
-              echo "Target version : " . $security_update['name'] . " at " . $security_update['download_link'];
+              echo "Current version : " . $project['info']['project'] . " " . $project['info']['version'] . "\n";
+              echo "Target version : " . $security_update['name'] . "\nAt : " . $security_update['download_link'];
               print_r($project['extra']);
               echo "\n\n";
             }else{
@@ -578,6 +674,7 @@ function gofast_update_fetch_tag1_updates(){
             }
           }
         }else{
+          echo "################## " . strtoupper($project['info']['project']) . " ##################\n";
           drush_log("Project $project_name tag as not secure, but no security update is available", "success");
         }
       }else{

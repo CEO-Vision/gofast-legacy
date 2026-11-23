@@ -53,11 +53,14 @@ function _cmis_browser_content_get_document($repository, $object) {
   
   $extension = extract_file_extension($object->properties['cmis:name']);
 
-  if(!$_POST['prevent_add_cmis_version']){
-  $file_name = str_replace("." . $extension,"",utf8_decode($object->properties['cmis:name'])) . "_v" . $object->properties['cmis:versionLabel'] . "." . $extension; //Rename here
+  $file_name = $object->properties['cmis:name'];
+  if(empty($_POST['prevent_add_cmis_version'])){
+  $file_name = str_replace("." . $extension,"",$object->properties['cmis:name']) . "_v" . $object->properties['cmis:versionLabel'] . "." . $extension; //Rename here
   }
   header('Content-type: ' . $object->properties['cmis:contentStreamMimeType']);
-  header('Content-Disposition: attachment; filename="' . $file_name . '"');
+  // A non-UTF-8 filename is dropped by browsers (download named "browser"): ASCII fallback plus the UTF-8 name.
+  $ascii_fallback = preg_replace('/[^\x20-\x7E]/', '_', $file_name);
+  header('Content-Disposition: attachment; filename="' . addslashes($ascii_fallback) . '"; filename*=UTF-8\'\'' . rawurlencode($file_name));
   readfile($url);
    exit();
   /* END CEO-Vision Patch */

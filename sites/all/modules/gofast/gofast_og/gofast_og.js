@@ -120,13 +120,15 @@
       modal_form.hide();
       modal_process.css('display', 'block');
 
+      const $deleteButton = $('#modal-footer #deleteButton');
+      $deleteButton.attr('disabled', '1');
+
       //Step 1 : Delete the documents
       $("#delete_step_1").append("<div class='loader-deleting'></div>");
 
       //Step 1-1 : Remove multifiling
       $("#delete_step_1_1").append("<div class='loader-deleting'></div><span id='delete_remaining_items'></span>");
       Drupal.removeMultifiling(gid);
-
     };
 
     Drupal.removeMultifiling = function(gid){
@@ -137,8 +139,9 @@
           $("#delete_step_1_1").append(' <i class="fa fa-check" style="color:green;"></i>');
           Drupal.deleteDocuments(gid);
         }else if(!isNaN(data)){
+          // There are multi-filed documents to process still.
           $("#delete_remaining_items").html(" " + data + " " + Drupal.t("items remaining..."));
-          Drupal.deleteDocuments(gid);
+          Drupal.removeMultifiling(gid);
         }else{
           $("#delete_step_1_1").find(".loader-deleting").remove();
           $("#delete_step_1").find(".loader-deleting").remove();
@@ -205,23 +208,392 @@
 
     Drupal.deleteSpaceDrupalProgress = function(gid, parent_path){
       $.get(location.origin + "/gofast_og/delete_space/" + gid + "/delete_drupal_progression").done(function(data){
-        if(data === "OK"){
-          $("#delete_step_3").find(".loader-deleting").remove();
-          $("#delete_step_3").append(' <i class="fa fa-check" style="color:green;"></i>');
-        }else{
+        if (data !== "OK") {
           setTimeout(Drupal.deleteSpaceDrupalProgress, 5000, gid);
+          return;
         }
+        $("#delete_step_3").find(".loader-deleting").remove();
+        $("#delete_step_3").append(' <i class="fa fa-check" style="color:green;"></i>');
+
+        // Replace "delete" button with "close" button.
+        const $deleteButton = $("#modal-footer #deleteButton");
+
+        const $closeButton = $(
+          '<button type="button" class="btn btn-success">' + Drupal.t("Close") + "</button>",
+        );
+        $closeButton.on("click", () => Drupal.CTools.Modal.dismiss());
+
+        $deleteButton.replaceWith($closeButton);
       });
 
       //[GOFAST-6199]
-      Drupal.CTools.Modal.dismiss();
       var str = parent_path.split("*");
       var url = "/" + str[0];
       url += "?&path=/Sites" + str[1] + "#ogdocuments";
       Gofast.processAjax(url);
       Gofast.toast(Drupal.t("Your space has been deleted", {}, {context : 'gofast:og'}));
+      // notify node was deleted
+      window.dispatchEvent(
+        new CustomEvent("gofast:node_delete", {
+          detail: {
+            nid: gid,
+          },
+        })
+      );
     };
   });
+
+  /**
+   * Handler to show a warning popup before leaving the page that
+   * progress/unsaved data may be lost.
+   *
+   * @param {BeforeUnloadEvent} e Before unload event.
+   */
+  const beforeUnloadPopupHandler = (e) => {
+    // Modern way.
+    e.preventDefault()
+
+    // Legacy support.
+    e.returnValue = true;
+    return true;
+  }
+
+  /**
+   * Configures the browser to show a confirmation popup before leaving the page.
+   *
+   * @returns {() => void} A function to do cleanup tasks when popup is no
+   *  longer necessary.
+   */
+  const useBeforeUnloadPopup = () => {
+    window.addEventListener('beforeunload', beforeUnloadPopupHandler);
+    return () => window.removeEventListener('beforeunload', beforeUnloadPopupHandler);
+  }
+
+  /** Enumeration of restoration steps */
+  const SpaceRestorationStep = Object.freeze({
+    Start: "start",
+    RestoreFolder: "restore_folder",
+    RestoreContents: "restore_contents",
+    RestoreNode: "restore_node",
+    End: "end",
+  });
+
+  /**
+   * @typedef {typeof SpaceRestorationStep} SpaceRestorationStepEnum Enum object type
+   * @typedef {(SpaceRestorationStepEnum)[keyof SpaceRestorationStepEnum]} SpaceRestorationStep Restoration step action
+   */
+
+  /**
+   * @typedef {object} RestoreStepResult Step process result object
+   * @property {boolean} ok If the step processing was successful
+   * @property {'done'|'error'|'processing'} status Step processing status, one of:
+   *  - `'done'`: the step processing is complete.
+   *  - `'error'`: An error occurred during processing.
+   *  - `'processing'`: the step is still processing and will have more work to do.
+   */
+
+  /**
+   * @typedef {object} RestoreStepProcessingResult Restoration step response data.
+   * @property {RestoreStepResult} result Processing result.
+   * @property {SpaceRestorationStep} action The action that was just executed.
+   * @property {SpaceRestorationStep|null} next The next action to be executed.
+   * @property {number} nodeId The ID of the node the restoration
+   *  processing step was executed.
+   */
+
+  /**
+   * @typedef {object} RestoreSpaceBeforeEachStepState State object representing
+   *  the situation before executing a restoration step.
+   * @property {SpaceRestorationStep} action The current action about to be executed.
+   * @property {SpaceRestorationStep|null} previous The last action that was executed.
+   */
+
+  /**
+   * Button click event handler for the restore space modal "restore" button.
+   *
+   * @param {MouseEvent} event Triggering event.
+   * @param {number} gid Node id of the space to restore.
+   */
+  Gofast.og.restoreSpaceModalButtonClickHandler = async function (event, gid) {
+    // Make sure this is called on a DOM element.
+    if (!(event.target instanceof HTMLElement)) {
+      return;
+    }
+    event.preventDefault();
+    const button = event.target;
+
+    const unloadCleanup = useBeforeUnloadPopup();
+    try {
+      // Remove current event listener to prevent another click from triggering
+      // the restoration process again.
+      button.removeAttribute('onclick');
+      button.removeEventListener(event.type, Gofast.og.restoreSpaceModalButtonClickHandler);
+      button.setAttribute('disabled', '1');
+
+      // Switch shown elements.
+      $('#restore_space_modal_confirmation_container').hide();
+      $('#restore_space_modal_progress_container').removeClass('d-none').addClass('d-flex');
+
+      // Restore space, the callbacks handle the modal-specific DOM mutations.
+      await Gofast.og.restoreSpace(gid, {
+        onBeforeEachStep: restoreModalOnBeforeEachStep,
+        onEachStepResponse: restoreModalOnEachStep,
+      });
+
+      // Notify we restored a space
+      window.dispatchEvent(new CustomEvent('gofast:node_restored', {
+        detail: {
+          nid: gid,
+        },
+      }));
+    } finally {
+      unloadCleanup();
+    }
+
+    // When space directory table exists, refresh it.
+    const $spacesDirectoryTable = $('#gofastDirectorySpacesTable');
+    if ($spacesDirectoryTable.exists()) {
+      // Unselect all elements.
+      $spacesDirectoryTable.data('KTDatatable').setActiveAll(false);
+      // Reload table.
+      window.GofastKDataTableReload($spacesDirectoryTable.attr('id'));
+    }
+
+    // Replace "restore" button by "close" button
+    const $restoreButton = $(button);
+
+    const $closeButton = $(
+      '<button type="button" class="btn btn-success">' + Drupal.t("Close") + "</button>",
+    );
+    $closeButton.on("click", () => Drupal.CTools.Modal.dismiss());
+
+    $restoreButton.replaceWith($closeButton);
+  }
+
+  /**
+   * Restore a space.
+   *
+   * @param {number} gid Id of the space node.
+   * @param {object} [options] Call options object.
+   * @param {(response:RestoreStepProcessingResult) => void} [options.onEachStepResponse]
+   *  Callback called after each step's API call completed.
+   * @param {(state:RestoreSpaceBeforeEachStepState) => void} [options.onBeforeEachStep]
+   *  Callback called before calling each step's process API.
+   */
+  Gofast.og.restoreSpace = async function (gid, options = {}) {
+    /** @type {SpaceRestorationStep|null} */
+    let previous = null;
+    /** @type {SpaceRestorationStep} */
+    let action = SpaceRestorationStep.Start;
+    let context = {};
+
+    // Loop while we still have an action going (we break at a specific point).
+    while (true) {
+      // Invoke possible callback before step.
+      options.onBeforeEachStep?.({ action, previous });
+
+      // Make request to process step.
+      const responseString = await $.post(
+        location.origin + "/gofast_og/restore_space/" + gid + "/" + action,
+        {
+          context: JSON.stringify(context),
+        },
+      );
+
+      // Parse response.
+      const response = JSON.parse(responseString);
+      const result = response.result;
+      /** @type {SpaceRestorationStep|null} */
+      const next = response.next;
+      const nodeId = Number(response.node_id);
+
+      // Invoke possible callback for after step with result.
+      options.onEachStepResponse?.({ result, action, next, nodeId });
+
+      // Handle step result error.
+      if (!result.ok) {
+        const message = "Error while restoring space.";
+        console.error(message, { result });
+        throw new Error(message);
+      }
+
+      // Check if we're done (no next step).
+      if (next == null) {
+        break;
+      }
+
+      // Prepare next iteration.
+      previous = action;
+      action = next;
+      gid = nodeId;
+      context = response.context;
+    }
+  };
+
+  /**
+   * Create a function executable before each restoration processing step that
+   * adds or resets a loader element.
+   *
+   * @param {string} parentSelector CSS/JQuery Selector of element the loader
+   *  will be appended to.
+   * @returns A function callable before a restoration processing step is
+   *  executed that will add a loader element to the given parent when first
+   *  executing the step.
+   */
+  const addLoaderOnEnter = (parentSelector) => {
+    const loaderIconTemplate = '<span class="loader-deleting"></span>';
+    const loaderTemplate =
+      '<span class="loader--root">' +
+      '<span class="loader--icon-container ml-3">' +
+      loaderIconTemplate +
+      "</span>" +
+      '<span class="loader--message ml-3"></span>' +
+      "</span>";
+
+    /**
+     * Before step callback adding the loader element.
+     * @param {RestoreSpaceBeforeEachStepState} state Current restoration state.
+     */
+    return function (state) {
+      // When did not enter step: do nothing.
+      if (state.previous === state.action) {
+        return;
+      }
+
+      const $step = $(parentSelector);
+      const $loader = $(loaderTemplate);
+      const $root = $step.find('.loader--root');
+      // Prevent adding a second loader by replacing a potentially already
+      // existing one.
+      if ($root.exists()) {
+        $root.replaceWith($loader);
+        return;
+      }
+      // Add loader.
+      $step.append($loader);
+    };
+  }
+
+  /**
+   * Dispatches the call dynamically to one of the step functions defined in
+   * this function's `steps` property depending on the current action.
+   *
+   * @param {RestoreSpaceBeforeEachStepState} state Restoration step response data.
+   */
+  function restoreModalOnBeforeEachStep(state) {
+    restoreModalOnBeforeEachStep.steps[state.action]?.(state);
+  }
+
+  restoreModalOnBeforeEachStep.steps = {};
+
+  restoreModalOnBeforeEachStep.steps[SpaceRestorationStep.RestoreFolder] =
+    addLoaderOnEnter("#step_restore_folder");
+
+  restoreModalOnBeforeEachStep.steps[SpaceRestorationStep.RestoreContents] =
+    addLoaderOnEnter("#step_restore_contents");
+
+  restoreModalOnBeforeEachStep.steps[SpaceRestorationStep.RestoreNode] =
+    addLoaderOnEnter("#step_restore_node");
+
+  /**
+   * Create a function to update a loader element depending on the response of a
+   * processing step.
+   *
+   * The loader element expects an element with the `loader--root` class with a
+   * child having the `loader--icon-container` class and a child having the
+   * `loader--message` class.
+   *
+   * @see {@linkcode addLoaderOnEnter} to add the loader element to update
+   *  beforehand.
+   *
+   * @param {string} parentSelector The selector of a parent of the loader element.
+   * @param {object} [options] An object of additional options to customize the behavior.
+   * @param {(response:RestoreStepProcessingResult) => string|null|undefined} [options.processingMessageExtractor]
+   *  Function to extract a message to be displayed after the loader during
+   *  processing from the result. When a string is returned, that value is
+   *  displayed in the `.loader--message` element. When a nullish value is
+   *  returned, no message is displayed. Defaults to extracting truthy values
+   *  of `response.result.message`.
+   * @returns A function that updates a loader element depending on a
+   *  restoration step result.
+   */
+  const restorationLoaderUpdater = (parentSelector, options = {}) => {
+
+    const { processingMessageExtractor = (response) => response.result.message || null } = options;
+
+    /**
+     * Updates the loader according to the response
+     * @param {RestoreStepProcessingResult} response Response of processing the
+     *  restoration step.
+     */
+    return function (response) {
+      // Get each DOM element we need to update the loader.
+      const $step = $(parentSelector);
+      const $loader = $step.find(".loader--root");
+      const $iconContainer = $loader.find(".loader--icon-container");
+      const $message = $loader.find(".loader--message");
+
+      // Empty the message.
+      $message.empty();
+
+      // Handle processing status.
+      if (response.result.status === "processing") {
+        const messageValue = processingMessageExtractor(response);
+        if (messageValue != null) {
+          $message.text(messageValue);
+        }
+        return;
+      }
+
+      // Step is finished either with a success or an error, icon will change.
+      $iconContainer.empty();
+      // Handle success.
+      if (response.result.status === "done") {
+        $iconContainer.append('<i class="fa fa-check text-success"></i>');
+        return;
+      }
+
+      // Handle error.
+      const $error = $('<i class="fa fa-times text-danger"></i>');
+      if (response.result.message) {
+        $message.text(response.result.message);
+      }
+      $iconContainer.append($error);
+    };
+  }
+
+  /**
+   * Dispatches the call dynamically to one of the step functions defined in
+   * this function's `steps` property depending on the current action.
+   *
+   * @param {RestoreStepProcessingResult} response Restoration step response data.
+   */
+  function restoreModalOnEachStep(response) {
+    restoreModalOnEachStep.steps[response.action]?.(response);
+  }
+
+  restoreModalOnEachStep.steps = {};
+
+  restoreModalOnEachStep.steps[SpaceRestorationStep.RestoreFolder] =
+    restorationLoaderUpdater("#step_restore_folder");
+
+  restoreModalOnEachStep.steps[SpaceRestorationStep.RestoreContents] = restorationLoaderUpdater(
+    "#step_restore_contents",
+    {
+      // Extract remaining document count into a message.
+      processingMessageExtractor: (response) =>
+        Drupal.formatPlural(
+          response.result.remaining,
+          "1 item remaining...",
+          "@count items remaining...",
+          {},
+          { context: "gofast" },
+        ),
+    },
+  );
+
+  restoreModalOnEachStep.steps[SpaceRestorationStep.RestoreNode] =
+    restorationLoaderUpdater("#step_restore_node");
 
   Drupal.gofast_og.transform_tabs = function (tab_id) {
     $(document).ready(function ($) {

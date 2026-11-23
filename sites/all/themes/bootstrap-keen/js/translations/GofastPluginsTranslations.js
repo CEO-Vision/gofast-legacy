@@ -73,6 +73,42 @@ $.fn.select2.amd.define("select2/i18n/nl", [], function () {
       },
     };
 });
+// localizations for select2 (German)
+$.fn.select2.amd.define("select2/i18n/de", [], function () {
+    return {
+      errorLoading: function () {
+        return "Die Ergebnisse konnten nicht geladen werden.";
+      },
+      inputTooLong: function (e) {
+        var n = e.input.length - e.maximum;
+        return "Bitte " + n + " Zeichen löschen";
+      },
+      inputTooShort: function (e) {
+        var n = e.minimum - e.input.length;
+        return "Bitte geben Sie " + n + " oder mehr Zeichen ein";
+      },
+      loadingMore: function () {
+        return "Lade weitere Ergebnisse…";
+      },
+      maximumSelected: function (e) {
+        var n = 1 == e.maximum ? "Element" : "Elemente";
+        return "Sie können nur " + e.maximum + " " + n + " auswählen";
+      },
+      noResults: function () {
+        return "Keine Ergebnisse gefunden";
+      },
+      searching: function () {
+        return "Suche läuft…";
+      },
+      removeAllItems: function () {
+        return "Alle Elemente entfernen";
+      },
+      removeItem: function () {
+        return "Element entfernen";
+      },
+    };
+});
+
 
 // localizations for datepicker
 window.setDatepickerL18n = function() {
@@ -97,7 +133,20 @@ window.setDatepickerL18n = function() {
         today: "Vandaag",
         clear: "Wissen",
     };
+    $.fn.datepicker.dates["de"] = {
+        days: ["Sonntag", "Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag"],
+        daysShort: ["So", "Mo", "Di", "Mi", "Do", "Fr", "Sa"],
+        daysMin: ["So", "Mo", "Di", "Mi", "Do", "Fr", "Sa"],
+        months: ["Januar", "Februar", "März", "April", "Mai", "Juni", "Juli", "August", "September", "Oktober", "November", "Dezember"],
+        monthsShort: ["Jan", "Feb", "Mär", "Apr", "Mai", "Jun", "Jul", "Aug", "Sep", "Okt", "Nov", "Dez"],
+        today: "Heute",
+        clear: "Löschen",
+    };
     // in case something goes wrong
     moment.updateLocale("en", { invalidDate: "Please input a date" });
     moment.updateLocale("fr", { invalidDate: "Veuillez saisir une date" });
+    moment.updateLocale("de", { invalidDate: "Bitte geben Sie ein Datum ein" });
+
+    // Set moment locale to current user language because 'updateLocale' is also updating moment locale
+    moment.locale(Gofast.get('user').language ?? "en");
 }

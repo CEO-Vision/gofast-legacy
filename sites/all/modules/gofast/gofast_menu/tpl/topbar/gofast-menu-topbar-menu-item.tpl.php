@@ -61,11 +61,11 @@
       </li>
     <?php endif; ?>
   <?php else : ?>
-    <li class="menu-item menu-item-submenu menu-item-rel gofast-block" aria-expanded="false" data-menu-toggle="hover" aria-haspopup="true" id="<?php print $link['id']; ?>" data-pinned="false" data-unread="<?php print $link['count']; ?>">
+    <li class="menu-item menu-item-submenu menu-item-rel gofast-block <?php echo $item_class; ?>" aria-expanded="false" <?php echo $item_attributes; ?> aria-haspopup="true" id="<?php print $link['id']; ?>" data-pinned="false" data-unread="<?php print $link['count']; ?>">
       <?php if(!empty($link["href"])) : ?>
-      <a href="<?php echo $link["href"] ?? '#'?>" role="button" class="btn btn-icon btn-clean btn-dropdown btn-lg">
+      <a href="<?php echo $link["href"] ?? '#'?>" role="button" class="btn btn-icon btn-clean btn-dropdown btn-lg <?php echo $button_class; ?>">
       <?php else : ?>
-      <a role="button" class="btn btn-icon btn-clean btn-dropdown btn-lg">
+      <a role="button" class="btn btn-icon btn-clean btn-dropdown btn-lg <?php echo $button_class; ?>" <?php echo $button_attributes; ?>>
       <?php endif; ?>
         <?php if (isset($link['icon']) && !empty($link['icon'])) : ?>
           <i class="<?php echo $link['icon'] ?>"></i>
@@ -76,6 +76,7 @@
       </a>
       <?php //print_r($link); 
       ?>
+      <?php if (!$is_disabled) : ?>
       <div class="menu-submenu menu-submenu-classic ">
         <h4 class="text-dark font-weight-bold"><?php print $link['title']; ?></h4>
         <div class="gofast-block-outer-new h-100">
@@ -89,6 +90,7 @@
         </div>
 
       </div>
+      <?php endif; ?>
     </li>
   <?php endif; ?>
 <?php endif; ?>

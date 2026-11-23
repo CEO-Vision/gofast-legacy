@@ -18,6 +18,10 @@
  */
 var GFMegaMenu = (function ($) {
 
+    /**
+     * @typedef {number|`${number}`} GID Numeric identifier of group/spaces.
+     *  Note that it may be either a numeric string of a number.
+     */
     //Private propoerties
     var _menuElement;
     var _menuObject;
@@ -25,7 +29,73 @@ var GFMegaMenu = (function ($) {
     var _debug;
     var _subMenusCall;
     var _time = 800;
-    var _memoizedHtml = {};
+
+    /**
+     * Mega Menu memo entry, to cache html and parent/child relationships
+     * @typedef {Object} MMMemoEntry
+     * @property {GID | null} parent Id of the parent group/node, or null if it
+     *  is unknown or if none exists (root space).
+     * @property {string | null} html Rendered HTML string for the space's
+     *  submenu, or null if it hasn't been rendered yet.
+     * @property {GID[]} children List of known children group/spaces' ids.
+     */
+    /**
+     * Mega menu memo/cache for each submenu html and parent/child relationships
+     * @type {{[key:number]:MMMemoEntry|undefined}}
+     */
+    const _memo = {};
+
+    /**
+     * Updates entries in the html cache given their gid and a mapping function.
+     *
+     * @param {GID} gid The gid of the node of which the menu entry cache should be updated
+     * @param {(memo:MMMemoEntry) => MMMemoEntry} callback A function that maps the previous cache state to the
+     *  new/updated one. The parameter gets a default entry value if the cache did not contain an entry for the given
+     *  gid.
+     */
+    const _updateMemo = (gid, callback) => {
+      const result = callback(
+        _memo[gid] ?? {
+          parent: null,
+          html: null,
+          children: [],
+        }
+      );
+      _memo[gid] = result;
+      return result;
+    };
+
+    /**
+     * Updates the parent and children properties in cache of the given gid to add one to another.
+     *
+     * @see {@linkcode _removeMemoRelationship} to remove a relationship from cache.
+     *
+     * @param {GID} parentGID The gid of the entry to which childGID should be appended to children
+     * @param {GID} childGID The gid of the entry to which parentGID should overwrite parent
+     */
+    const _setMemoRelationship = (parentGID, childGID) => {
+      _updateMemo(childGID, (memo) => ({ ...memo, parent: parentGID }));
+      _updateMemo(parentGID, (memo) => ({
+        ...memo,
+        children: [...memo.children, childGID],
+      }));
+    };
+
+    /**
+     * Updates the parent and children properties in cache of the given gid to remove one from another
+     *
+     * @see {@linkcode _setMemoRelationship} to add a relationship to cache.
+     *
+     * @param {GID} parentGID The gid of the entry to which childGID should be removed from children
+     * @param {GID} childGID The gid of the entry of which parent should be set to null
+     */
+    const _removeMemoRelationship = (parentGID, childGID) => {
+      _updateMemo(childGID, (memo) => ({ ...memo, parent: null }));
+      _updateMemo(parentGID, (memo) => ({
+        ...memo,
+        children: memo.children.filter((gid) => gid !== childGID),
+      }));
+    };
 
     //Private functions
     var _init = function () {
@@ -48,31 +118,40 @@ var GFMegaMenu = (function ($) {
         }
     }
 
-    var _getSubMenus = function (url, params, callback) {
+    var _getSubMenus = function (gid, params, callback) {
 
         _log("_getSubMenus - START");
-        var gid = url.split("?gid=")[1] || 0;
-        var already_html = _memoizedHtml[gid] || "";
-        _subMenusCall = null;
-        if (already_html == "") {
-            _subMenusCall = jQuery.ajax({
-                url: url,
-                data: params,
-                dataType: 'html',
-                success: function (data) {
-                    _memoizedHtml[gid] = data;
-                    if ("undefined" !== callback && typeof (callback) === "function") {
-                        callback(data);
-                    }
-                },
-                always: function (data) {
-                    _subMenusCall = null;
-                }
-            });
-        } else if ("undefined" !== callback && typeof (callback) === "function") {
-            callback(already_html);
+        try {
+          // try to get memoized submenu content
+          const url = new URL(_ajaxUrl, location.origin);
+          url.searchParams.set('gid', String(gid));
+
+          const memoizedHTML = _memo[gid]?.html;
+
+          _subMenusCall = null;
+          if (memoizedHTML != null) {
+            // use cached content
+            callback?.(memoizedHTML);
+            return;
+          }
+
+          // retrieve new submenu content
+          _subMenusCall = jQuery.ajax({
+            url: url.href,
+            data: params,
+            dataType: "html",
+            success: function (data) {
+              // update cache and notify
+              _updateMemo(gid, (memo) => ({ ...memo, html: data }));
+              callback?.(data);
+            },
+            always: function (data) {
+              _subMenusCall = null;
+            },
+          });
+        } finally {
+          _log("_getSubMenus - END");
         }
-        _log("_getSubMenus - END");
     };
 
     var _moveToLeft = function () {
@@ -278,11 +357,15 @@ var GFMegaMenu = (function ($) {
 
             } else {
                 _cleanSubMenus(submenu_container);
-                _hasSubMenu(item, function(item){
+                _hasSubMenu(item, {
+                  then: function (item) {
                     //has new submenu => load them
-                    jQuery(item).addClass('menu-item-submenu');
-                    jQuery(item).find('a.menu-link').append('<i class="menu-arrow"></i>');
+                    jQuery(item).addClass("menu-item-submenu");
+                    jQuery(item)
+                      .find("a.menu-link")
+                      .append('<i class="menu-arrow"></i>');
                     _loadSubMenu(item);
+                  },
                 });
             }
 
@@ -294,19 +377,27 @@ var GFMegaMenu = (function ($) {
         _log("_onMenuHover - END");
     };
 
-    var _hasSubMenu = function(item, callback){
-
-        //check if there is submenu
+    /**
+     * Checks if a node has a submenu, and calls given callbacks afterwards
+     * @param {*} item Jquery submenu item of the node to check
+     * @param {Object} [callbackOptions] option object for
+     *  callbacks to execute once the check is done, depending on the result.
+     * @param {(item:any) => void} [callbackOptions.then] Callback for when
+     *  the node has a submenu.
+     * @param {(item:any) => void} [callbackOptions.otherwise] Callback for when
+     *  the node does NOT have a submenu.
+     */
+    var _hasSubMenu = function(item, {then: thenCallback, otherwise: otherwiseCallback} = {}) {
+        // check if there is a submenu
         var gid = jQuery(item).attr("data-gid");
         var params = {};
-        var url = _ajaxUrl;
 
-        _getSubMenus(url + '?gid=' + gid, params, function (data) {
+        _getSubMenus(gid, params, function (data) {
             var frag = document.createRange().createContextualFragment(data);
             if(jQuery(frag).find('span.menu-text').length > 0){
-                if(callback != null){
-                    callback(item);
-                }
+              thenCallback?.(item);
+            } else {
+              otherwiseCallback?.(item);
             }
         });
     }
@@ -339,16 +430,23 @@ var GFMegaMenu = (function ($) {
         var gid = jQuery(item).attr("data-gid");
         var elemId = jQuery(item).attr("id");
         var params = {};
-        var url = _ajaxUrl;
 
         _cleanSubMenus(submenu_container);
         if (jQuery(submenu_container).next('.gf-megamenu-empty').length == 0) {
             _addEmptySubMenu(item);
         }
 
-        _getSubMenus(url + '?gid=' + gid, params, function (data) {
+        _getSubMenus(gid, params, function (data) {
             var frag = document.createRange().createContextualFragment(data);
             _attachEvents(frag);
+            // detect children and add self as parent in memo entry
+            $(frag)
+              .find("[data-gid]")
+              .each((_i, el) => {
+                const childGID = $(el).attr("data-gid");
+                _setMemoRelationship(gid, childGID);
+              });
+
             jQuery(submenu_container).after(frag);
             jQuery('.gf-megamenu-empty').remove();
 
@@ -391,41 +489,6 @@ var GFMegaMenu = (function ($) {
             this.addEventListener("mouseleave", _onMenuHover, false);
         });
 
-        // the hover on the select dropdown is detected as a menu mouseleave, so the block below is here to keep the menu open even if the menu hover is not detected in this case
-        const waitForWorfklowsSelectInterval = setInterval(function() {
-            if(!$("#gofast_block_delta-gofast_workflows_light_dashboard-gofast_workflows select").length) {
-                return;
-            }
-            // prevent triggering a mouseout event when a select dropdown is open
-            $("#gofast_block_delta-gofast_workflows_light_dashboard-gofast_workflows select").on("select2:open", (e) => {
-                e.stopPropagation();
-                window.GFTopbarMenu.pauseDropdownHoverTime = Infinity;
-            });
-            // go back to normal behavior when hovering the menu again
-            $("#gf-topbar-menu .menu-submenu").on("mouseenter", () => {
-                var isSelectOpen = false;
-                // Don't close tab is select is still focused
-                for(const selectElement of $(".gofast_wf_profil .gofastSelect2")) {
-                    if($(selectElement).data("select2")?.isOpen()){
-                        isSelectOpen = true;
-                        break;
-                    }
-                }
-                if(!isSelectOpen){
-                    window.GFTopbarMenu.pauseDropdownHoverTime = 0
-                }
-            });
-            // force-hide the menu if clicking outside
-            $(document).on("click", (e) => {
-                if ($(e.target).closest("#gf-topbar-menu").length) {
-                    return;
-                }
-                window.GFTopbarMenu.pauseDropdownHoverTime = 0;
-                window.GFTopbarMenu.hideDropdowns();
-            });
-            clearInterval(waitForWorfklowsSelectInterval);
-        }, 250);
-
         _log("_attachEvents - END");
 
     };
@@ -434,7 +497,7 @@ var GFMegaMenu = (function ($) {
         _log('highlightMenu - START');
 
         jQuery(item).addClass('menu-item-here');
-        jQuery(item).siblings().removeClass('menu-item-here');
+        jQuery(item).siblings().removeClass('menu-item-here menu-item-hover');
 
         _log('highlightMenu - END');
     };
@@ -492,6 +555,103 @@ var GFMegaMenu = (function ($) {
         _log('_abortSubMenuCall - END');
     };
 
+    /**
+     * Resets the node's cache entry to a state like its submenu was not loaded
+     *
+     * @param {GID} gid the node id of which to invalidate its submenu
+     */
+    const _invalidateSpaceSubmenu = function(gid) {
+      _updateMemo(gid, (memo) => ({
+        ...memo,
+        html: null,
+        children: [],
+      }));
+    }
+
+    /**
+     * remove nested submenu containers from DOM
+     * @param {HTMLElement} subMenu submenu list container DOM element
+     */
+    const _tryRemoveNestedSubMenus = function(subMenu) {
+      if(subMenu == null) return;
+      $(subMenu).nextAll(":not(#gf-megamenu-sidebar-left)").remove();
+    }
+
+    /**
+     * Checks if a given gid needs to be invalidated, and invalidates it if so.
+     * Used to invalidate node which no longer have children.
+     *
+     * @param {GID} gid The node id to check
+     */
+    const _bubbleInvalidation = function (gid) {
+      const item = $(`[data-gid="${gid}"]`);
+      _hasSubMenu(item, {
+        otherwise: (item) => {
+          _invalidateEntry(gid);
+        },
+      });
+    };
+
+    /**
+     * Gets the corresponding DOM element of the submenu containing the space entry
+     *
+     * @param {GID} gid Th node id of the space
+     */
+    const _getSpaceSubmenu = function(gid) {
+      const subMenu = $(
+        `#gf-spaces-menu .gf-megamenu-col:has([data-gid="${gid}"])`
+      );
+      if(!subMenu.exists()) return null;
+      return subMenu;
+    }
+
+    /**
+     * @typedef {Object} MMEntryInvalidationOptions MegaMenu invalidation options
+     * @property {boolean} [updateDOM] whether to update the dom after
+     *  invalidating entry. Default: `true`
+     */
+
+    /**
+     * Invalidates a space from submenu cache, removing its and its parent's
+     * memoized html (will be re-fetched if necessary). Additionally removes
+     * related elements from the DOM if the `updateDOM` option is true (default).
+     *
+     * @param {GID} gid The node id of the space of which to invalidate its submenu entry
+     * @param {MMEntryInvalidationOptions} [options] Invalidation options, see type
+     *  {@linkcode MMEntryInvalidationOptions} for more information
+     */
+    const _invalidateEntry = async function(gid, options = {}) {
+        const { updateDOM = true } = options;
+
+        const invalidateAndRemoveNestedSubMenus = (gid) => {
+          _invalidateSpaceSubmenu(gid);
+
+          if (!updateDOM) return;
+
+          const subMenu = _getSpaceSubmenu(gid);
+          if (subMenu == null) return;
+          _tryRemoveNestedSubMenus(subMenu);
+        };
+
+        // should update dom ? eagerly remove current group nested submenus
+        invalidateAndRemoveNestedSubMenus(gid);
+
+        let parentGID = _memo[gid]?.parent;
+
+        parentGID ??= await $.ajax({
+          method: "GET",
+          url: `/gofast_og/${gid}/get_parents`,
+          dataType: "json",
+        }) || null;
+
+        // no parent
+        if (parentGID == null) return;
+
+        // if should update dom, and group has parent, remove its submenus to update current space display
+        invalidateAndRemoveNestedSubMenus(parentGID);
+        _bubbleInvalidation(parentGID);
+    }
+
     //Publics methods
     return{
         init: function (menuId, ajaxUrl, options) {
@@ -537,7 +697,19 @@ var GFMegaMenu = (function ($) {
         },
         addSideBars: function () {
             _addSideBars();
-        }
+        },
+        /**
+         * Invalidates a space from submenu cache, removing its and its parent's
+         * memoized html (will be re-fetched if necessary). Additionally removes
+         * related elements from the DOM if the `updateDOM` option is true (default).
+         *
+         * @param {GID} gid The node id of the space of which to invalidate its submenu entry
+         * @param {MMEntryInvalidationOptions} [options] Invalidation options, see type
+         *  {@linkcode MMEntryInvalidationOptions} for more information
+         */
+        invalidateEntry: async function(gid, options) {
+            return _invalidateEntry(gid, options)
+        },
     };
 
 
@@ -549,6 +721,22 @@ jQuery(document).ready(function () {
     Gofast = Gofast || {};
     GFMegaMenu.init('gf-spaces-menu', '/gofast/menu/get');
     Gofast.spacesMenu = GFMegaMenu;
+
+    /**
+     * Event listener for custom events that should trigger menu invalidation.
+     *
+     * @param {CustomEvent<{nid:GID}>} event Custom event object, requires only
+     *  the node id in an nid property inside the event details.
+     */
+    const invalidationListener = (event) => {
+        Gofast.spacesMenu.invalidateEntry(event.detail.nid);
+    }
+
+    // invalidation event listeners
+    window.addEventListener("gofast:node_rename", invalidationListener);
+    window.addEventListener("gofast:node_delete", invalidationListener);
+    window.addEventListener("gofast:node_create", invalidationListener);
+    window.addEventListener("gofast:node_restored", invalidationListener)
 });
 
 

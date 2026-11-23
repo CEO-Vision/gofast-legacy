@@ -110,22 +110,23 @@ function gofast_api_post_webform($params) {
   }else{
     gofast_api_mandatory_parameter("data");
   }
-  
-  // Before updating the webform we need to remove all the components 
-  $node->webform['components'] = array();
-  $node->webform['page_breaks'] = array();
-  $node->webform['page_count'] = 0;
-  node_save($node);
-  
-  $node = node_load($nid, NULL, TRUE);
 
   // Update the webform
   $components = json_decode($data, TRUE);
-  
+  // Extract custom properties first so we don't have to manage them later
+  // FIXME: improve the API design so this is not necessary at all (maybe extract
+  // component list to its own 'components' key containing an array/object)
+  $field_custom_properties = $components['field_custom_properties'];
+  unset($components['field_custom_properties']);
+
+  // Next component id if adding one.
+  $next_component_id = count($components) + 1;
+
   // Add custom properties like timeSpent, score, percentage
   $custom_properties = ['timeSpent', 'score', 'percentage'];
   foreach ($custom_properties as $property) {
-    $components[] = [
+    $component_id = $next_component_id++;
+    $components[$component_id] = [
       'nid' => $nid,
       'pid' => 0,
       'extra' => [
@@ -136,11 +137,14 @@ function gofast_api_post_webform($params) {
       'form_key' => $property,
       'name' => ucfirst($property),
       'type' => 'textfield',
-      'weight' => 0
+      'weight' => 0,
+      'cid' => $component_id,
     ];
   }
-  
-  $components[] = [
+
+  // Add submission PDF file input.
+  $component_id = $next_component_id++;
+  $components[$component_id] = [
     'nid' => $nid,
     'pid' => 0,
     'extra' => [
@@ -151,12 +155,11 @@ function gofast_api_post_webform($params) {
     'form_key' => 'submissionPdf',
     'name' => ucfirst('submissionPdf'),
     'type' => 'file',
-    'weight' => 0
+    'weight' => 0,
+    'cid' => $component_id,
   ];
 
-  $customProperties = $components['field_custom_properties'];
-  $node->field_custom_properties[LANGUAGE_NONE][0]['value'] = json_encode($customProperties);
-  unset($components['field_custom_properties']);
+  $node->field_custom_properties[LANGUAGE_NONE][0]['value'] = json_encode($field_custom_properties);
   $node->webform['components'] = gofast_xss_clean($components);
   $node->webform['page_breaks'] = array_fill(0,2, array());
   $node->webform['page_count'] = 2;
@@ -485,34 +488,49 @@ function gofast_api_post_webform_file($params) {
   
   // Check if as admin submission
   $as_admin = gofast_webform_submit_as_admin();
-  $submission_folder_reference = gofast_webform_create_submission_folder($nid, $as_admin)['submission_folder'];
-  $node_webform_folder_reference = gofast_webform_create_submission_folder($nid, $as_admin)['node_webform_folder'];
+  $folder_reference = gofast_webform_create_submission_folder($nid, $as_admin);
+  $submission_folder_reference = $folder_reference['submission_folder'];
+  $node_webform_folder_reference = $folder_reference['node_webform_folder'];
   
   // Insert the blob pdf url into a new item content
   if(isset($_FILES['surveySubmissionPdf'])){
     $pdf_name = '';
-    if($user->uid == 0){
+    if($user->uid <= 1){
       $pdf_name = 'anonymous_' . $nid . '_' . date('Y-m-d_H-i-s') . '.pdf';
     }else{
       $pdf_name = $user->name . '_' . $nid . '_' . date('Y-m-d_H-i-s') . '.pdf';
     }
   }
-  
   // Insert all files
   foreach ($files as $question_name => $file) {
-    if($question_name == 'surveySubmissionPdf'){
-      $file['name'] = $pdf_name;
+    $files_to_process = [];
+    if (is_array($file['name'])) {
+      foreach ($file['name'] as $index => $name) {
+        $files_to_process[] = [
+          'name' => $name,
+          'tmp_name' => $file['tmp_name'][$index],
+          'type' => $file['type'][$index]
+        ];
+      }
+    } else {
+      $files_to_process[] = $file;
     }
-    if($editor){
-      $file_alfresco_item = gofast_cmis_item_content_insert($node_webform_folder_reference, $file['name'], file_get_contents($file['tmp_name']), $file['type'], array(), $as_admin);
-    }else{
-      $file_alfresco_item = gofast_cmis_item_content_insert($submission_folder_reference, $file['name'], file_get_contents($file['tmp_name']), $file['type'], array(), $as_admin);
-    }
-    if (!empty($file_alfresco_item) && is_object($file_alfresco_item)) {
-      $responseData[$question_name] = array(
-        'file_reference' => $file_alfresco_item->properties['alfcmis:nodeRef'],
-        'file_name' => isset($file['name']) ? $file['name'] : '',
-      );
+    foreach ($files_to_process as $file_to_upload) {
+      if($question_name == 'surveySubmissionPdf'){
+        $file_to_upload['name'] = $pdf_name;
+      }
+      
+      $file_to_upload['name'] = uniqid() . "_" . $file_to_upload['name'];
+
+      $folder = $editor ? $node_webform_folder_reference : $submission_folder_reference;
+      $file_alfresco_item = gofast_cmis_item_content_insert($folder, $file_to_upload['name'], file_get_contents($file_to_upload['tmp_name']), $file_to_upload['type'], array(), $as_admin);
+
+      if (!empty($file_alfresco_item) && is_object($file_alfresco_item)) {
+        $responseData[$question_name][] = array(
+          'file_reference' => $file_alfresco_item->properties['alfcmis:nodeRef'],
+          'file_name' => $file_to_upload['name'],
+        );
+      }
     }
   }
   $responseData['submission_folder_reference'] = $submission_folder_reference;

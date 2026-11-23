@@ -31,9 +31,6 @@
                 }, 300, function(){
                     bplaceholder.hide();
                     if(!beditor.hasClass("processed")){
-                        /*CKEDITOR.config.plugins = "dialogui,dialog,about,a11yhelp,dialogadvtab,basicstyles,bidi,blockquote,notification,button,toolbar,clipboard,panelbutton,panel,floatpanel,colorbutton,colordialog,templates,menu,contextmenu,copyformatting,div,resize,elementspath,enterkey,entities,popup,filetools,filebrowser,find,fakeobjects,flash,floatingspace,listblock,richcombo,font,forms,format,horizontalrule,htmlwriter,iframe,wysiwygarea,image,indent,indentblock,indentlist,smiley,justify,menubutton,language,link,list,liststyle,magicline,maximize,newpage,pagebreak,pastetext,pastefromword,preview,print,removeformat,save,selectall,showblocks,showborders,sourcearea,specialchar,scayt,tab,table,tabletools,tableselection,undo,lineutils,widgetselection,widget,notificationaggregator,uploadwidget,uploadimage";
-            CKEDITOR.config.toolbar = eval(cke_settings_blog.settings.toolbar);
-            Drupal.gofast_blog_editor = CKEDITOR.replace("gofast-blog-editor");*/
                         Drupal.gofast_blog_editor = Gofast.microBlogging.initCKEditorPost(editor);
                         beditor.addClass("processed");
                     }

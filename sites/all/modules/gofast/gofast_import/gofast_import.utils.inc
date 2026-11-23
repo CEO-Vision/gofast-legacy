@@ -75,7 +75,9 @@ function gofast_import__find_userlist_nids_by_title($title) {
   $query_results = (new EntityFieldQuery())
     ->entityCondition('entity_type', 'node')
     ->entityCondition('bundle', 'userlist')
-    ->propertyCondition('title', $title)
+    // BINARY forces comparison to be case-sensitive, since the default
+    // collation on the title column is case-insensitive.
+    ->propertyCondition('title', $title, '= BINARY')
     ->propertyCondition('status', 1)
     ->execute();
 

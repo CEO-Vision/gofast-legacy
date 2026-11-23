@@ -3,6 +3,133 @@ CHANGELOG for PHP CS Fixer
 
 This file contains changelogs for stable releases only.
 
+Changelog for v2.19.3
+---------------------
+
+* minor #6060 DX: Add upgrade guide link when next Major is available (keradus)
+
+Changelog for v2.19.2
+---------------------
+
+* bug #5881 SelfUpdateCommand - fix link to UPGRADE docs (keradus)
+
+Changelog for v2.19.1
+---------------------
+
+* bug #5395 PhpdocTagTypeFixer: Do not modify array shapes (localheinz, julienfalque)
+* bug #5678 UseArrowFunctionsFixer - fix for return without value (kubawerlos)
+* bug #5679 PhpUnitNamespacedFixer - do not try to fix constant usage (kubawerlos)
+* bug #5681 RegularCallableCallFixer - fix for function name with escaped slash (kubawerlos)
+* bug #5687 FinalInternalClassFixer - fix for annotation with space after "@" (kubawerlos)
+* bug #5688 ArrayIndentationFixer - fix for really long arrays (kubawerlos)
+* bug #5690 PhpUnitNoExpectationAnnotationFixer - fix "expectedException" annotation with message below (kubawerlos)
+* bug #5693 YodaStyleFixer - fix for assignment operators (kubawerlos)
+* bug #5697 StrictParamFixer - fix for method definition (kubawerlos)
+* bug #5702 CommentToPhpdocFixer - fix for single line comments starting with more than 2 slashes (kubawerlos)
+* bug #5703 DateTimeImmutableFixer - fix for method definition (kubawerlos)
+* bug #5718 VoidReturnFixer - do not break syntax with magic methods (kubawerlos)
+* bug #5727 SingleSpaceAfterConstructFixer - Add support for `namespace` (julienfalque)
+* bug #5730 Fix transforming deprecations into exceptions (julienfalque)
+* bug #5738 TokensAnalyzer - fix for union types (kubawerlos)
+* bug #5741 Fix constant invocation detection cases (kubawerlos)
+* bug #5769 Fix priority between `phpdoc_to_property_type` and `no_superfluous_phpdoc_tags` (julienfalque)
+* bug #5774 FunctionsAnalyzer::isTheSameClassCall - fix for $this with double colon following (kubawerlos)
+* bug #5779 SingleLineThrowFixer - fix for throw in match (kubawerlos)
+* bug #5781 ClassDefinition - fix for anonymous class with trailing comma (kubawerlos)
+* bug #5783 StaticLambdaFixer - consider parent:: as a possible reference to $this (fancyweb)
+* bug #5791 NoBlankLinesAfterPhpdoc - Add T_NAMESPACE in array of forbidden successors (paulbalandan)
+* bug #5799 TypeAlternationTransformer - fix for multiple function parameters (kubawerlos)
+* bug #5804 NoBreakCommentFixer - fix for "default" in "match" (kubawerlos)
+* bug #5805 SingleLineCommentStyleFixer - run after HeaderCommentFixer (kubawerlos)
+* bug #5817 NativeFunctionTypeDeclarationCasingFixer - fix for union types (kubawerlos)
+* bug #5823 YodaStyleFixer - yield support (SpacePossum)
+* minor #4914 Improve PHPDoc types support (julienfalque, keradus)
+* minor #5680 DX: benchmark.sh - ensure deps are updated to enable script working across less-similar branches (keradus)
+* minor #5689 Calculate code coverage on PHP 8 (kubawerlos)
+* minor #5694 DX: fail on risky tests (kubawerlos)
+* minor #5695 Utils - save only unique deprecations to avoid memory issues (PetrHeinz)
+* minor #5710 [typo] add correct backquotes (PhilETaylor)
+* minor #5717 Run migration rules on PHP 8 (kubawerlos, keradus)
+* minor #5721 Fix reStructuredText markup (julienfalque)
+* minor #5725 Update LICENSE (exussum12)
+* minor #5731 CI - Fix checkbashisms installation (julienfalque)
+* minor #5740 DX: more type-related docblocks (keradus)
+* minor #5746 Config - Improve deprecation message with details (SpacePossum)
+* minor #5747 RandomApiMigrationFixer - better docs and better "random_int" support (SpacePossum)
+* minor #5748 Updated the link to netbeans plugins page (cyberguroo)
+* minor #5750 Test all const are in uppercase (SpacePossum)
+* minor #5752 NoNullPropertyInitializationFixer - fix static properties as well (HypeMC)
+* minor #5756 Fix rule sets descriptions (kubawerlos)
+* minor #5761 Fix links in custom rules documentation (julienfalque)
+* minor #5777 DX: update PHPStan (kubawerlos)
+* minor #5789 DX: update PHPStan (kubawerlos)
+* minor #5808 Update PHPStan to 0.12.92 (kubawerlos)
+* minor #5824 Deprecate v2 (keradus)
+* minor #5825 DX: update checkbashisms to v2.21.3 (keradus)
+* minor #5826 SCA: check both composer files (keradus)
+* minor #5827 ClassAttributesSeparationFixer - Add `trait_import` support (SpacePossum)
+
+Changelog for v2.19.0
+---------------------
+
+* feature #4238 TrailingCommaInMultilineFixer - introduction (kubawerlos)
+* feature #4592 PhpdocToPropertyTypeFixer - introduction (julienfalque)
+* feature #5390 feature #4024 added a `list-files` command (clxmstaab, keradus)
+* feature #5635 Add list-sets command (keradus)
+* feature #5674 UX: Display deprecations to end-user (keradus)
+* minor #5601 Always stop when "PHP_CS_FIXER_FUTURE_MODE" is used (kubawerlos)
+* minor #5607 DX: new config filename (keradus)
+* minor #5613 DX: UtilsTest - add missing teardown (keradus)
+* minor #5631 DX: config deduplication (keradus)
+* minor #5633 fix typos (staabm)
+* minor #5642 Deprecate parameter of Token::toJson() (keradus)
+* minor #5672 DX: do not test deprecated fixer (kubawerlos)
+
+Changelog for v2.18.7
+---------------------
+
+* bug #5593 SingleLineThrowFixer - fix handling anonymous classes (kubawerlos)
+* bug #5654 SingleLineThrowFixer - fix for match expression (kubawerlos)
+* bug #5660 TypeAlternationTransformer - fix for "array" type in type alternation (kubawerlos)
+* bug #5665 NullableTypeDeclarationForDefaultNullValueFixer - fix for nullable with attribute (kubawerlos)
+* bug #5670 PhpUnitNamespacedFixer - do not try to fix constant (kubawerlos)
+* bug #5671 PhpdocToParamTypeFixer - do not change function call (kubawerlos)
+* bug #5673 GroupImportFixer - Fix failing case (julienfalque)
+* minor #4591 Refactor conversion of PHPDoc to type declarations (julienfalque, keradus)
+* minor #5611 DX: use method expectDeprecation from Symfony Bridge instead of annotation (kubawerlos)
+* minor #5658 DX: use constants in tests for Fixer configuration (keradus)
+* minor #5661 DX: remove PHPStan exceptions for "tests" from phpstan.neon (kubawerlos)
+* minor #5662 Change wording from "merge" to "intersect" (jschaedl)
+* minor #5663 DX: do not abuse "inheritdoc" tag (kubawerlos)
+* minor #5664 DX: code grooming (keradus)
+
+Changelog for v2.18.6
+---------------------
+
+* bug #5586 Add support for nullsafe object operator ("?->") (kubawerlos)
+* bug #5597 Tokens - fix for checking block edges  (kubawerlos)
+* bug #5604 Custom annotations @type changed into @var (Leprechaunz)
+* bug #5606 DoctrineAnnotationBracesFixer false positive (Leprechaunz)
+* bug #5610 BracesFixer - fix braces of match expression (Leprechaunz)
+* bug #5615 GroupImportFixer severely broken (Leprechaunz)
+* bug #5617 ClassAttributesSeparationFixer - fix for using visibility for class elements (kubawerlos)
+* bug #5618 GroupImportFixer - fix removal of import type when mixing multiple types (Leprechaunz)
+* bug #5622 Exclude Doctrine documents from final fixer (ossinkine)
+* bug #5630 PhpdocTypesOrderFixer - handle complex keys (Leprechaunz)
+* minor #5554 DX: use tmp file in sys_temp_dir for integration tests (keradus)
+* minor #5564 DX: make integration tests matching entries in FixerFactoryTest (kubawerlos)
+* minor #5603 DX: DocumentationGenerator - no need to re-configure Differ (keradus)
+* minor #5612 DX: use ::class whenever possible (kubawerlos)
+* minor #5619 DX: allow XDebugHandler v2 (keradus)
+* minor #5623 DX: when displaying app version, don't put extra space if there is no CODENAME available (keradus)
+* minor #5626 DX: update PHPStan and way of ignoring flickering PHPStan exception (keradus)
+* minor #5629 DX: fix CiIntegrationTest (keradus)
+* minor #5636 DX: remove 'create' method in internal classes (keradus)
+* minor #5637 DX: do not calculate bitmap via helper anymore (keradus)
+* minor #5639 Move fix reports (classes and schemas) (keradus)
+* minor #5640 DX: use constants for PHPUnit version (keradus)
+* minor #5646 Cleanup YodaStyleFixerTest (kubawerlos)
+
 Changelog for v2.18.5
 ---------------------
 

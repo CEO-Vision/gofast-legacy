@@ -57,6 +57,37 @@ function gofast_search_cron_reindex_pop() {
   variable_set('gofast_last_popularity_reindex', time());
 }
 
+function gofast_search_cron_empty_trash(){
+  module_load_include('inc', 'apachesolr', 'apachesolr.index');
+  // get all nodes deleted since more than 90 days and with a corresponding entry into "apachesolr_index_entities_node" 
+  $threshold = REQUEST_TIME - (90 * 24 * 60 * 60);
+
+  $query = db_select('node', 'n');
+  $query->innerJoin('apachesolr_index_entities_node', 'a', 'a.entity_id = n.nid');
+
+  $query->fields('n');
+  $query->fields('a');
+
+  $query->condition('n.status', 0);
+  $query->condition('n.type', 'alfresco_item');
+  $query->condition('n.changed', $threshold, '<');
+
+  $result = $query->execute();
+
+  foreach ($result as $row) {
+      $env_id = GOFAST_SEARCH_ENV_ID;
+      $entity_type = "node";
+      $entity_id = $row->nid;
+
+      $indexer_table = apachesolr_get_indexer_table($entity_type);
+     apachesolr_index_delete_entity_from_index($env_id, $entity_type, $entity_id);
+      db_delete($indexer_table)
+          ->condition('entity_id', $entity_id)
+          ->execute();
+
+  }
+}
+
 
 /**
  * Checks for nodes having their popularity changed since last check.

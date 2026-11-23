@@ -29,7 +29,7 @@ function gofast_features_global_locale_default_languages() {
     'name' => 'German',
     'native' => 'Deutsch',
     'direction' => 0,
-    'enabled' => 0,
+    'enabled' => 1,
     'plurals' => 0,
     'formula' => '',
     'domain' => '',

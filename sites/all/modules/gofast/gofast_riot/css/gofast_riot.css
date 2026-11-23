@@ -35,6 +35,7 @@ and open the template in the editor.
     transition : right .5s;
     z-index : 89;
     box-shadow: rgba(0, 0, 0, 0.08) -0.95px -0.95px 2.6px;
+    overflow: visible !important;
 }
 #IframeRiotBloc{
     padding-top: 50px;
@@ -82,8 +83,10 @@ and open the template in the editor.
   top: 50%;
   transition: width 0.5s, background-color 0.5s, padding-left 0.5s;
   width: 20px;
-  z-index: 112; }
-  #animateRiot:hover {
+  z-index: 112;
+}
+
+#animateRiot:hover {
     background-color: #c8c8c8;
     width: 28px;
     padding-left: 6px;
@@ -110,4 +113,28 @@ and open the template in the editor.
     border-radius: 10px;
     box-shadow: 0 0 16px rgba(0,0,0, 0.1);
     border-style: none;
+}
+
+/**
+ * Button to toggle the recovery_key visibility.
+ */
+.recovery-key-wrapper .input-group-append {
+    margin-left: 10px;
+}
+
+.recovery-key-wrapper .password-eye-btn {
+    padding: 4px 7px !important;
+    vertical-align: middle !important;
+    background-color: transparent !important;
+    border: 1px solid #e4e6ef !important;
+    border-radius: 0.42rem !important;
+    cursor: pointer !important;
+}
+
+.recovery-key-wrapper .password-eye-btn:hover {
+    background-color: #e4e6ef !important;
+}
+
+.recovery-key-wrapper .password-eye-input {
+    border-radius: 0.25rem !important;
 }

@@ -55,9 +55,11 @@ if (args.nodeRef !== null) {
 
       folderNode.setPermission("Coordinator", "GROUP_" + unique_name_group);
     } else if (grouptype === "og_public") {
-      renderArray.permissions.standard = {"Standard": "GROUP_EVERYONE"};
+      renderArray.permissions.consumer = {"Consumer": "GROUP_EVERYONE_EXCEPT_EXTRANET"};
+      renderArray.permissions.coordinator = {"Coordinator": "GROUP_PUBLIC_ADMINS"};
 
-      folderNode.setPermission("Standard", "GROUP_EVERYONE");
+      folderNode.setPermission("Consumer", "GROUP_EVERYONE_EXCEPT_EXTRANET");
+      folderNode.setPermission("Coordinator", "GROUP_PUBLIC_ADMINS");
     } else if (grouptype === "folders_templates_folder") {
       renderArray.permissions.coordinator = {"Coordinator": "GROUP_" + unique_name_group};
 
@@ -66,6 +68,8 @@ if (args.nodeRef !== null) {
 		renderArray.permissions.standard = {"Consumer": "GROUP_" + unique_name_group};
 		
 		folderNode.setPermission("Consumer", "GROUP_" + unique_name_group);
+    } else if(template_folder !== null && groupname == "PUBLIC_SPACE"){
+      folderNode.setInheritsPermissions(true);
     } else if (template_folder !== null) {
         renderArray.permissions.standard = {"Consumer": "GROUP_" + unique_name_group + "_STANDARD"};
         renderArray.permissions.groupmanager = {"GroupManager": "GROUP_" + unique_name_group + "_GROUPMANAGER"};

@@ -41,13 +41,19 @@
                 const status = Object.keys(response.message)[0];
                 const message = Object.values(response.message)[0];
                 Gofast.toast(message, status);
-                window.GofastKDataTableReload($multiSelectContainer.parents(".datatable")[0].id);
+
                 if (response.data.placeholder) {
                     const $multiSelectSpan = $multiSelectContainer.find(".gofast-directory-multiselect-span");
                     $multiSelectSpan.html(response.data.placeholder);
                 }
+
                 if (status == "success") {
                     Gofast.toggleMultiSelect(e, $multiSelectContainer);
+
+                    // Force refresh containing datatable on success.
+                    if ($multiSelectContainer.parents(".datatable")[0]?.id) {
+                        window.GofastKDataTableReload($multiSelectContainer.parents(".datatable")[0].id);
+                    }
                 }
             })
             .fail(function(response) {
@@ -145,7 +151,10 @@
             }
         });
         // we have to select at least one permission between extranet and internal, which are strictly commutative
-        $('input#edit-permissions-extranet-bs-switch').prop('checked', true);
+        // GOFAST-14611: only seed the pair when the server-side prefill left both off
+        if (!$('input#edit-permissions-extranet-bs-switch').prop('checked') && !$('input#edit-permissions-internal-bs-switch').prop('checked')) {
+            $('input#edit-permissions-extranet-bs-switch').prop('checked', true);
+        }
     }
 
     // Generic submit handler for directories forms
@@ -176,7 +185,8 @@
             }
             // We have to convert the date string value into a timestamp before submission, so the server will be able to handle the filtering request
             if(filter[startName]) filter[startName] = moment(filter[startName], GofastConvertDrupalDatePattern("moment", Drupal.settings.date_format_short, false)).valueOf() / 1000;
-            if(filter[endName]) filter[endName] = moment(filter[endName], GofastConvertDrupalDatePattern("moment", Drupal.settings.date_format_short, false)).valueOf() / 1000;  
+            // The end date is inclusive: filter up to the end of that day
+            if(filter[endName]) filter[endName] = moment(filter[endName], GofastConvertDrupalDatePattern("moment", Drupal.settings.date_format_short, false)).endOf("day").unix();
         }
 
         _table.setDataSourceParam("query", filter);
@@ -215,14 +225,16 @@
      * @warning in order to be triggered correctly, this pseudo-facade must be called on both "datatable-check" and "dataTable-uncheck" events
      * @param {HTMLTableRowElement[]} rows 
      * @param {string} tableId 
+     * @param {boolean} defaultAction
+     * @param {boolean} useSingleRowAction Display specific row action if only one is selected
      */
-    window.GofastTriggerKDataTableMegaDropdown = function(rows, tableId, defaultAction = false) {
+    window.GofastTriggerKDataTableMegaDropdown = function(rows, tableId, defaultAction = false, useSingleRowAction = true) {
         _GofastKDataTableSelectCounter(rows.length, tableId);
         if (!rows.length) {
             _GofastRefreshKDataTableMegaDropdown(tableId, -2, defaultAction);
             return;
         }
-        if (rows.length == 1) {
+        if (rows.length == 1 && useSingleRowAction) {
             const rowId = $(rows[0]).attr("data-row");
             _GofastRefreshKDataTableMegaDropdown(tableId, rowId);
             return;
@@ -308,6 +320,16 @@
      * @param {string} formId | DOM ID of the form wrapping the subheader
      */
     window.GofastRefreshKDataTableSubheader = function (tableId, formId) {
+        // Drawn while hidden (e.g. in an inactive tab), the table has no usable cell widths: redraw it once shown.
+        const table = document.getElementById(tableId);
+        if (table) {
+            const width = table.offsetWidth;
+            const datatable = $(table).data("KTDatatable");
+            if (table.dataset.gofastLastWidth === "0" && width > 0 && datatable) {
+                datatable.redraw();
+            }
+            table.dataset.gofastLastWidth = width;
+        }
         if ($("#" + tableId).attr("data-prevent-refresh") == "true") {
             $("#" + tableId).attr("data-prevent-refresh", "false");
             return;
@@ -406,16 +428,11 @@
             const $dateInput = $(e.target)
             const inputName = $dateInput.attr("name");
             const $siblingInput = $("[name='" + inputName.replace("start", "end") + "']");
-            // if we set a startDate and there is an associated endDate input, we want the endDate to be set one day later rather than the same day
+            // Setting a start date fills an empty or earlier end date with the same day (the end date is inclusive)
             if (inputName.startsWith("start") && $siblingInput.length && typeof e.date != "undefined") {
-                // change the sibling input value only if it's tomorrow or before
-                // otherwise it means it has already been set by the user
-                const siblingTime = $siblingInput.datepicker("getDate").getTime();
-                const dateTime = $dateInput.datepicker("getDate").getTime();
-                const isBeforeTomorrow = siblingTime - dateTime <= 86400000;
-                if (isBeforeTomorrow) {
-                    const oneDayLater = new Date(e.date.getTime() + 86400000);
-                    $siblingInput.datepicker("setDate", oneDayLater);
+                const siblingDate = $siblingInput.datepicker("getDate");
+                if (!siblingDate || siblingDate.getTime() < e.date.getTime()) {
+                    $siblingInput.datepicker("setDate", e.date);
                 }
             }
             $dateInput.tooltip("dispose");

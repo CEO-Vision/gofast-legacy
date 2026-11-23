@@ -18,6 +18,14 @@
         '</option><option value="public">' +
         Drupal.t("Public") +
         '</option></select>',
+
+        // Status filter select
+        '<select name="status" class="form-control selectpicker" style="display: block !important;">' +
+        '<option value="">' + Drupal.t("All") + '</option>' +
+        '<option value="1">' + Drupal.t("Active") + '</option>' +
+        '<option value="0">' + Drupal.t("Deleted") + '</option>' +
+        '</select>',
+
         '',
         '<div class="d-flex align-self-start"><input type="text" name="ac-list-tags-total-members" class="form-control form-control-tags js-tagify filter-field-directory-spaces tagify-filter-container" data-dropdown-class data-user data-userlist placeholder="' + Drupal.t("Filter by member name") + '" /></div>',
         '<div class="d-flex align-self-start"><input type="text" name="ac-list-tags-total-administrators" class="form-control form-control-tags js-tagify filter-field-directory-spaces tagify-filter-container" data-dropdown-class data-user data-userlist placeholder="' + Drupal.t("Filter by administrator name") + '" /></div>',
@@ -230,7 +238,25 @@
                         autoHide: false,
                         width: 200,
                         template: function(data) {
-                            return ('<a data-toggle="popover" data-trigger="hover" data-html="true" data-content="<div class=\'py-2 px-4\'>' + data.breadcrumb.replaceAll("\n", "").replaceAll("\"", "&quot;") + (data.description == null ? "" : '<b> Description : '+data.description.replaceAll("\"", "&quot;") + '</b>')+'</div>" class="gofast__popover btn-link text-nowrap" href="/node/'+data.nid+'">'+data.name+'</a>')
+                            return (
+                                '<a data-toggle="popover" data-trigger="hover" data-html="true" data-content="<div class=\'py-2 px-4\'>' +
+                                data.breadcrumb.replaceAll("\n", "").replaceAll("\"", "&quot;") +
+                                (
+                                    data.is_confidential ?
+                                    '<span class=\'badge badge-secondary\'>' + Drupal.t('Confidential') + '</span><br/>'
+                                    : ''
+                                ) +
+                                (
+                                    data.description == null ?
+                                    ""
+                                    : '<b> Description : '+data.description.replaceAll("\"", "&quot;") + '</b>'
+                                ) +
+                                '</div>" class="gofast__popover btn-link text-nowrap" href="/node/' +
+                                data.nid +
+                                '">' +
+                                data.name +
+                                '</a>'
+                            )
                         },
                     },
                     {
@@ -250,6 +276,23 @@
                             }
                             return "<span>" + text + "</span>";
                         },
+                    },
+                    {
+                        field: "status",
+                        title: _columns.status,
+                        overflow: 'visible',
+                        autoHide: false,
+                        // only 2 possible values and always filtered in some
+                        // way, so sorting is not helpful.
+                        sortable: false,
+                        template: function (data) {
+                            return '<span>' + (
+                                    data.status == 1 ?
+                                        Drupal.t('Active')
+                                        : Drupal.t('Deleted')
+                                ) +
+                                '</span>'
+                        }
                     },
                     {
                         field: "nb_contents",

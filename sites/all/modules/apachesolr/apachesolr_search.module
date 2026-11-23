@@ -833,9 +833,9 @@ function apachesolr_search_search_page($results) {
  *   the search page that is requesting an output
  */
 function apachesolr_search_search_page_custom($results, $search_page, $build = array()) {
+  $env_id = $search_page['env_id'] == -1 ? variable_get('apachesolr_default_environment', '') : $search_page['env_id'];
   if (!empty($search_page['settings']['apachesolr_search_spellcheck'])) {
     // Retrieve suggestion
-    $env_id = $search_page['env_id'] == -1 ? variable_get('apachesolr_default_environment', '') : $search_page['env_id'];
     // @patch @ceo-vision
     $suggestions = gofast_search_get_search_suggestions($search_page['env_id']);
    //  $suggestions = apachesolr_search_get_search_suggestions($env_id);
@@ -1197,6 +1197,7 @@ function apachesolr_search_highlighting_params(DrupalSolrQueryInterface $query =
   $params['hl.simple.pre'] = variable_get('apachesolr_hl_pretag', NULL);
   $params['hl.simple.post'] = variable_get('apachesolr_hl_posttag', NULL);
   $params['hl.snippets'] = variable_get('apachesolr_hl_numsnippets', NULL);
+  $params['hl.method'] = variable_get('apachesolr_hl_method', 'original');
   // This should be an array of possible field names.
   $params['hl.fl'] = variable_get('apachesolr_hl_fieldtohighlight', NULL);
   $params = array_filter($params);

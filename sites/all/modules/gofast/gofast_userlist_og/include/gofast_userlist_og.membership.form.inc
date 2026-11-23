@@ -42,16 +42,22 @@ function gofast_userlist_og_form_og_ui_add_users_alter(&$form, &$form_state, $fo
     }
   }
 
+  $is_group_confidential = gofast_group_is_confidential($gid);
   $attributes_name = [
     'class' => [' form-control-tags js-tagify'],
     //'data-enforce' => '', //  Comment : Do not allow putting data that dose not exist | Decomment : allow putting data that dose not exist
     'data-user' => '', // show ac users
     //'data-node' => '', // show ac node
-    'data-userlist' => '', // show ac userlist
+    ...($is_group_confidential ?
+    [] // Do not autocomplete user lists for confidential spaces.
+    : [
+      'data-userlist' => '', // show ac userlist
+    ]),
     'data-space-type' => $space_type,
     'extranet-users-form' => $extranet_users_form,
     'data-exclude-current-members' => json_encode($member_infos),
     //'data-taxonomy_term' => '' // show ac taxonomy term
+    'data-filter-confidential' => (int) $is_group_confidential,
   ];
 
   $form['og_user']['name']=[
@@ -214,9 +220,20 @@ function gofast_userlist_og_form_og_ui_delete_membership_validate($form, &$form_
 
     $userlist_id = $membership->etid;
     $node = node_load($membership->gid);
+    $deleted_person_in_charge = 0;
 
     //Check if we are impacting an administrator membership
     $roles = gofast_userlist_og_get_userlist_roles("node", $node->nid, $userlist_id);
+    $members = gofast_userlist_get_members($userlist_id);
+    foreach ($members as $uid => $member) {
+      if($node->field_person_in_charge[LANGUAGE_NONE][0]["target_id"] == $uid) {
+        $deleted_person_in_charge++;
+      }
+    }
+    $person_in_charge_memberships = gofast_userlist_get_user_memberships($node->nid, $node->field_person_in_charge[LANGUAGE_NONE][0]["target_id"]);
+    if ($deleted_person_in_charge >= count($person_in_charge_memberships)) {
+      form_set_error("person_in_charge", t("You can't remove the responsible of a space", array(), array('context' => "gofast:gofast_og")));
+    }
 
     if(in_array("administrator member", $roles, TRUE)){
         //Check cound of administrators in this space

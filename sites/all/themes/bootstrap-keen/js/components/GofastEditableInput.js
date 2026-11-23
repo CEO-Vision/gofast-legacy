@@ -120,6 +120,7 @@ window.GofastEditableInput = (element, initialData, type, props = {}) => {
         },
         isEditable: true,
         isLoading: false,
+        enforceWhitelist: null,
         templates: {
           input: function(){
             return "<input type=\"text\" class=\"input-control form-control\" />";
@@ -134,10 +135,12 @@ window.GofastEditableInput = (element, initialData, type, props = {}) => {
             if (!data || !data.length) {
                 return Drupal.t('Empty value');
             }
-            const tagIcon = props.tagIcon ? `<div>${props.tagIcon}</div>` : "";
+            const tagIcon = props.tagIcon ?
+                `<div class='gf_tagify__tag_icon'>${props.tagIcon}</div>`
+                : "";
             let tags = "";
             for(const tag of data) {
-              tags += "<tag class=\"tagify__tag tagify__tag--secondary\"><div>" + tagIcon + tag.name + "</div></tag>"; 
+              tags += "<tag class=\"tagify__tag tagify__tag--secondary\"><div class='text-wrap text-break'>" + tagIcon + tag.name + "</div></tag>";
             }
             return "<tags class=\"tagify\">" + tags + "</tags>";
           },
@@ -588,8 +591,9 @@ window.GofastEditableInput = (element, initialData, type, props = {}) => {
 
                 customIn.templates.input = function() {
                     // @warning line jumps are interpreted as new commands here, but not elsewhere in this script
-                    return '<div class="input-group date"><input type="text" class="input-control datetime form-control form-control-sm gofastDatepicker" data-toggle="datepicker" data-date-autoclose="true" placeholder="' + (props.placeholder ? Drupal.t(props.placeholder) : Drupal.t('Select date')) + '"/></div>';
-                }
+                    return '<div class="input-group date"><input type="text" class="input-control form-control form-control-sm gofastDatepicker" data-toggle="datepicker" data-date-autoclose="true" placeholder="' + (props.placeholder ? Drupal.t(props.placeholder) : Drupal.t('Select date')) + '"/></div>';
+                }  
+
 
                 customIn.initCustomInput = () => {
                     if(customIn.data) {
@@ -729,6 +733,9 @@ window.GofastEditableInput = (element, initialData, type, props = {}) => {
                         language: GofastLocale,
                         ajax: {
                             url: function(params){
+                                if (customIn.searchUrl) {
+                                    return customIn.searchUrl(params.term);
+                                }
                                 return window.origin + "/directory/directory_async/user?nopopup=true";
                             },
                             dataType: 'json',
@@ -740,7 +747,14 @@ window.GofastEditableInput = (element, initialData, type, props = {}) => {
                             delay: 250,
                             processResults: function (results) {
                                 // data may be a sub-object along with "meta" because of server-side pagination
-                                let data = Array.isArray(results) ? results : results.data;
+                                let data = [];
+                                if (Array.isArray(results)) {
+                                    data = results;
+                                } else if (results.data) {
+                                    data = results.data;
+                                } else {
+                                    data = Object.values(results);
+                                }
                                 let newData  = data.map(user => {
                                     user.text = user.firstname+' '+user.lastname;
                                     user.id = user.uid;
@@ -759,7 +773,7 @@ window.GofastEditableInput = (element, initialData, type, props = {}) => {
                     });
 
                     // Fix data not correctly set in .select2("data") causing "undefined undefined" on blur
-                    if(customIn.data != null){
+                    if(customIn.data != null && $(customIn.DOM.input).select2("data")){
                         Object.entries(customIn.data).forEach(([key, value]) => {
                             $(customIn.DOM.input).select2("data")[0][key] = value
                         })
@@ -802,11 +816,12 @@ window.GofastEditableInput = (element, initialData, type, props = {}) => {
                 break;
 
             case 'userstags':
-                customIn.searchUrl = function(search){
-
-                    let encodeSearch = encodeURIComponent("query[name]") + "=" + search;
-                    return '/directory/directory_async/user?'+encodeSearch ;
-                },
+                if (!customIn.searchUrl) {
+                    customIn.searchUrl = function(search){
+                        let encodeSearch = encodeURIComponent("query[name]") + "=" + search;
+                        return '/directory/directory_async/user?'+encodeSearch;
+                    };
+                }
                 customIn.templates.value = function(data){
                     if (data && data.length > 0) {
 
@@ -855,8 +870,9 @@ window.GofastEditableInput = (element, initialData, type, props = {}) => {
                     var tagify = new Tagify(customIn.DOM.input, {
                         delimiters : null,
                         // tagTextProp: 'name', // very important since a custom template is used with this property as text. allows typing a "value" or a "name" to match input with whitelist
-                        enforceWhitelist: false,
+                        enforceWhitelist: customIn.enforceWhitelist ?? false,
                         skipInvalid: true, // do not temporarily add invalid tags
+                        addTagOnBlur: false, // Do not add a tag when losing focus
                         templates : {
                             tag : function(tagData){
                                 try{
@@ -877,9 +893,9 @@ window.GofastEditableInput = (element, initialData, type, props = {}) => {
                             enabled: 3, // suggest tags after a single character input
                             classname : 'users-list', // custom class for the suggestions dropdown
                             closeOnSelect: true,
-                            searchKeys: ['firstname', 'lastname']  // very important to set by which keys to search for suggesttions when typing
+                            searchKeys: ['firstname', 'lastname', 'username']  // very important to set by which keys to search for suggesttions when typing
                         }, // map tags' values to this property name, so this property will be the actual value and not the printed value on the screen
-                        whitelist : [],
+                        whitelist : customIn.enforceWhitelist ? customIn.data : [],
                     })
 
                     if(customIn.data && customIn.data.length > 0){
@@ -905,12 +921,14 @@ window.GofastEditableInput = (element, initialData, type, props = {}) => {
 
                             let newWhitelist = await customIn.formatData(data);
 
-                            // replace tagify "whitelist" array values with new values
-                            // and add back the ones already choses as Tags
-                            tagify.settings.whitelist.push(...newWhitelist, ...tagify.value)
-
-                            // render the suggestions dropdown
-                            tagify.loading(false).dropdown.show.call(tagify, e.detail.value);
+                            if (newWhitelist.length) {
+                                // replace tagify "whitelist" array values with new values
+                                // and add back the ones already choses as Tags
+                                tagify.settings.whitelist.push(...newWhitelist, ...tagify.value)
+    
+                                // render the suggestions dropdown
+                                tagify.loading(false).dropdown.show.call(tagify, e.detail.value);
+                            }
                         }
 
                     }
@@ -928,7 +946,120 @@ window.GofastEditableInput = (element, initialData, type, props = {}) => {
                         customIn.events.toogleInput(customIn, false)
                     })
 
+                    /** @type {Array} last known tag values for this input. */
+                    let previousValues = customIn.data?.slice() ?? [];
+                    /**
+                     * Checks if new values are different from the previous set of values.
+                     *
+                     * @param {object[]} newValues Array of new tag values
+                     * @returns whether the new values is different from the
+                     *  {@linkcode previousValues} variable.
+                     */
+                    const _areTagValuesUpdated = (newValues) => {
+                        if (previousValues.length !== newValues.length) {
+                            return true;
+                        }
+                        // Previous values and newValues have the same length.
+                        const isAnyDifferent = previousValues
+                            // Zip arrays together and map to the value property.
+                            .map((v, i) => [v.value, newValues[i].value])
+                            // Check if any pair is different.
+                            .some(([previous, updated]) => previous !== updated);
+
+                        return isAnyDifferent;
+                    };
+                    /**
+                     * Status variable on whether we are currently
+                     * removing/adding tags using the {@linkcode _resetTags}
+                     * function.
+                     */
+                    let isResettingTags = false;
+                    /**
+                     * Resets the tags of a tagify instance to the given array.
+                     *
+                     * During this operation, the {@linkcode isResettingTags}
+                     * variable is set to `true`.
+                     *
+                     * This function calls the methods on tagify to remove all
+                     * tags and add the new ones, which trigger tagify's events.
+                     *
+                     * @param {object} tagify Tagify instance.
+                     * @param {Array} newTags Array of new tags.
+                     */
+                    const _resetTags = (tagify, newTags) => {
+                        isResettingTags = true;
+                        try {
+                            tagify.removeAllTags();
+                            tagify.addTags(newTags);
+                        } finally {
+                            isResettingTags = false;
+                        }
+                    }
+                    /**
+                     * Filters the given updated tag values array through custom validation.
+                     *
+                     * Triggers side effects when some validation fails:
+                     * - Resets tagify input value
+                     * - Resets tagify tags to remove invalid ones
+                     * - Resets selection caret position
+                     *
+                     * @param {Array} newValues updated tag values.
+                     * @returns {Array} array of valid tag values from
+                     *  {@linkcode newValues}.
+                     */
+                    const _validateAddedTags = (newValues) => {
+                        if (customIn.validateTagData == null) {
+                            return newValues;
+                        }
+                        // Limit validation to added tags. Tags already
+                        // present are assumed to be valid.
+                        const previousTagValues = previousValues.map((tag) => tag.value);
+                        const addedTags = newValues.filter(
+                            (tag) => !previousTagValues.includes(tag.value),
+                        );
+                        if (!addedTags.length) {
+                            return newValues;
+                        }
+
+                        // Collect tag values that fail validation.
+                        const invalidTagValues = addedTags
+                            .filter((tagData) => !customIn.validateTagData(tagData))
+                            .map((tagData) => tagData.value);
+
+                        if (!invalidTagValues.length) {
+                            return newValues;
+                        }
+
+                        // Remove invalid values from array of new values.
+                        const validValues = newValues.filter((v) => !invalidTagValues.includes(v.value));
+
+                        // For some odd reason, the removeTags method does
+                        // not work at all as documented, so we have to work
+                        // around it.
+                        _resetTags(tagify, validValues);
+                        setTimeout(() => {
+                            // For some reason, these actions need to be done
+                            // during another JS task to take effect. This
+                            // delayed task might cause some flickering.
+                            // Reset input value to combination of invalid tag
+                            // values. (should ideally only ever have on invalid
+                            // tag at a time)
+                            tagify.input.set.call(tagify, invalidTagValues.join(' '));
+                            // Reset input selection/caret position to end.
+                            tagify.DOM.input.focus();
+                            tagify.setRangeAtStartEnd();
+                        });
+
+                        return validValues;
+                    }
+
                     tagify.on('change', (e) => {
+                        // Abort if this is an event triggered while resetting
+                        // the tags.
+                        if (isResettingTags) {
+                            return;
+                        }
+
                         let newValues = []
                         try {
                             newValues = JSON.parse(e.detail.value)
@@ -936,6 +1067,16 @@ window.GofastEditableInput = (element, initialData, type, props = {}) => {
                         } catch (error) {
                             console.log(error.message)
                         }
+
+                        // Custom tag value validation since our version of Tagify lacks this feature.
+                        newValues = _validateAddedTags(newValues);
+
+                        // Do not call the provided saveData if no change has
+                        // been made. (e.g.: When we removed an invalid tag)
+                        if (!_areTagValuesUpdated(newValues)) {
+                            return;
+                        }
+                        previousValues = newValues.slice();
                         customIn.saveData(newValues)
                     })
 
@@ -1009,6 +1150,8 @@ window.GofastEditableInput = (element, initialData, type, props = {}) => {
 
                 break;
              case 'ckeditor-full':
+                let handleClickOutside;
+
                 customIn.templates.input = function(){
                     return "<textarea class=\"input-control form-control CEditor\">" + (props.placeholder ? Drupal.t(props.placeholder) : Drupal.t('No content')) + "</textarea>";
                 }
@@ -1019,6 +1162,13 @@ window.GofastEditableInput = (element, initialData, type, props = {}) => {
 
                 customIn.events.showInputCustom = function(){
                     customIn.DOM.customInput.focus()
+                }
+
+                customIn.events.hideInputCustom = function(){
+                    if (handleClickOutside) {
+                        document.removeEventListener('mousedown', handleClickOutside);
+                        handleClickOutside = null;
+                    }
                 }
 
                 customIn.initCustomInput = async function(){
@@ -1036,25 +1186,30 @@ window.GofastEditableInput = (element, initialData, type, props = {}) => {
                                 e.stopPropagation();
                                 $(".editableInputConfirmationButtons").remove();
                                 let data = ckeditor.getData();
-                                await customIn.saveData(ckeditor.getData());
+                                await customIn.saveData(data);
                                 customIn.events.toogleInput(customIn, false);
                             });
-                            $(".editableInputConfirmationButtons .text-danger").on("click", () => {
+                            $(".editableInputConfirmationButtons .text-danger").on("click", (e) => {
                                 e.stopPropagation();
                                 $(".editableInputConfirmationButtons").remove();
                                 customIn.events.toogleInput(customIn, false);
                             });
+
+                            handleClickOutside = function(event) {
+                                const editorWrapper = customIn.DOM.element;
+                                const clickedInEditor = editorWrapper && editorWrapper.contains(event.target);
+                                const clickedInToolbar = event.target.closest('.ck-toolbar') !== null;
+                                const clickedInBalloon = event.target.closest('.ck.ck-balloon-panel, .ck.ck-dropdown, .ck.ck-list') !== null;
+                                const clickedInConfirmationButtons = event.target.closest('.editableInputConfirmationButtons') !== null;
+                            
+                                if (clickedInEditor || clickedInToolbar || clickedInBalloon || clickedInConfirmationButtons) {
+                                    return; 
+                                }
+                        
+                            };
+                            document.removeEventListener('mousedown', handleClickOutside);
+                            document.addEventListener('mousedown', handleClickOutside);
                         }
-                        ckeditor.editing.view.document.on( 'change:isFocused', ( evt, data, isFocused ) => {
-                            if(typeof props.showConfirmationButtons != "undefined" && props.showConfirmationButtons == true) {
-                                return;
-                            }
-                            if(!isFocused){
-                                let data = ckeditor.getData()
-                                customIn.saveData(data)
-                                customIn.events.toogleInput(customIn, false)
-                            }
-                        } );
 
                         customIn.DOM.customInput = ckeditor
 
@@ -1233,7 +1388,7 @@ window.GofastEditableInput = (element, initialData, type, props = {}) => {
 
                             const data = await res.json()
 
-                            let newWhitelist = await data
+                            let newWhitelist = Object.values(data)
 
                             if (newWhitelist.length) {
                                 // replace tagify "whitelist" array values with new values
@@ -1353,8 +1508,22 @@ window.GofastEditableInput = (element, initialData, type, props = {}) => {
                         templates : {
                             tag : function(tagData){
                                 try{
-                                  const tagIcon = props.tagIcon ? `<div>${props.tagIcon}</div>` : "";
-                                  return "<tag title='" + tagData.value + "' contenteditable='false' spellcheck=\"false\" class='tagify__tag " + (tagData.class ? tagData.class : "") + "' " + this.getAttributes(tagData) + "><x title='remove tag' class='tagify__tag__removeBtn'></x><div>" + tagIcon + "<span class='tagify__tag-text'>" + tagData.name + "</span></div></tag>";
+                                    const tagIcon = props.tagIcon ? `<div>${props.tagIcon}</div>` : "";
+                                    return (
+                                        "<tag"
+                                            + " title='" + tagData.value + "'"
+                                            + " contenteditable='false'"
+                                            + " spellcheck=\"false\""
+                                            + " class='tagify__tag " + (tagData.class ? tagData.class : "") + "'"
+                                            + " " + this.getAttributes(tagData)
+                                        + ">"
+                                            + "<x title='remove tag' class='tagify__tag__removeBtn'></x>"
+                                            + "<div>"
+                                                + "<div class='gf_tagify__tag_icon'>" + tagIcon + "</div>"
+                                                + "<span class='tagify__tag-text text-wrap text-break'>" + tagData.name + "</span>"
+                                            + "</div>"
+                                        + "</tag>"
+                                    );
                                 }
                                 catch(err){
                                   console.log(err.message)
@@ -1434,14 +1603,14 @@ window.GofastEditableInput = (element, initialData, type, props = {}) => {
 
                             const data = await res.json()
 
-                            let newWhitelist = await data
-
-                            // replace tagify "whitelist" array values with new values
-                            // and add back the ones already choses as Tags
-                            tagify.settings.whitelist.push(...newWhitelist, ...tagify.value)
-
-                            // render the suggestions dropdown
-                            tagify.loading(false).dropdown.show.call(tagify, e.detail.value);
+                            let newWhitelist = Object.values(data)
+                            if (newWhitelist.length) {
+                                // replace tagify "whitelist" array values with new values
+                                // and add back the ones already choses as Tags
+                                tagify.settings.whitelist.push(...newWhitelist, ...tagify.value)
+                                // render the suggestions dropdown
+                                tagify.loading(false).dropdown.show.call(tagify, e.detail.value);
+                            }
                         }
                     }
 
@@ -1614,8 +1783,8 @@ window.ckeditorPluginMentionFeeds = function(queryText = '') {
                     users = JSON.parse(users)
                     users.map((user) => {
                         itemsArray.push({
-                            id: '@' + user.name,// the ID will be automatically displayed on the dropdown list
-                            name: user.display_name,
+                            id: '@' + user.display_name,// the display name will be automatically displayed on the dropdown list
+                            name: user.name,
                             link:  window.location.origin + '/user/' + user.value,
                             email: user.email,
                             userId: user.value,

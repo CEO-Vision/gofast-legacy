@@ -202,7 +202,57 @@
                         break;
                 }
                 if(row.membership_state == "2"){
-                    return '<span class="label font-weight-bold label-lg label-light label-inline w-100 " style="height:30px;">'+Drupal.t('Pending members', {}, {'context': 'gofast:gofast_user'})+'</span>';
+                    const $roleLabel = $("<span></span>")
+                        .text(Drupal.t("Pending members", {}, { context: "gofast:gofast_user" }))
+                        .addClass([
+                            "label",
+                            "font-weight-bold",
+                            "label-lg",
+                            "label-light",
+                            "label-inline",
+                            "w-100",
+                            "position-relative",
+                            "gf-datatable-allow-overflow",
+                        ])
+                        .css({ height: "30px" });
+
+                    // Add join request message icon and add popover attributes.
+                    if (row.membership_request_message) {
+                        const popoverTitle = Drupal.t("Message");
+                        const $popoverContent = $('<div class="m-3"></div>').text(
+                            row.membership_request_message,
+                        );
+
+                        $roleLabel
+                            .append(
+                                $("<span></span>")
+                                    .addClass([
+                                        "d-inline-flex",
+                                        "align-items-center",
+                                        "justify-content-center",
+                                        "badge",
+                                        "rounded-circle",
+                                        "badge-secondary",
+                                        "join-request-message-icon-badge",
+                                    ])
+                                    .attr({
+                                        title: popoverTitle,
+                                        "data-content": $popoverContent[0].outerHTML,
+                                        "data-toggle": "popover",
+                                        "data-html": "true",
+                                        "data-trigger": "focus hover",
+                                        tabindex: "0", // Allows focusing the element for popover trigger
+                                        "data-placement": "right",
+                                    })
+                                    .css({
+                                        'aspect-ratio': '1',
+                                        cursor: 'pointer',
+                                    })
+                                    .append('<i class="fas fa-comment-alt-dots text-secondary icon-nm"></i>'),
+                            );
+                    }
+
+                    return $roleLabel[0].outerHTML;
                 }else{
                     return '<span class="label font-weight-bold label-lg label-inline w-100 '+status.class+'" style="height:30px;">'+status.title+'</span>';
                 }
@@ -583,7 +633,13 @@
                     Gofast.removeLoading();
                 }
             });
-           }    
+            }
+
+            // When table is reloaded/redrawn (e.g.: sorting/filters changed),
+            // attach drupal behaviors with table element as context.
+            $(_tableEl).on('datatable-on-layout-updated', function(_event, _settings) {
+                Drupal.attachBehaviors(_tableEl);
+            })
         };
         return {
             // public functions

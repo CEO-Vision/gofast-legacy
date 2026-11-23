@@ -5,3 +5,7 @@ core = 7.x
 
 dependencies[] = ldap_servers
 dependencies[] = ldap_test
+
+version = 7.x-2.7
+project = ldap
+datestamp = 1775066467

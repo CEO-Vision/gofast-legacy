@@ -2,9 +2,11 @@
 <?php if ($type == "site") : ?>
 <div class="card card-custom card-stretch mt-4" style="height: calc(100%  - 2rem);">
     <div class="card-body p-5 d-flex flex-column" style="gap: .5rem;">
+<?php elseif($type == "space") : ?>
+    <div class="d-flex flex-column h-100" style="gap: .5rem;">
 <?php endif; ?>
         <div id="gofastAuditTable" class="datatable datatable-bordered datatable-head-custom" data-type="<?php echo $type ?>" data-etid="<?php echo $etid ?>" data-columns='<?php echo $columns ?>'></div>
-<?php if ($type == "site") : ?>
+        <?php if (in_array($type, ["site", "space"])) : ?>
         <div class="d-flex flex-column">
             <span class="text-muted"><?= t("Export: This will export all the filtered results under a limit of @max_results_size results", ["@max_results_size" => number_format(GOFAST_EXPORT_RESULTS_MAX_SIZE, 0, ".", " ")], ["gofast:gofast_audit"]) ?></span>
             <span class="text-muted"><?= t("Click for export", [], ["gofast:gofast_audit"]) ?>&nbsp;
@@ -17,6 +19,8 @@
             </span>
         </div>
     </div>
+    <?php endif; ?>
+<?php if ($type == "site") : ?>
 </div>
 <?php endif; ?>
 

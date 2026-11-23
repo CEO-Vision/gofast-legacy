@@ -98,9 +98,29 @@ function gofast_webform_form_webform_node_form_alter(&$form, &$form_state) {
   $form['actions']['#attributes'] = array('class' => array('d-flex'), 'style' => array('gap:1rem'));
   $form['actions']['cancel']['#suffix'] = '<a href="" onclick="Gofast.customHistoryBackOrBase()" class="btn btn-default ml-2">' . t('Cancel') . '</a>';
   $form['actions']['cancel']['#weight'] = 11;
+
+  // Prevent multiple locations by overriding input to not be multiple select in edit/creation form
+  $form[GOFAST_OG_CONTENT_MEMBERSHIP_FIELD][LANGUAGE_NONE][0]['default']['#multiple'] = FALSE;
 }
 
 function gofast_webform_form_webform_node_form_validate($form, &$form_state) {
+  // Validate there is exactly one webform location.
+  $locations_count = count($form_state['values'][GOFAST_OG_CONTENT_MEMBERSHIP_FIELD][LANGUAGE_NONE]);
+  $locations_form_field_error_key = GOFAST_OG_CONTENT_MEMBERSHIP_FIELD . '][' . LANGUAGE_NONE . '][0][default';
+  if ($locations_count === 0) {
+    form_set_error(
+      $locations_form_field_error_key,
+      t('Choose at least one location', [], ['context' => 'gofast:gofast_webform']),
+    );
+  }
+
+  if ($locations_count > 1) {
+    form_set_error(
+      $locations_form_field_error_key,
+      t('Remove locations, a form cannot have more than one location', [], ['context' => 'gofast:gofast_webform']),
+    );
+  }
+
   $errors = form_get_errors();
   if ($errors) {
     // Clear errors.

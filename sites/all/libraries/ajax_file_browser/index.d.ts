@@ -1,5 +1,5 @@
 // -----------------------------------------------------------------------
-// IT Hit WebDAV Ajax Library v5.21.5886.0
+// IT Hit WebDAV Ajax Library v6.0.8910.0
 // Copyright © 2020 IT Hit LTD. All rights reserved.
 // License: https://www.webdavsystem.com/ajax/
 // -----------------------------------------------------------------------
@@ -70,7 +70,9 @@ export namespace ITHit{
  namespace WebDAV{ 
 	 /**
  * This namespace provides classes for accessing WebDAV server items, file structure management, properties management and items locking.
+ * @public
  * @namespace ITHit.WebDAV.Client
+ * @class ITHit.WebDAV.Client
  */ 
  namespace Client{ 
 	 /**
@@ -1626,6 +1628,12 @@ export namespace ITHit{
 			 */ 
  function GetProtocolInstallFileNames(): string[]; 
  /**
+            * Gets Uri of the protocol installer depending on OS.
+            * @api
+            * @return {string} Uri of the protocol installer.
+            */ 
+ function GetProtocolInstallUri(): string; 
+ /**
             * Returns true if protocol application installer is supported for the OS on which this function is called, false - otherwise.
             * @api
             * @return {boolean} True if protocol application installer is supported for the OS on which this function is called.
@@ -1813,6 +1821,13 @@ export namespace ITHit{
 			 */ 
  static ProtocolTimeoutMs: number 
  ProtocolTimeoutMs: number 
+ /**
+			 * WebDAV protocol name.
+			 * @api
+			 * @type {string}
+			 */ 
+ static ProtocolName: string 
+ ProtocolName: string 
  }/**
  * Provides support partial uploads and resuming broken uploads.
  * @api
@@ -2926,17 +2941,19 @@ export namespace ITHit{
          */ 
  namespace WebDavSession{ 
 	 /**
-             * Version of AJAX Library
-             * @api
-             */ 
- function Version(): void; 
- /**
             * Protocol Version of AJAX Library
             * @api
             */ 
  function ProtocolVersion(): void; 
  }class WebDavSession  { 
 	 /**
+             * Version of AJAX Library
+             * @api
+             * @type {string}
+             */ 
+ static Version: string 
+ Version: string 
+ /**
              * The OnBeforeRequestSend event is fired before request is being submitted to server and provides all
              * information that is used when creating the request such as URL, HTTP verb, headers and request body.
              * @api
@@ -3209,9 +3226,9 @@ export namespace ITHit{
  /**
              * Gets [File]{@link https://www.w3.org/TR/FileAPI/} object. Returns null in case of a folder.
              * @api
-             * @return {(File | null )}
+             * @return {(globalThis.File | null )}
              */ 
- GetFile(): File | null; 
+ GetFile(): globalThis.File | null; 
  /**
              * Get target url.
              * @api
@@ -3416,6 +3433,13 @@ export namespace ITHit{
              * @return {* | ITHit.WebDAV.Client.Request} Request object.
              */ 
  GetProgressReportAsync(sUrl: string, fCallback: (oResult: ITHit.WebDAV.Client.AsyncResult) => void, thisArg?: Object | null): any | ITHit.WebDAV.Client.Request; 
+ /**
+             * Returns progress report corresponding to path.
+             * @public
+             * @param {string} sUrl The url to resource.
+             * @return {* | ITHit.WebDAV.Client.Request} Request object.
+             */ 
+ GetProgressReport(sUrl: string): any | ITHit.WebDAV.Client.Request; 
  /**
              * The OnBeforeRequestSend event is fired before request is being submitted to server and provides all
              * information that is used when creating the request such as URL, HTTP verb, headers and request body.
@@ -4378,4 +4402,13 @@ export namespace ITHit{
              * @return {boolean} - True if event was processed, false otherwise.
              */ 
  GetIsHandled(): boolean; 
- }}}}}}
+ }}}}class Client  { 
+	 /**
+ * License Id
+ * @public
+ * @name ITHit.WebDAV.Client.LicenseId
+ * @type {string}
+ */ 
+ static LicenseId: string 
+ LicenseId: string 
+ }}}

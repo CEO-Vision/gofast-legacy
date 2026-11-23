@@ -150,7 +150,7 @@
                             </div>
                         </div>
                     </div>
-                    <?php if(count((array) $conferenceDetails["spaces_participants"]) > 0): ?>
+                    <?php if(is_array($conferenceDetails["spaces_participants"]) && count($conferenceDetails["spaces_participants"]) > 0): ?>
                     <div class="conference__gofastPartisipantsSpaces my-10">
                         <div class="conference_lable h6 font-weight-bolder"><?=  t("Spaces", array(), array("context" => "gofast:gofast_conference")) ?></div>
                         <div class="my-4">
@@ -172,7 +172,10 @@
                     </div>
                     <?php  endif; ?>
                     <?php
-                       $count_all_participants = count((array) $conferenceDetails["participants"]);
+                       $count_all_participants = 0;
+                       if (is_array($conferenceDetails["participants"])) {
+                           $count_all_participants = count($conferenceDetails["participants"]);
+                       }
                        if(is_array($conferenceDetails["othersParticipants"])){
                            $count_all_participants = $count_all_participants + count($conferenceDetails["othersParticipants"]);
                        }

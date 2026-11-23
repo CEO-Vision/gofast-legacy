@@ -61,6 +61,7 @@
         });
         // we want the user to be able to select the time right after the date, so we set the blur event manually
         $(this).on("blur", e => $(this).datetimepicker("hide"));
+        $(this).on("change", e => $(this).datetimepicker('_change', e));
       });
     }
   };

@@ -33,3 +33,8 @@
         </ul>
     </div>
 </div>
+<script>
+  jQuery(document).ready(function() {
+    Gofast.search.setSearchInputsAfterUrl()
+  })
+</script>

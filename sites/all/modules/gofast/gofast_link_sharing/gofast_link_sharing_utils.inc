@@ -64,7 +64,7 @@ function gofast_link_sharing_usr_has_access($node, $curr_user=NULL){
  * @return string 
  *    The encrypted URL
  */
-function gofast_link_sharing_build_link($nid, $dest_id= NULL, $transmitter=NULL, $version=NULL, $exp_date=TRUE, $multi=FALSE, $nid_unique=NULL, $is_folder = FALSE){
+function gofast_link_sharing_build_link($nid, $dest_id= NULL, $transmitter=NULL, $version=NULL, $exp_date=TRUE, $multi=FALSE, $nid_unique=NULL, $is_folder = FALSE, $options = []){
   global $base_url;
   $params = "";
 
@@ -72,16 +72,30 @@ function gofast_link_sharing_build_link($nid, $dest_id= NULL, $transmitter=NULL,
     if ($multi) {
       foreach ($nid as $id) {
         $node = node_load($id);
-        $is_internal = isset($node->field_criticity['und'][0]['tid']) && taxonomy_term_load($node->field_criticity['und'][0]['tid'])->name == "Internal Distribution";
-        $is_confidential = isset($node->field_criticity['und'][0]['tid']) && taxonomy_term_load($node->field_criticity['und'][0]['tid'])->name == "Confidential Data";
-        $params .= ($is_confidential || $is_internal) ?: '+' . $id;
+        if (!$node) {
+          continue;
+        }
+        $is_internal = gofast_taxonomy_is_node_criticity_internal($node);
+        $is_confidential = gofast_taxonomy_is_node_confidential($node);
+        if (!$is_confidential && !$is_internal) {
+          $params .= '+' . $id;
+        }
       }
     }
     else {
       $node = node_load($nid);
-      $is_internal = isset($node->field_criticity['und'][0]['tid']) && taxonomy_term_load($node->field_criticity['und'][0]['tid'])->name == "Internal Distribution";
-      $is_confidential = isset($node->field_criticity['und'][0]['tid']) && taxonomy_term_load($node->field_criticity['und'][0]['tid'])->name == "Confidential Data";
-      $params = ($is_confidential || $is_internal) ?: "nids=".$nid;
+      if ($node) {
+        
+        // If it's a webform return directly the link.
+        if ($node->type === 'webform') {
+          return $base_url . "/drupal/survey/$node->nid?hash=" . gofast_webform_create_expiration_hash($node->nid);
+        }
+        $is_internal = gofast_taxonomy_is_node_criticity_internal($node);
+        $is_confidential = gofast_taxonomy_is_node_confidential($node);
+        if (!$is_confidential && !$is_internal) {
+          $params = "nids=" . $nid;
+        }
+      }
     }
   }
 
@@ -97,24 +111,23 @@ function gofast_link_sharing_build_link($nid, $dest_id= NULL, $transmitter=NULL,
     if (isset($nid_unique) && !empty($nid_unique)) {
       $params .= ',nid_unique=' . $nid_unique;
     }
-    if($exp_date == TRUE){
-      $params.='#'.gofast_link_sharing_get_expiry_timestamp();
+  }
+  if($exp_date == TRUE){
+      $params.=',exp_date='.gofast_link_sharing_get_expiry_timestamp();
+  }
+
+  if ($multi) {
+    return $base_url . '/public/multi_sharing?hash=' . urlencode(gofast_encrypt(CIPHER_KEY, $params));
+  }
+
+  if ($is_folder) {
+    $params .= ",alfresco_id=$nid";
+    if(isset($options['folder_path'])){
+      $params .= ",folder_path={$options['folder_path']}";
     }
   }
 
-  if (!$is_folder) {
-    if ($multi) {
-      return $base_url . '/public/multi_sharing?hash=' . urlencode(gofast_encrypt(CIPHER_KEY, $params));
-    }
-    else {
-      return $base_url . '/public/sharing?hash=' . urlencode(gofast_encrypt(CIPHER_KEY, $params));
-    }
-  }
-  else{
-    $folder_item_id = $nid->id;
-    return $base_url . '/public/multi_sharing?hash=' . urlencode(gofast_encrypt
-      (CIPHER_KEY, $params)).'&workspace='.$folder_item_id;
-  }
+  return $base_url . '/public/sharing?hash=' . urlencode(gofast_encrypt(CIPHER_KEY, $params));
 }
 
 /**
@@ -151,17 +164,9 @@ function gofast_link_sharing_get_expiry_timestamp($exp_period = NULL){
  */
 function gofast_link_sharing_link_decrypt($hash){  
   $hash =  gofast_decrypt(CIPHER_KEY,  $hash);
-  $nid ='';
-  $dest_id='';
-  $transmitter = '';
-  $version ='';
-  $exp_date = '';
   //get expiry date if one set
   $tmp = explode('#', $hash);
   $file_info = $tmp[0];
-  if(count($tmp) > 1){
-    $exp_date = $tmp[1];
-  }
 
   //get file information (file nid and version if set)
   $tmp = explode(',', $file_info);
@@ -183,8 +188,6 @@ function gofast_link_sharing_link_decrypt($hash){
   if(strpos(array_keys($output)[0], '+') === 0){
     unset($output[array_keys($output)[0]]);
   }
-
-  $output['exp_date'] = $exp_date;
 
   return $output;
 }

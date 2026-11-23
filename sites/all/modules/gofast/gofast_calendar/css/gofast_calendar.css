@@ -60,6 +60,20 @@
   display: none;
 }
 
+#kt_calendar > div.fc-toolbar > div {
+  display: flex;
+  flex: 1;
+}
+
+#kt_calendar > div.fc-toolbar > .fc-center {
+  display: flex;
+  justify-content: center;
+}
+
+#kt_calendar, #kt_calendar > div.fc-view-container {
+  height: 100%;
+}
+
 /*
 * Added responsive css for calendar toolbar
  */

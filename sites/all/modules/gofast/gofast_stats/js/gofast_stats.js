@@ -10,6 +10,11 @@
         return;
       }
       $(this).parent().siblings().children().removeClass("active");
+      // Reuse the loaded table only for the same space (re-init leaves it blank), but reload it
+      // when in-browser navigation changed the space without rebuilding this pane
+      if ($("#ogaudit #gofastAuditTable").attr("data-etid") == currentGid) {
+        return;
+      }
       $.get("/gofast_audit/space_audit/" + currentGid)
         .done(function(data) {
           $("#ogaudit").html(data);
@@ -24,6 +29,11 @@
         });
       
     })
+
+    // Bootstrap keeps .active on dropdown-item tabs when leaving them, which no-ops the next click: clear it so they can reopen
+    $('#gofastBrowserNavTabs a[data-toggle="tab"]').on("show.bs.tab", function (e) {
+      $("#tab_ogmemberstats, #tab_ogdocumentstats, #tab_ogaudit").not(e.target).removeClass("active");
+    });
 
     $('#tab_ogmemberstats:not(.event_processed), #tab_ogdocumentstats:not(.event_processed)').on("show.bs.tab", function (e) {
       var currentGid = $(".gofast-og-page").attr("id").replace("node-", "");
@@ -326,7 +336,7 @@
         $("#tab_ogaudit").trigger("show.bs.tab")
       }
     }
-    $("#gofastBrowserNavTabs .nav-link:not([id=tab_ogmemberstats], [id=tab_ogdocumentstats])").on("show.bs.tab", () => {
+    $("#gofastBrowserNavTabs .nav-link, #gofastBrowserNavTabs .dropdown-item").not("#tab_ogmemberstats, #tab_ogdocumentstats").on("show.bs.tab", () => {
       $("#users_stats").hide().removeClass("show");
       $("#documents_stats").hide().removeClass("show");
     })
@@ -546,15 +556,19 @@
       // hide all types except "Documents"
       // and temporarily empty the chart "update" method to avoid update rendering at each iteration (which is very time-consuming and may cause some random errors)
       // @see https://github.com/apexcharts/apexcharts.js/issues/1787
-      const update = chart.update;
-      chart.update = () => { return Promise.resolve(); };
-      for(var i in data.data.datasets){
-          if(i != 0){
-            chart.hideSeries(data.data.datasets[i].name);
-          }
-      }
-      chart.update = update;
-      chart.update();
+      setTimeout(() => { // Prevent executing this code before chart is fully rendered
+        const update = chart.update;
+        chart.update = () => { return Promise.resolve(); };
+        for(var i in data.data.datasets){
+            if(i != 0){
+              chart.hideSeries(data.data.datasets[i].name);
+            }
+        }
+        chart.update = update;
+        chart.update();
+      }, 0);
+      // Fix bug on this chart not resizing if no resize event on window
+      window.dispatchEvent(new Event('resize'));
       $("#"+element_id+"_loader").remove();
     });
   }
@@ -613,15 +627,17 @@
       // hide all types except "Documents"
       // and temporarily empty the chart "update" method to avoid update rendering at each iteration (which is very time-consuming and may cause some random errors)
       // @see https://github.com/apexcharts/apexcharts.js/issues/1787
-      const update = chart.update;
-      chart.update = () => { return Promise.resolve(); };
-      for(var i in data.data.datasets){
-          if(i != 0){
-            chart.hideSeries(data.data.datasets[i].name);
-          }
-      }
-      chart.update = update;
-      chart.update();
+      setTimeout(() => { // Prevent executing this code before chart is fully rendered
+        const update = chart.update;
+        chart.update = () => { return Promise.resolve(); };
+        for(var i in data.data.datasets){
+            if(i != 0){
+              chart.hideSeries(data.data.datasets[i].name);
+            }
+        }
+        chart.update = update;
+        chart.update();
+      }, 0);
       
       $("#spaces_chart_loader").remove();
       $("#space_charts_btn_group").css("display", "block");

@@ -240,7 +240,8 @@ function gofast_ac_config()
       $taxonomy_term = [];
 
       if($get_user === "true"){
-        $matches_user = gofast_ac_get_query($str, 'user', $options_ac_user, $broadcast);
+        $options_ac_user["format_json"] = true;
+        $matches_user = gofast_ac_query($str, 'user', $options_ac_user, $broadcast);
         $matches = array_merge($matches,$matches_user);
       }
 
@@ -251,12 +252,16 @@ function gofast_ac_config()
         $matches_article = gofast_modal_i18n_node_autocomplete('article', $node_language, $str);
         $matches = array_merge($matches, $matches_node, $matches_article);
       }else if($get_node === "true"){
-        $matches_node = gofast_ac_get_query($str, 'node', $options_ac_space, $broadcast);
+        $options_ac_space["format_json"] = true;
+        $matches_node = gofast_ac_query($str, 'node', $options_ac_space, $broadcast);
+
         $matches = array_merge($matches, $matches_node);
       }
 
       if($get_userlist === "true"){
-        $matches_userlist = gofast_ac_get_query($str, 'userlist', $options_ac_userlist);
+        $options_ac_userlist["format_json"] = true;
+        $matches_userlist = gofast_ac_query($str, 'userlist', $options_ac_userlist, $broadcast);
+        
         $matches = array_merge($matches, $matches_userlist);
       }
 
@@ -284,7 +289,8 @@ function gofast_ac_config()
       if(isset($filters)){
         $_GET['filters'] = $filters;
       }
-      $taxonomy_term = gofast_ac_get_query($str, 'taxonomy_term', $options_ac_tag, false,$option_format_json);
+      $options_ac_tag["format_json"] = true;
+      $taxonomy_term = gofast_ac_query($str, 'taxonomy_term', $options_ac_tag, false, array(), $option_format_json);
       $matches = array_merge($matches, $taxonomy_term);
     }
 
@@ -311,7 +317,8 @@ function gofast_ac_config()
     
     if($get_spaces === "true") {
       $options_ac_space['bundle'] = array_keys(gofast_og_node_types()); // array('group', 'organisation', 'extranet', 'public') peut etre en option ['alfresco_item'] et ['webform']
-      $matches_node = gofast_ac_get_query($str, 'node', $options_ac_space, $broadcast);
+      $options_ac_space["format_json"] = true;
+      $matches_node = gofast_ac_query($str, 'node', $options_ac_space, $broadcast);
       $matches = array_merge($matches, $matches_node);
     }
 
@@ -331,21 +338,65 @@ function gofast_ac_config()
     echo json_encode($matches);
 }
 
-function gofast_ac_get_query($str, $entity_type, $options = array(), $broadcast = false, $option_format_json= array())
-{
+/**
+ * Gofast autocomplete query builder.
+ *
+ * Given an input text $str, an $entity_type and an array of $options, builds a
+ * database query and return an array of matches. The benefits of using this
+ * function is that you can combine entity field query with base table property
+ * query using OR operator, invoke access hooks, and format/theme autcocomplete
+ * items from matching entities.
+ *
+ * @param string $str
+ *  Input string to search for.
+ *
+ * @param string $entity_type
+ *  The entity type to match.
+ *
+ * @param array $options [optional]
+ *  An associative array of options. Defaults to an empty array with a fallback
+ *  depending on entity type. It may contain the following elements:
+ *  - 'bundle': an array of bundle to filter. Leave empty to bypass bundle
+ *     filtering. Don't use bundle 'user' with entity type 'user' or Drupal
+ *     will land in an error.
+ *  - 'fields': An array of fields to search on.
+ *  - 'properties': An array of entity base table properties to search on.
+ *  - 'key': A string defining the name of the key that holds matching items
+ *     identifiers.
+ *  - 'value': A string defining the name of the value that will be returned,
+ * it can be a field or a property.
+ *  - 'format_key_callback': Callable function handling formatting and how
+ * to display the key of a matching entity in an autocomplete item.
+ *  - 'format_value_callback': Callable function handling formatting and
+ * how to display the value of a matching entity in an autocomplete item.
+ *  - 'link': if TRUE the default format_value_callback will link matching item
+ *  to the corresponding entity when possible, other formatter can make their
+ *  implementation of this option.
+ *
+ * @return array
+ *  An associative array of matches, ready for printing. Keys and values depends
+ *  on matching entities' type and the options callback : keys and values are
+ *  respectively formatted by 'format_key_callback' and 'format_value_callback'.
+ */
+function gofast_ac_query($str, $entity_type, $options = array(), $broadcast = false, $space = array(), $option_format_json = array()) {
   global $user;
-
   $options += array(
     'bundle' => array(),
     'fields' => array(),
     'properties' => array(),
     'key' => NULL,
     'value' => NULL,
-    'format_value_callback' => 'gofast_ac_format_value_json',
+    'format_key_callback' => 'gofast_ac_format_key',
+    'format_value_callback' => 'gofast_ac_format_value',
     'link' => FALSE,
+    'limit' => 20,
+    'format_json' => FALSE,
   );
+  if($options["format_json"]){
+    $options["format_value_callback"] = "gofast_ac_format_value_json";
+  }
 
-  if ($entity_type == 'taxonomy_term') {
+  if($entity_type == 'taxonomy_term'){
     $_GET['query'] = $str;
     $taxonomy_output = gofast_xeditable_tag_autocomplete(false);
   }
@@ -361,23 +412,23 @@ function gofast_ac_get_query($str, $entity_type, $options = array(), $broadcast 
 
   if (!is_assoc($options['fields'])) {
     // Generate field aliases.
-    $options['fields'] = array_flip(array_map(function ($i) {
-      return chr(($i | 96) + 1); //+97
-    }, array_flip($options['fields'])));
+    $options['fields'] = array_flip(array_map(function($i) {
+              return chr(($i | 96) + 1); //+97
+            }, array_flip($options['fields'])));
   }
 
   $EFQuery = new EntityFieldQuery();
   $EFQuery->entityCondition('entity_type', $entity_type)
-    ->addMetaData('base_table', $base_table)
-    ->addMetaData('properties', $options['properties'])
-    ->addMetaData('fields', $options['fields'])
-    ->addMetaData('key', $options['key'])
-    ->addMetaData('str', $str);
-  //Moving out tag oring - caused problems when querying for contacts api autocomplete.
-  //The tag is still here when we don't query contacts
+          ->addMetaData('base_table', $base_table)
+          ->addMetaData('properties', $options['properties'])
+          ->addMetaData('fields', $options['fields'])
+          ->addMetaData('key', $options['key'])
+          ->addMetaData('str', $str);
+  // Moving out tag oring - caused problems when querying for contacts api autocomplete.
+  // The tag is still here when we don't query contacts
 
   // Alter the query and apply appropriate access tag based on entity type.
-  if ($broadcast !== true && $broadcast !== "true") {
+  if($broadcast !== true && $broadcast !== "true"){
     gofast_ac_query_access($EFQuery, $entity_type, $options['fields']);
   }
 
@@ -386,26 +437,32 @@ function gofast_ac_get_query($str, $entity_type, $options = array(), $broadcast 
     $EFQuery->entityCondition('entity_id', 1, '<>');
     // prevent showing up blocked users.
     $EFQuery->propertyCondition('status', 1)
-    ->addTag('oring');
+            ->addTag('oring');
     if ($_POST["filter_extranet"] == "true") {
       $EFQuery->addTag("users_condition");
     }
-  } elseif (!empty($options['bundle'])) {
+  }
+  elseif (!empty($options['bundle'])) {
     $EFQuery->entityCondition('bundle', $options['bundle'], is_array($options['bundle']) ? 'IN' : '=');
     if (isset($_POST['exclude_root_spaces']) && $_POST['exclude_root_spaces']) {
-      $EFQuery->entityCondition('entity_id', [GOFAST_CMIS_LOCATIONS_FIELD_PUBLIC_GID, GOFAST_CMIS_LOCATIONS_FIELD_EXTRANET_GID, GOFAST_CMIS_LOCATIONS_FIELD_ORGANISATIONS_GID, GOFAST_CMIS_LOCATIONS_FIELD_GROUPS_GID ], "NOT IN");
+      $EFQuery->entityCondition('entity_id', [GOFAST_CMIS_LOCATIONS_FIELD_PUBLIC_GID, GOFAST_CMIS_LOCATIONS_FIELD_EXTRANET_GID, GOFAST_CMIS_LOCATIONS_FIELD_ORGANISATIONS_GID, GOFAST_CMIS_LOCATIONS_FIELD_GROUPS_GID], "NOT IN");
     }
     if($entity_type == "node"){
       $EFQuery->addTag('popularity');
     }
-    if (in_array('contact', $options['bundle'])) {
+    if(in_array('contact', $options['bundle'])) {
       $EFQuery->addTag('first_and_last_name');
     } else $EFQuery->addTag('oring');
+
   } else $EFQuery->addTag('oring');
+
+  if($options['limit']){
+    $EFQuery->range(0, $options['limit']);
+  }
 
   $ids = $EFQuery->execute();
   $matches = array();
-  if ($entity_type == 'taxonomy_term') {
+  if(!empty($taxonomy_output)){
     $entities = array();
     foreach ($taxonomy_output as $val) {
       $entity = taxonomy_term_load($val['id']);
@@ -416,58 +473,71 @@ function gofast_ac_get_query($str, $entity_type, $options = array(), $broadcast 
     if (empty($ids) || empty($ids[$entity_type])) {
       return $matches;
     }
-
     $entities = entity_load($entity_type, array_keys($ids[$entity_type]));
   }
 
   ///filter by role for user and userlist if required
-  if (
-    $entity_type === 'user' && isset($options['roles_filter'])
-  ) {
-    foreach ($entities as $key => $entity) {
+  if($entity_type === 'user' && isset($options['roles_filter'])){
+    foreach ($entities as $key => $entity){
       $entity_roles = gofast_og_get_user_final_roles_for_space('node', $options['roles_filter']['space_nid'], $entity->uid);
-      if (empty(array_intersect($entity_roles, $options['roles_filter']['roles']))) {
+      if(empty(array_intersect($entity_roles, $options['roles_filter']['roles']))){
         unset($entities[$key]);
       }
     }
-  } elseif ($entity_type === 'userlist' && isset($options['roles_filter'])) {
-    foreach ($entities as $key => $entity) {
+  } elseif ($entity_type === 'userlist' && isset($options['roles_filter'])){
+    foreach ($entities as $key => $entity){
       $entity_roles = gofast_userlist_og_get_userlist_roles('node', $options['roles_filter']['space_nid'], $entity->ulid);
-      if (empty(array_intersect($entity_roles, $options['roles_filter']['roles']))) {
+      if(empty(array_intersect($entity_roles, $options['roles_filter']['roles']))){
         unset($entities[$key]);
       }
     }
   }
+  $map_value = in_array($options['value'], $options['fields']) ?
+                function ($entity, $value) {
+                  return $entity->{$value}[LANGUAGE_NONE][0]['value'];
+                } :
+                function ($entity, $value) {
+                  return $entity->{$value};
+                };
 
-
+  $format_key = $options['format_key_callback'];
   $format_value = $options['format_value_callback'];
+
+  //Check space filter passed in params. If this is a user not member of the space filter ignore it
+  if(!empty($space)){
+    $users_in_spaces = array();
+
+    foreach($space as $gid){
+      $users_in_spaces = array_merge($users_in_spaces, gofast_og_get_members_userlist_included(node_load($gid), OG_STATE_ACTIVE));
+    }
+  }
+
   foreach ($entities as $id => $entity) {
 
-    if ($entity->type == NULL && $entity_type != 'userlist' && $entity->vid != $_GET['vid']) {
+    if($entity->type == NULL && $entity_type != 'userlist' && $entity->vid != GOFAST_VID_TAGS && $entity->vid != $_GET["vid"]){
       $access = user_view_access($entity);
-      if ($access == FALSE) {
+      if($access == FALSE){
         continue;
       }
     }
 
     //Check space permissions
-    if (in_array($entity->type, array('group', 'organisation', 'extranet', 'public'), TRUE) && !$broadcast) {
+    if(in_array($entity->type, array('group', 'organisation', 'extranet', 'public'), TRUE) && !$broadcast){
       $membership = og_get_membership('node', $entity->nid, 'user', $user->uid);
       $isMember = ($membership != FALSE && $membership->state != OG_STATE_PENDING);
 
       //check membership from userlist
-      if (!$isMember) {
+      if(!$isMember){
         $isMember = gofast_userlist_og_is_user_member_of_space($entity->nid, $user);
       }
 
-      if (!$isMember) {
+      if(!$isMember){
         continue;
       }
     }
-
     //if broadcast, we keep only the entities in which we are not member of
-    if (($broadcast === true || $broadcast === "true") && $entity_type != "user") {
-      if (node_access("update", $entity)) {
+    if(($broadcast === true || $broadcast === "true") && $entity_type == "node"){
+      if(node_access("update", $entity)){
         continue;
       }
     }
@@ -476,21 +546,34 @@ function gofast_ac_get_query($str, $entity_type, $options = array(), $broadcast 
       continue;
     }
     //Check userlist permissions if partitionning is enabled
-    if ($entity_type == "userlist" && !gofast_userlist_is_visible($entity->ulid)) {
+    if($entity_type == "userlist" && !gofast_userlist_is_visible($entity->ulid)){
       continue;
     }
-    
+    //Check space filter passed in params. If this is a user not member of the space filter ignore it
+    if(!empty($space) && $entity_type === 'user'){
+      if(!in_array($entity->uid, $users_in_spaces)){
+        continue;
+      }
+    }
     //execute a last permission check to be sure
     // GOFAST-8910
     if($entity->type == "alfresco_item" || $entity->type == "article"){
       if (!node_access('view', $entity)) {
-         continue;
+        continue;
       }
     }
-    
-    $value = $format_value($entity_type, $entity, $str, $option_format_json);
-    $matches[] = $value;
+
+    $_value = $map_value($entity, $options['value']);
+    $_key = $entity->{$options['key']};
+    $key = $format_key($entity_type, $entity, $_key, $_value, $options);
+    if($options["format_json"]){
+      $value = $format_value($entity_type, $entity, $str, $option_format_json);
+    } else {
+      $value = $format_value($entity_type, $entity, $_key, $_value, $options);
+    }
+    $matches[$key] = $value;
   }
+
   return $matches;
 }
 
@@ -544,6 +627,9 @@ function gofast_ac_format_value_json($entity_type, $entity, $str=null,$option_fo
         "editable"=>false, // AC tag are not editable turn to true to be editable
         "request" => $str
       ];
+      if ($_POST["filter_confidential"] == 'true' && !gofast_user_can_user_access_confidential_content($entity)) {
+          $item["disabled"] = t("doesn't have the confidential clearance", [], ["context" => "gofast:gofast_ac"]);
+      }
       break;
     case 'userlist':
       $item = [

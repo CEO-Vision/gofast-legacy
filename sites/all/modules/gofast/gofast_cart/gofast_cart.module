@@ -254,7 +254,7 @@ function gofast_cart_contains_node_in_mirrored_location($user_id = NULL) {
   foreach ($cart_nodes as $node) {
     foreach ($node->field_emplacement[LANGUAGE_NONE] as $location) {
       // checking for mirroring is the expensive part of this function
-      if (gofast_cmis_is_path_mirrored($location['value'])) {
+      if (gofast_cmis_is_path_mirrored($location['value']) ?? TRUE) {
         $any_mirrored = TRUE;
         break 2;
       }

@@ -686,6 +686,158 @@ function gofast_cmis_update_7717(){
   }
 }
 
+/** GOFAST-15038 - Recompute the Alfresco permissions of the documents and folders mirrored in a public space */
+function gofast_cmis_update_7718(&$sandbox) {
+  if (!isset($sandbox['items'])) {
+    // The CMIS lookups fail for the anonymous user.
+    usurp(1);
+    try {
+      $public_folder = gofast_cmis_item_get_by_path('/Sites/_Public');
+    }
+    finally {
+      usurp(FALSE);
+    }
+    if (!$public_folder) {
+      throw new DrupalUpdateException('The /Sites/_Public folder was not found in Alfresco.');
+    }
+
+    // The mirrored items are read from the Alfresco database.
+    gofast_cmis_activate_alfresco_connection();
+
+    // _Public and every folder below it, mirrored folders included.
+    $public_folder_ids = db_query("
+      WITH RECURSIVE public_folders (id) AS (
+        SELECT n.id
+        FROM alf_node n
+        JOIN alf_store s ON s.id = n.store_id
+        WHERE n.uuid = :public_uuid
+        AND s.protocol = 'workspace'
+        UNION
+        SELECT ca.child_node_id
+        FROM alf_child_assoc ca
+        JOIN public_folders pf ON pf.id = ca.parent_node_id
+        JOIN alf_node c ON c.id = ca.child_node_id
+        JOIN alf_qname q ON q.id = c.type_qname_id
+        JOIN alf_namespace ns ON ns.id = q.ns_id
+        WHERE q.local_name = 'folder'
+        AND ns.uri = 'http://www.alfresco.org/model/content/1.0'
+      )
+      SELECT id FROM public_folders
+    ", array(':public_uuid' => gofast_cmis_get_raw_item_id($public_folder->properties['alfcmis:nodeRef'])), array('target' => 'alfresco'))->fetchAllKeyed(0, 0);
+
+    // One row per mirrored document or folder and per parent.
+    // Deleted items are in the archive store, so only the workspace store is read.
+    /** @var (object{id: string, reference: string, type: 'content'|'folder', parent_node_id: string, state: ?string})[] $item_parents */
+    $item_parents = db_query("
+      SELECT
+        n.id,
+        CONCAT(s.protocol, '://', s.identifier, '/', n.uuid) AS reference,
+        q.local_name AS type,
+        ca.parent_node_id,
+        (
+          SELECT np.string_value
+          FROM alf_node_properties np
+          JOIN alf_qname sq ON sq.id = np.qname_id
+          JOIN alf_namespace sns ON sns.id = sq.ns_id
+          WHERE np.node_id = n.id
+          AND sq.local_name = 'state'
+          AND sns.uri = 'gofast.model'
+          LIMIT 1
+        ) AS state
+      FROM alf_node n
+      JOIN alf_qname q ON q.id = n.type_qname_id
+      JOIN alf_namespace ns ON ns.id = q.ns_id
+      JOIN alf_store s ON s.id = n.store_id
+      JOIN alf_child_assoc ca ON ca.child_node_id = n.id
+      WHERE q.local_name IN ('content', 'folder')
+      AND ns.uri = 'http://www.alfresco.org/model/content/1.0'
+      AND s.protocol = 'workspace'
+      AND n.id IN (
+        SELECT child_node_id
+        FROM alf_child_assoc
+        GROUP BY child_node_id
+        HAVING COUNT(*) > 1
+      )
+    ", array(), array('target' => 'alfresco'))->fetchAll();
+
+    // An item is kept when one of its parents is in the public tree.
+    $items = array();
+    $mirrored_ids = array();
+    foreach ($item_parents as $item_parent) {
+      $mirrored_ids[$item_parent->id] = TRUE;
+      if (isset($public_folder_ids[$item_parent->parent_node_id])) {
+        $items[$item_parent->id] = array('reference' => $item_parent->reference, 'type' => $item_parent->type, 'state' => $item_parent->state);
+      }
+    }
+
+    $sandbox['items'] = array_values($items);
+    $sandbox['documents_done'] = 0;
+    $sandbox['folders_done'] = 0;
+    $sandbox['failed'] = array();
+    watchdog('GOFAST-15038', '%name() --- START %total items out of %mirrored mirrored items, %folders folders in the public tree', array(
+      '%name' => __FUNCTION__,
+      '%total' => count($sandbox['items']),
+      '%mirrored' => count($mirrored_ids),
+      '%folders' => count($public_folder_ids),
+    ));
+  }
+
+  // The space lookups go through CMIS and fail for the anonymous user.
+  usurp(1);
+  try {
+    foreach (array_splice($sandbox['items'], 0, 10) as $item) {
+      $reference = $item['reference'];
+      try {
+        $spaces = gofast_cmis_webservice_item_get_spaces_for_permissions($reference);
+        if (!in_array("PUBLIC_SPACE", $spaces['groups'])) {
+          continue;
+        }
+
+        gofast_cmis_webservice_item_assign_permissions($reference, $spaces['groups'], $spaces['private_spaces']);
+        if ($item['type'] === 'folder') {
+          // The documents do not always inherit the folder permissions, so they get the spaces of the folder too.
+          foreach (gofast_cmis_webservice_item_get_descendants($reference, 'documents', FALSE, TRUE) as $document_reference => $document) {
+            gofast_cmis_webservice_item_assign_permissions($document_reference, $spaces['groups'], $spaces['private_spaces']);
+            if (isset($document->state) && $document->state === 'Pre-Archived') {
+              gofast_cmis_webservice_item_archive($document_reference);
+            }
+          }
+          $sandbox['folders_done']++;
+        }
+        else {
+          // Turn the recomputed permissions of a pre-archived document back to read only.
+          if ($item['state'] === 'Pre-Archived') {
+            gofast_cmis_webservice_item_archive($reference);
+          }
+          $sandbox['documents_done']++;
+        }
+      }
+      catch (Throwable $e) {
+        $sandbox['failed'][] = $reference;
+      }
+      drupal_static_reset();
+    }
+  }
+  finally {
+    usurp(FALSE);
+  }
+
+  $sandbox['#finished'] = empty($sandbox['items']) ? 1 : 0;
+  if (!$sandbox['#finished']) {
+    return;
+  }
+
+  if (!empty($sandbox['failed'])) {
+    watchdog('GOFAST-15038', '%name() --- FAILED %references', array('%name' => __FUNCTION__, '%references' => implode(', ', $sandbox['failed'])), WATCHDOG_ERROR);
+  }
+  watchdog('GOFAST-15038', '%name() --- END %documents documents and %folders folders done', array('%name' => __FUNCTION__, '%documents' => $sandbox['documents_done'], '%folders' => $sandbox['folders_done']));
+  return t('Recomputed the permissions of @documents documents and @folders folders mirrored in a public space, @failed items failed.', array(
+    '@documents' => $sandbox['documents_done'],
+    '@folders' => $sandbox['folders_done'],
+    '@failed' => count($sandbox['failed']),
+  ));
+}
+
 /**
  * Implements hook_install().
  */

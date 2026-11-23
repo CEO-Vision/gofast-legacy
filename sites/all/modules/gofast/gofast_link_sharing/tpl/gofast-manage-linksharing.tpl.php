@@ -11,6 +11,7 @@
     <?php } ?>
     <div class="manage-linksharing-info" style="position: absolute; right: 100px; margin-top: -5px;"><i class='fa fa-clock-o' style='color:orange' aria-hidden='true'></i> <?php echo t('Pending...', array(), array('context' => 'gofast:cmis')) ?></div>
     <span id="nids" style="display:none"><?php echo json_encode($nids); ?></span>
+    <span id="items" style="display:none"><?php echo json_encode($items); ?></span>
     <span id="subject" style="display:none"><?php echo $subject ?></span>
     <span id="message" style="display:none"><?php echo $message ?></span>
     <span id="folder_sharing_title" style="display:none"><?php echo $download_page_title ?></span> 

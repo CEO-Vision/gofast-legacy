@@ -5,7 +5,7 @@ function gofast_integrity_ldap_search_group($LdapServer, $gid, $field = "dn") {
         $LdapServer->connectAndBindIfNotAlready();
     }
     $ldap_groups_dn = "ou=Groups,dc=" . explode("dc=", reset($LdapServer->basedn), 2)[1];
-    $filter = "(cn=*" . $gid . ")";
+    $filter = "(cn=_#" . $gid . ")";
     $attributes = array($field);
     $results = (array) $LdapServer->search($ldap_groups_dn, $filter, $attributes);
     //If multiple results, the last result being the more specific, previous results will match parent items
@@ -16,15 +16,17 @@ function gofast_integrity_ldap_search_group($LdapServer, $gid, $field = "dn") {
 
 
 function gofast_integrity_check_create_space_ldap($LdapServer, $gid, &$failure) {
-    $ldap_result = gofast_integrity_ldap_search_group($LdapServer, FALSE, $gid);
-    if (!isset($ldap_result)) {
-        $message = "Group reference is missing in LDAP server for space n°@gid.";
-        watchdog("gofast_integrity_check_on_action", $message, array("@gid" => $gid), WATCHDOG_WARNING);
-        $failure = TRUE;
+    $ldap_result = gofast_integrity_ldap_search_group($LdapServer, $gid);
+    if (isset($ldap_result)) {
+        return NULL;
     }
-    if ($failure) {
-        return str_replace("@gid", $gid, $message);
-    }
+
+    $message = "Group reference is missing in LDAP server for space n°@gid.";
+    $replacements = ['@gid' => $gid];
+
+    $failure = TRUE;
+    watchdog("gofast_integrity_check_on_action", $message, $replacements, WATCHDOG_WARNING);
+    return strtr($message, $replacements);
 }
 
 function gofast_integrity_drupal_check_spaces_ldap_sync($items){

@@ -184,6 +184,29 @@ function gofast_mail_queue_update_7710(){ //Adding type
 }
 
 /**
+ * GOFAST-14863 - Delete the meeting invitation files left behind by the mail queue.
+ */
+function gofast_mail_queue_update_7711() {
+  // Files of the mails still queued are kept
+  $queued = array();
+  foreach (db_query("SELECT message FROM {gofast_mail_queue} WHERE type = 'ext'")->fetchCol() as $message) {
+    $mail = json_decode($message, TRUE);
+    if (!empty($mail['urlAttachmentFile'])) {
+      $queued[$mail['urlAttachmentFile']] = TRUE;
+    }
+  }
+
+  $deleted = 0;
+  foreach (glob(DRUPAL_ROOT . '/sites/default/files/invite_gofast_*.ics') ?: array() as $file) {
+    if (!isset($queued[$file]) && !isset($queued[realpath($file)]) && unlink($file)) {
+      $deleted++;
+    }
+  }
+
+  return t('@count invitation files deleted.', array('@count' => $deleted));
+}
+
+/**
  * Implements hook_install().
  */
 function gofast_mail_queue_install(){

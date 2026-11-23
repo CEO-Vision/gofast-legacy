@@ -2,16 +2,18 @@
 <h3 class="h1"><?= t("The category %name has a naming rule", ["%name" => $term_name],  ["context" => "gofast:gofast_naming_rules"]) ?></h3>
 <?php endif; ?>
 
-<?php if ($add && !$invalid) : ?>
+<?php if ($add) : ?>
     <p class="font-size-lg m-0 mt-4"><?= t("This means that once applied to the document, the document name will change according to the following rule:", [], ["context" => "gofast:gofast_naming_rules"]) ?></p>
     <?= theme("gofast_naming_rules_rule_container", ["rule" => $ruled_theme]) ?>
     <p class="font-size-lg m-0 mt-4"><?= t("Therefore, the document will be renamed as follows:", [], ["context" => "gofast:gofast_naming_rules"]) ?></p>
     <?= theme("gofast_naming_rules_rule_container", ["rule" => $ruled_value]) ?>
 <?php endif; ?>
 
-<?php if ($add && $invalid) : ?>
-    <?= theme("gofast_naming_rules_rule_container", ["rule" => $ruled_theme]) ?>
-    <p class="font-size-lg m-0 mt-4"><?= t("But all the fields required by the naming rule are not filled. You have to fill all the required fields in order to apply the category.", [], ["context" => "gofast:gofast_naming_rules"]) ?></p>
+<?php if ($add && !$has_all_metadata) : ?>
+    <p class="font-size-lg m-0 mt-4"><?= t("All the fields required by the naming rule are not filled. They will be replaced by empty strings.", [], ["context" => "gofast:gofast_naming_rules"]) ?></p>
+<?php endif; ?>
+<?php if ($add && !strlen($ruled_value)) : ?>
+    <p class="font-size-lg m-0 mt-4"><?= t("The naming rule results in an empty title and therefore it will not be applied.", [], ["context" => "gofast:gofast_naming_rules"]) ?></p>
 <?php endif; ?>
 
 <?php if ($remove) : ?>
@@ -19,7 +21,7 @@
 <?php endif; ?>
 
 <?php if (!$no_buttons) : ?>
-<?php if ($remove || !$invalid) : ?>
+<?php if ($remove || strlen($ruled_value)) : ?>
 <btn id="apply_category_confirm" class="btn btn-success"><?= t("Apply") ?></btn>
 <btn id="apply_category_cancel" class="btn btn-secondary"><?= t("Cancel") ?> </btn>
 <?php else: ?>

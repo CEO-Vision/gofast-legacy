@@ -168,20 +168,24 @@ function gofast_search_start_full_reindex() {
 function gofast_search_cancel_full_reindex() {
   $full_reindex_timestamp = variable_get('gofast_full_reindex', FALSE);
     
-  if ($full_reindex_timestamp) {
-    foreach (['node', 'user'] as $entity_type) {
-      $table = apachesolr_get_indexer_table($entity_type);
-      
-      // Mark queued entities as processed by setting lower timestamp, other 
-      // entities marked recently for indexing will still be indexed. 
-      db_update($table)
-        ->fields(array('changed' => $full_reindex_timestamp -1))
-        ->condition('changed', $full_reindex_timestamp)
-        ->execute();
-      
-      // Reset last position so that indexing keeps going normally. 
-      $entity_id = db_query('SELECT MAX(entity_id) FROM {'.$table.'}')->fetchField();
-      apachesolr_set_last_index_position(GOFAST_SEARCH_ENV_ID, $entity_type, $full_reindex_timestamp, $entity_id);
+  if (!$full_reindex_timestamp) {
+    $full_reindex_timestamp = time();
+  }
+    
+  foreach (['node', 'user'] as $entity_type) {
+    $table = apachesolr_get_indexer_table($entity_type);
+    
+    // Mark queued entities as processed by setting lower timestamp, other 
+    // entities marked recently for indexing will still be indexed. 
+    db_update($table)
+      ->fields(array('changed' => $full_reindex_timestamp -1))
+      ->condition('changed', $full_reindex_timestamp)
+      ->execute();
+    
+    // Force empty all index queue, on every Solr environment sharing the table. 
+    $max_changed = (int) db_query('SELECT COALESCE(MAX(changed), 0) FROM {' . $table . '}')->fetchField();
+    foreach (array_keys(apachesolr_load_all_environments()) as $env_id) {
+      apachesolr_set_last_index_position($env_id, $entity_type, $max_changed, 0);
     }
   }
   

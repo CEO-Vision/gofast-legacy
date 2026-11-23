@@ -345,9 +345,13 @@ Drupal.ajax.prototype.beforeSerialize = function (element, options) {
   // Prevent duplicate HTML ids in the returned markup.
   // @see drupal_html_id()
   options.data['ajax_html_ids[]'] = [];
-  $('[id]').each(function () {
-    options.data['ajax_html_ids[]'].push(this.id);
-  });
+  // START - @patch CEO-Vision - GOFAST-13500
+  if($('[id]').length <= 10000){ // 10000 Is the default value of max_input_vars
+    $('[id]').each(function () {
+      options.data['ajax_html_ids[]'].push(this.id);
+    });
+  }
+  // END - @patch CEO-Vision
 
   // Allow Drupal to return new JavaScript and CSS files to load without
   // returning the ones already loaded.

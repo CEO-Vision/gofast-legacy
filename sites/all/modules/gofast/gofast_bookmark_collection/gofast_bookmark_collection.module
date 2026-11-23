@@ -544,47 +544,9 @@ function gofast_bookmark_collection_get_bookmark_contextual_actions(){
   }
   
   if($item_type == "content"){
-
-    $bookmark_flag = flag_get_flag("bookmarks");
-    $bookmark_is_flagged = $bookmark_flag->is_flagged($item_id);
-    $node_actions[]['themed'] =  theme('gofast_link_generic', array(
-      'text' => t('Open in a new tab', array(), array('context' => 'gofast')),
-      'link_id' => "open_new_tab" ,
-      'href' => '',
-      'icon_class' => 'fa fa-arrow-right',
-      'onClick' => 'window.open(\'/node/' . $item_id . '\', \'_blank\')',
-      'title' => t('Open in a new tab of your browser'),
-      'page' => array('gofast_contextual_menu_is_from_browser', 'gofast_contextual_menu_node_is_not_delete'),
-      'type' => array('alfresco_item', 'article', 'group', 'organisation', 'extranet', 'public'),
-      'access_function' => ''
-    ));
-    $node_actions[]['themed'] =  theme('gofast_link_generic', array(
-      'text' => t('Open in the current tab', array(), array('context' => 'gofast')),
-      'link_id' => "open_current_tab",
-      'href' => '/node/' . $item_id,
-      'icon_class' => 'fa fa-arrow-right',
-      'target' => '',
-      'onClick' => '',
-      'title' => t('Open in a new tab of your browser'),
-      'page' => array('gofast_contextual_menu_is_from_browser', 'gofast_contextual_menu_node_is_not_delete'),
-      'type' => array('alfresco_item', 'article', 'group', 'organisation', 'extranet', 'public'),
-      'access_function' => ''
-    ));
-    $node_actions[]['themed'] =  theme('gofast_link_generic', array(
-      'text' => $bookmark_is_flagged ? t('Remove this from bookmark', array(), array("context" => "gofast:gofast_contextual_menu")) : t('Bookmark this', array(), array("context" => "gofast:gofast_contextual_menu")),
-      'link_id' => "bookmarks",
-      'link_class' => 'bookmarks '.($bookmark_is_flagged ? "" : "ctools-use-modal"),
-      'icon_class' => "fas fa-star",
-      'page' => array('gofast_contextual_menu_all_pages', 'gofast_contextual_menu_node_is_not_delete'),
-      'type' => array('alfresco_item', 'article', 'webform', 'forum'),
-      'href' => $bookmark_is_flagged ? "" : "/modal/nojs/bookmark_collection/flag/{$item_id}/bookmark_flag_tree",
-      'access_function' => '',
-      'divider' => FALSE,
-      'hide_from_mobile' => TRUE,
-      "hide_from_tablet" => TRUE,
-      'hide_from_essential' => FALSE,
-      'onClick' => $bookmark_is_flagged ? "Gofast.Bookmark_Collection.bookmarkItem(event, {$item_id}, null, 'bookmark_content_tree', 'content');" : "",
-    ));
+    $item = node_load($item_id);
+    $node_actions = gofast_contextual_menu_get_node_actions_dropdown($item);
+    $_POST['dropleft'] = TRUE;
   } else if($item_type == "folder"){
     $bookmark_folder_is_flagged = gofast_ajax_file_browser_folder_is_bookmark($item_id);
     $item = gofast_cmis_item_get($item_id);
@@ -660,7 +622,7 @@ function gofast_bookmark_collection_get_bookmark_contextual_actions(){
     }
   }
   // If we have right clicked on a bookmark collection or on a free space
-  if(!isset($item_type) ||$item_type == "bookmark_collection"){
+  if(!isset($item_type) || $item_type == "bookmark_collection"){
     $node_actions[]['themed'] =  theme('gofast_link_generic', array(
       'text' => t('Add bookmark collection here', array(), array('context' => 'gofast:gofast_bookmark_collection')),
       'link_id' => "add-bookmark-collection",

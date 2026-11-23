@@ -244,6 +244,11 @@ function gofast_user_accordion_userlist(&$form, &$form_state){
 }
 
 function gofast_user_form_user_register_form_validate(&$form, &$form_state) {
+    // Programmed submissions keep their errors, so the caller can handle them.
+    if (gofast_form_is_programmed($form_state)) {
+      return;
+    }
+
     $errors = form_get_errors();
     if ($errors) {
 
@@ -309,12 +314,14 @@ function gofast_user_account_validate($form, &$form_state)
   }
 
   // Ensure user name is not being altered if user cannot be renamed on the server side.
+  // With the exception of creating a new user.
   $editing_user = $form['#user'];
-  if (isset($editing_user->uid)) {
+  if (isset($editing_user->uid) && $editing_user->uid != 0) {
     $original_editing_user = user_load($editing_user->uid);
     $will_sasl_auth_be_enabled = $form_state['values']['sasl_auth'][LANGUAGE_NONE][0]['value'];
 
-    $can_edit_user_name = gofast_user_user_can_change_username($editing_user) || !$will_sasl_auth_be_enabled;
+    // Only the username change hooks rename the LDAP, Alfresco and chat accounts too.
+    $can_edit_user_name = gofast_user_user_can_change_username($editing_user) && !$will_sasl_auth_be_enabled;
 
     if ($form_state['values']['name'] !== $original_editing_user->name && !$can_edit_user_name) {
       form_set_error('name', t('User cannot be renamed.', [], ['context' => 'gofast:gofast_user']));
@@ -370,15 +377,15 @@ function gofast_user_form_user_profile_form_alter(&$form, &$form_state)
   if($user_can_change_usernames){
     $form['account']['name']['#description'] .= ' <span class="text-danger">' .
       t("Modifying this field will result in the creation of a new chat account with the new username. Your chats and groups will be lost. If you're changing your own username, you will be logged out to login with your new username.", [], ["context" => "gofast:gofast_user"]) . '</span>';
+    $sasl_auth_checkbox_input_name = 'sasl_auth[' . LANGUAGE_NONE . ']';
+    $form['account']['name']['#states']['readonly'][':input[name="' . $sasl_auth_checkbox_input_name . '"]']['checked'] = TRUE;
+    // Updating the readonly attribute through states is not a feature of the base
+    // Drupal states, we need to load this library to make it work.
+    $form['account']['name']['#attached']['library'][] = ['gofast', 'states-extended'];
   } else {
     // The username is readonly 
     $form['account']['name']['#attributes']['readonly'] = TRUE;
   }
-  $sasl_auth_checkbox_input_name = 'sasl_auth[' . LANGUAGE_NONE . ']';
-  $form['account']['name']['#states']['readonly'][':input[name="' . $sasl_auth_checkbox_input_name . '"]']['checked'] = TRUE;
-  // Updating the readonly attribute through states is not a feature of the base
-  // Drupal states, we need to load this library to make it work.
-  $form['account']['name']['#attached']['library'][] = ['gofast', 'states-extended'];
   // Ensure input background is greyed-out when set to readonly.
   $form['account']['name']['#attributes']['class'][] = 'dim-readonly';
   // Add tooltip to explicit why a user may not be able to change the username field.
@@ -388,11 +395,11 @@ function gofast_user_form_user_profile_form_alter(&$form, &$form_state)
     ['context' => 'gofast:gofast_user'],
   );
 
-  gofast_user_account_form_alter($form, $form_state, 'user_profile_form');
   gofast_ldap_profile_forms_alter($form, $form_state);
-
   // This reorganize method changed the element tree, wrapper...
   gofast_ldap_reorganize_user_register_form_elements($form, $form_state);
+
+  gofast_user_account_form_alter($form, $form_state, 'user_profile_form');
   gofast_user_set_group_roles_form_field($form);
 
   // Translate
@@ -704,9 +711,9 @@ function gofast_delete_user_form($form, &$form_state) //Delete user - task
   $form['#uid_to_delete'] = $uid;
   $confirm_form = confirm_form(
     $form,
-    t('Delete this user', array(), array('context' => 'gofast')) . ' ' . $user->name,
+    is_array($uid)? t('Delete these users', array(), array('context' => 'gofast')) :  t('Delete this user', array(), array('context' => 'gofast')) . ' ' . $user->name,
     isset($_GET['destination']) ? $_GET['destination'] : 'user_listing_tab',
-    t('Are you sure you want to delete this user ?', array(), array('context' => 'gofast:gofast_user'))
+    is_array($uid)? t('Are you sure you want to delete these users ?', array(), array('context' => 'gofast')) : t('Are you sure you want to delete this user ?', array(), array('context' => 'gofast:gofast_user'))
   );
   $confirm_form['actions']['cancel']['#type'] = "submit";
   $confirm_form['actions']['cancel']['#value'] = t('Cancel');
@@ -760,41 +767,50 @@ function gofast_unstandby_or_unleave_user_form_submit($form, &$form_state)
 function gofast_delete_user_form_submit($form, &$form_state)
 {
 
+  // Run the process in the background, as it may take a long time.
+  if(is_array($form['#uid_to_delete'])){
+    ctools_include('modal');
+    ctools_include('ajax');
+    $commands = [];
+    $commands[] = ctools_modal_command_dismiss();
+    $commands[] = gofast_command_toast_message(t('Users are being deleted in the background...<br />This process may take some time.', [], ['context' => 'gofast:gofast_user']));
+    print ajax_render($commands);
+    set_time_limit(0);
+    fastcgi_finish_request();
+    
+    foreach($form['#uid_to_delete'] as $uid){
+      gofast_delete_user_handler($uid);
+    }
+  }else{
+    gofast_delete_user_handler($form['#uid_to_delete']);
+  }
+}
+
+function gofast_delete_user_handler($uid){
   global $user;
+  $user_to_delete = user_load($uid);
 
-  $user_to_delete_datas = user_load($form['#uid_to_delete']); // load user Datas
-  $isAdmin = !empty($user->roles['3']);
-
-
-  if ($user_to_delete_datas->access == 0 && $isAdmin) {
-
-    // 1- function that delete user data in ldap
-    gofast_ldap_user_delete($user_to_delete_datas);
-
-    // 2- Function that delete user data in Bonita
-    // we create the cookie as admin bonita
-    $cookie_name = "cookie_bonita" . BONITA_TECHNICAL_LOGIN . ".txt";
-    $workflows_user_id = gofast_workflows_get_user_id($user_to_delete_datas);
-    // 3 Function that delete user on alfresco
-    $node = node_load($user_to_delete_datas->og_private['und'][0]['target_id']);
-    if ($node) {
-      gofast_cmis_item_remove_folder($node->field_folder_reference[LANGUAGE_NONE][0]['value']);
+  if ($user_to_delete->login == 0 && gofast_user_is_business_admin($user)) {
+    // Remove private space from Alfresco
+    $private_space = node_load($user_to_delete->og_private['und'][0]['target_id']);
+    if ($private_space) {
+      gofast_cmis_item_remove_folder($private_space->field_folder_reference[LANGUAGE_NONE][0]['value']);
     } 
-
-    if ($workflows_user_id != null && isset($variable_association[$user_to_delete_datas->uid])) {
+    // Remove from Bonita
+    $cookie_name = "cookie_bonita" . BONITA_TECHNICAL_LOGIN . ".txt";
+    $workflows_user_id = gofast_workflows_get_user_id($user_to_delete);
+    if ($workflows_user_id != null && isset($variable_association[$user_to_delete->uid])) {
       gofast_workflows_curl_delete_user($workflows_user_id, $cookie_name);
     }
-
-    //Insert into audit
-    $event = array('mod_author' => $user->uid, 'mod_timestamp' => time(), 'event' => 'delete_user', "user_delete_name" => gofast_message_ext_api_get_user_name($user_to_delete_datas->uid));
+    // Insert into audit
+    $event = array('mod_author' => $user->uid, 'mod_timestamp' => time(), 'event' => 'delete_user', "user_delete_name" => gofast_message_ext_api_get_user_name($user_to_delete->uid));
     $event = serialize($event);
     $last_event_serialized = rawurlencode($event);
     $last_event_unserialized["mod_timestamp"] = time();
     $last_event_unserialized["mod_author"] = $user->uid;
     gofast_audit_insert_line_audit(0, 'delete_user', $last_event_serialized, $last_event_unserialized);
-
-    // 3- delete user data from drupal BDD
-    user_delete($user_to_delete_datas->uid);
+    // Finally remove from Drupal
+    user_delete($user_to_delete->uid);
   }
 }
 
@@ -913,6 +929,17 @@ function gofast_user_account_form_translate_field(&$form)
     $form['group_roles']['field_is_comment_restricted'][LANGUAGE_NONE]['#description'] = t($desc, array(), array('context' => 'gofast'));
   }
 
+  // confidential clearance
+  $label = $form['group_roles'][GOFAST_USER_HAS_CONFIDENTIAL_ACCESS_FIELD][LANGUAGE_NONE]['#title'];
+  if ($label !== NULL) {
+    $form['group_roles'][GOFAST_USER_HAS_CONFIDENTIAL_ACCESS_FIELD][LANGUAGE_NONE]['#title'] = t($label, array(), array('context' => 'gofast'));
+  }
+
+  $desc = $form['group_roles'][GOFAST_USER_HAS_CONFIDENTIAL_ACCESS_FIELD][LANGUAGE_NONE]['#description'];
+  if ($desc !== NULL) {
+    $form['group_roles'][GOFAST_USER_HAS_CONFIDENTIAL_ACCESS_FIELD][LANGUAGE_NONE]['#description'] = t($desc, array(), array('context' => 'gofast'));
+  }
+
   $label = $form['group_profile_data']['ldap_user_ou'][LANGUAGE_NONE]['#title'];
   if ($label !== NULL) {
     $form['group_profile_data']['ldap_user_ou'][LANGUAGE_NONE]['#title'] = t($label, array(), array('context' => 'gofast'));
@@ -995,6 +1022,16 @@ function gofast_user_account_form_translate_field_register(&$form)
     $form['field_is_comment_restricted'][LANGUAGE_NONE]['#description'] = t($desc, array(), array('context' => 'gofast'));
   }
 
+  $label = $form['group_roles'][GOFAST_USER_HAS_CONFIDENTIAL_ACCESS_FIELD][LANGUAGE_NONE]['#title'];
+  if ($label !== NULL) {
+    $form['group_roles'][GOFAST_USER_HAS_CONFIDENTIAL_ACCESS_FIELD][LANGUAGE_NONE]['#title'] = t($label, array(), array('context' => 'gofast'));
+  }
+
+  $desc = $form['group_roles'][GOFAST_USER_HAS_CONFIDENTIAL_ACCESS_FIELD][LANGUAGE_NONE]['#description'];
+  if ($desc !== NULL) {
+    $form['group_roles'][GOFAST_USER_HAS_CONFIDENTIAL_ACCESS_FIELD][LANGUAGE_NONE]['#description'] = t($desc, array(), array('context' => 'gofast'));
+  }
+
   $label = $form['group_profile_data']['ldap_user_ou'][LANGUAGE_NONE]['#title'];
   if ($label !== NULL) {
     $form['group_profile_data']['ldap_user_ou'][LANGUAGE_NONE]['#title'] = t($label, array(), array('context' => 'gofast'));
@@ -1053,9 +1090,42 @@ function gofast_user_account_form_alter(&$form, &$form_state, $form_id)
   $access_options = $form['account']['roles']['#options'];
   $form['account']['roles']['#access'] = $access_options && user_access('administer roles');
 
-  // Apply the same policy for the user "extranet" and "broadcaster" flags.
-  $form['is_extranet']['#access'] = $form['account']['roles']['#access'];
-  $form['is_broadcaster']['#access'] = $form['account']['roles']['#access'];
+  // Apply the same policy for the user "extranet", "broadcaster" and comment restriction flags.
+  $can_edit_flags = $form['account']['roles']['#access'];
+  $form['group_roles']['extranet_group']['#disabled'] = !$can_edit_flags;
+  $form['group_roles']['is_broadcaster']['#disabled'] = !$can_edit_flags;
+  $form['group_roles']['field_is_comment_restricted']['#disabled'] = !$can_edit_flags;
+  // The original field elements are kept alongside the fieldset copies and would still accept input.
+  $form['is_extranet']['#access'] = $can_edit_flags;
+  $form['is_broadcaster']['#access'] = $can_edit_flags;
+
+  // Disable confidential access field form input to only allow users able to grant
+  // confidential access to change a user's confidential access.
+  $can_grant_confidential_access = gofast_user_can_user_grant_confidential_access();
+  $form['group_roles'][GOFAST_USER_HAS_CONFIDENTIAL_ACCESS_FIELD]['#disabled'] = !$can_grant_confidential_access;
+  // BAND-AID FIX: somehow when creating a new user, the anonymous user
+  // is considered to be part of a confidential space, which it isn't...
+  $is_user_creation = $form['#user']->uid == 0;
+
+  // Prevent user from being stripped of confidential clearance if they are a
+  // member of a confidential space, additional check for current user's ability
+  // to grant confidential access to prevent showing warning message to unwanted users.
+  if (!$is_user_creation && $can_grant_confidential_access && gofast_user_is_user_in_confidential_spaces($form['#user']->uid)) {
+    $confidential_clearance_input = &$form['group_roles'][GOFAST_USER_HAS_CONFIDENTIAL_ACCESS_FIELD];
+    // Only lock the input if the user already has the confidential clearance,
+    // this way if the user is in a space that has become confidential without
+    // going through the proper process (e.g.: had confidential classification
+    // before confidentiality feature was introduced), we can solve the issue by
+    // granting the user confidential clearance.
+    $confidential_clearance_input['#disabled'] = gofast_user_can_user_access_confidential_content($form['#user']->uid);
+    $confidential_clearance_input['#suffix'] = '<span class="text-danger">' . t(
+      "This user's confidential clearance cannot be removed since they are a member of at least one confidential space.",
+      [],
+      ['context' => 'gofast'],
+    ) . '</span>';
+
+    unset($confidential_clearance_input);
+  }
 
   $form['account']['roles']['#attributes']['class'][] = 'user-roles-force-single';
   $form['account']['roles']['#attached']['js'] = array(array(
@@ -1184,10 +1254,9 @@ function gofast_user_account_form_alter(&$form, &$form_state, $form_id)
 
 function gofast_user_form_validate(&$form, &$form_state)
 {
-  // Validate 'username' as a file name since it will be used as a dir name for
-  // the user's private space directory (basically directories must respect the
-  // same restrictions as filenames).
-  if (!gofast_validate_filename($form_state['values']['name'])) {
+  // Validate the private space folder name ('_' + username) rather than the
+  // bare username, so that Windows reserved names such as 'prn' stay allowed.
+  if (!gofast_validate_filename('_' . $form_state['values']['name'])) {
     form_set_error('name', t('Username identifier contains illegals characters.', array(), array('context' => 'gofast:gofast_user')));
   }
   $_SESSION["default_role_creation_user"] = $form_state['values']["field_default_role"][LANGUAGE_NONE][0]["value"];
@@ -1203,6 +1272,55 @@ function gofast_user_form_validate(&$form, &$form_state)
   if(variable_get("gofast_standby_enabled", false) == true){
     if(!gofast_user_is_business_admin() ){
       $form_state['values']['field_standby']["value"]=1;
+    }
+  }
+
+  // Get selected user roles and load them.
+  $role_ids = array_keys(array_filter($form_state['values']['roles']));
+  $roles = array_map(user_role_load(...), $role_ids);
+
+  // Validate that a user cannot be both an external user and a User-Support
+  // simultaneously.
+  $is_extranet = (bool) $form_state['values']['is_extranet'][LANGUAGE_NONE][0]['value'];
+  $is_business_admin = gofast_iterable_any($roles, fn($r) => $r->name === GOFAST_ROLE_BUSINESS_ADMIN);
+
+  if ($is_business_admin && $is_extranet) {
+    form_set_error(
+      'is_extranet][' . LANGUAGE_NONE . '][0][value',
+      t(
+        'A user cannot be external and a User-Support simultaneously.',
+        [],
+        ['context' => 'gofast:gofast_user'],
+      ),
+    );
+  }
+
+  if($form['#form_id'] === 'user_register_form' && $is_extranet){
+    $spaces_config = gofast_admin_get_space_defaults();
+    // Get all types of selected space memberships
+    $selected_space_gids = array_column($form_state['values']['og_user_node'][LANGUAGE_NONE], 'target_id');
+    $selected_space_types = gofast_get_node_properties_by_nid($selected_space_gids, 'type');
+    $selected_space_types = array_column($selected_space_types, 'type');
+    // Prevent adding user to spaces restricted by plateform configuration
+    if($spaces_config['group_add_external_user'] && in_array('group', $selected_space_types)){
+      form_set_error(
+        'external_user_group_restricted',
+        t(
+          'Adding external users to @space_type is disabled by the current platform configuration.', 
+          array('@space_type' => t('Groups', array(), array('context' => 'gofast'))), 
+          array('context' => 'gofast:gofast_user')
+        )
+      );
+    }
+    if($spaces_config['organization_add_external_user'] && in_array('organisation', $selected_space_types)){
+      form_set_error(
+        'external_user_organisation_restricted',
+        t(
+          'Adding external users to @space_type is disabled by the current platform configuration.', 
+          array('@space_type' => t('Organisations', array(), array('context' => 'gofast'))), 
+          array('context' => 'gofast:gofast_user')
+        )
+      );
     }
   }
 
@@ -1250,8 +1368,12 @@ function gofast_user_form_submit(&$form, &$form_state) {
     _gofast_set_user_key($account->uid, $form_state['values']['pass']);
   }
 
+  // Keep the stored expiration date when the extranet flags are not editable.
+  if (!empty($form['group_roles']['extranet_group']['#disabled'])) {
+    unset($form_state['values']['field_extranet_expiration_date']);
+  }
   // If the field expiration date is enabled and the user is extranet, convert date from datetimepicker to timestamp
-  if($form_state["values"]["is_extranet"][LANGUAGE_NONE][0]["value"] === 1 && $form_state["values"]["enable_expiration_date"] === 1){
+  elseif($form_state["values"]["is_extranet"][LANGUAGE_NONE][0]["value"] === 1 && $form_state["values"]["enable_expiration_date"] === 1){
     $date_string = $form_state["values"]["field_extranet_expiration_date"][LANGUAGE_NONE][0]["value"];
     if(is_string($date_string) && !empty($date_string)){
       $date_obj = DateTime::createFromFormat("d/m/Y", $date_string);
@@ -1495,6 +1617,22 @@ function gofast_user_alter_comments(&$form, &$form_alter)
  */
 function gofast_user_form_user_login_block_alter(&$form, &$form_state)
 {
+  // Change password input to password input with toggle-able visibility
+  // Ensure the password input shows an eye button.
+  $form['pass']['#type'] = 'password_eye';
+  // Style password input.
+  $form['pass']['#inner_input']['#attributes']['class'] = [
+    ...$form['pass']['#inner_input']['#attributes']['class'] ?? [],
+    'form-control',
+    'form-control-solid',
+    'h-auto',
+    'p-4',
+  ];
+  $form['pass']['#attributes']['class'][] = 'gf-input-group-rounded-lg';
+  // Remove padding class from wrapper to make the input size visually consistent.
+  $form['pass']['#attributes']['class'] = array_diff($form['pass']['#attributes']['class'], ['p-4']);
+  $form['pass']['#inner_button']['#attributes']['class'][] = 'btn-lg';
+
   $idp_configured = db_query("select COUNT(*) from saml_sp_idps")->fetchAll()[0]->{"COUNT(*)"};
 
   if ($idp_configured) {
@@ -1568,9 +1706,10 @@ function gofast_user_form_user_login_block_alter(&$form, &$form_state)
 
       // move SSO buttons to top of form
       $saml_links['#weight'] = -1;
+      $saml_links['#prefix'] = "<center><div class='login-spacer'></div>";
+      $saml_links['#suffix'] = '</center>';
       if((bool)variable_get("gofast_disable_login_form", false) === false){
-        $saml_links['#prefix'] = "<center><div class='login-spacer'></div>";
-        $saml_links['#suffix'] = "<div class='login-spacer'></div><div class='login-max-width'><hr /><h3 class='login-or'>" . t("OR", array(), array('context' => 'gofast:gofast_user')) . "</h3></div></center>";
+        $saml_links['#suffix'] = "<div class='login-spacer'></div><div class='login-max-width'><hr /><h3 class='login-or'>" . t("OR", array(), array('context' => 'gofast:gofast_user')) . "</h3></div>" . $saml_links['#suffix'];
       }
     }
   } else {

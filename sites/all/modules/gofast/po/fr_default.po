@@ -1399,6 +1399,11 @@ msgctxt "gofast"
 msgid "Taxonomy State"
 msgstr ""
 
+#: gofast.module
+msgctxt "gofast"
+msgid "The space title is too long: it must not exceed @limit characters."
+msgstr "Le titre de l'espace est trop long : il ne doit pas dépasser @limit caractères."
+
 #: /devel/php
 msgctxt "gofast"
 msgid "Your latest notifications."
@@ -21286,6 +21291,13 @@ msgstr "%count contenus indexés pour le suivi."
 msgid "Indexing"
 msgstr "Indexation"
 
+msgctxt "gofast:gofast_stats"
+msgid "Deleted contents remain indexed and are included in these statistics"
+msgstr "Les contenus supprimés restent indexés et sont pris en compte dans cette statistique"
+
+msgid "Active users are allowed users who have logged into the platform within the last 3 months"
+msgstr "Les utilisateurs actifs sont les utilisateurs autorisés qui se sont connectés à la plateforme durant les 3 derniers mois"
+
 msgid ""
 "Indexing behavior can be adjusted using the <a "
 "href=\"@searchsettings\">Search settings page</a>. Users with "
@@ -32742,6 +32754,9 @@ msgstr "Epinglé :"
 
 msgid "Storage"
 msgstr "Stockage"
+
+msgid "All data storage"
+msgstr "Stockage de l'ensemble des données"
 
 msgid "Store a rating for this piece of content."
 msgstr "Enregistrer un vote pour ce contenu."
@@ -49544,6 +49559,14 @@ msgstr "Ce document doit être corrigé, cela générera une version mineure."
 msgid "You can't create a folder with a name starting with '_'"
 msgstr "Vous ne pouvez pas créer un dossier avec un nom commençant par '_'"
 
+#: sites/all/modules/gofast/gofast_ajax_file_browser/gofast_ajax_file_browser.js
+msgid "\"Wikis\" is a reserved folder name"
+msgstr "\"Wikis\" est un nom de dossier réservé"
+
+#: sites/all/modules/gofast/gofast_ajax_file_browser/gofast_ajax_file_browser.js
+msgid "\"TEMPLATES\" is a reserved folder name"
+msgstr "\"TEMPLATES\" est un nom de dossier réservé"
+
 #: sites/all/modules/gofast/gofast_ajax_file_browser/gofast_ajax_file_browser.js; sites/all/modules/gofast/gofast_ajax_file_browser/gofast_ajax_file_browser_mobile.js
 msgid ""
 "You can't create the following document because a part of it's path is "
@@ -49559,6 +49582,11 @@ msgstr "Vous ne pouvez pas créer de documents dans les modèles de dossiers"
 #: sites/all/modules/gofast/gofast_ajax_file_browser/gofast_ajax_file_browser.js; sites/all/modules/gofast/gofast_ajax_file_browser/gofast_ajax_file_browser_mobile.js
 msgid "You can't name a content with a name starting with '_'"
 msgstr "Vous ne pouvez pas nommer un contenu avec un nom commençant par '_'"
+
+#: sites/all/modules/gofast/gofast_ajax_file_browser/gofast_ajax_file_browser.js; sites/all/modules/gofast/gofast_ajax_file_browser/gofast_ajax_file_browser_mobile.js
+msgctxt "gofast:ajax_file_browser"
+msgid "You can't upload documents to root spaces."
+msgstr "Vous ne pouvez pas téléverser de documents dans les espaces racine."
 
 #: sites/all/modules/gofast/gofast_ajax_file_browser/gofast_ajax_file_browser.js
 msgid "Folder added to bookmarks"
@@ -49853,6 +49881,86 @@ msgstr "Questions conditionnelles"
 msgid "@user updated this content on @date."
 msgstr "@user a modifié ce contenu @date"
 
+msgctxt "gofast:gofast_audit"
+msgid "User updated"
+msgstr "Utilisateur mis à jour"
+
+msgctxt "gofast:gofast_audit"
+msgid "Old name"
+msgstr "Ancien nom"
+
+msgctxt "gofast:gofast_audit"
+msgid "New name"
+msgstr "Nouveau nom"
+
+msgctxt "gofast:gofast_audit"
+msgid "Before"
+msgstr "Avant"
+
+msgctxt "gofast:gofast_audit"
+msgid "After"
+msgstr "Après"
+
+msgctxt "gofast:gofast_audit"
+msgid "Old SASL configuration"
+msgstr "Ancienne configuration SASL"
+
+msgctxt "gofast:gofast_audit"
+msgid "New SASL configuration"
+msgstr "Nouvelle configuration SASL"
+
+msgctxt "gofast:gofast_audit"
+msgid "added roles"
+msgstr "Rôles ajoutés"
+
+msgctxt "gofast:gofast_audit"
+msgid "removed roles"
+msgstr "Rôles supprimés"
+
+msgctxt "gofast:gofast_audit"
+msgid "removed roles"
+msgstr "Rôles supprimés"
+
+msgctxt "gofast:gofast_audit"
+msgid "Restricted on comments and annotations"
+msgstr "Restrictions sur les commentaires et annotations"
+
+msgctxt "gofast:gofast_audit"
+msgid "Not restricted on comments and annotations"
+msgstr "Pas de restrictions sur les commentaires et annotations"
+
+msgctxt "gofast:gofast_audit"
+msgid "Broadcaster"
+msgstr "Broadcaster"
+
+msgctxt "gofast:gofast_audit"
+msgid "Not broadcaster"
+msgstr "Pas broadcaster"
+
+msgctxt "gofast:gofast_audit"
+msgid "SASL disabled"
+msgstr "SASL désactivé"
+
+msgctxt "gofast:gofast_audit"
+msgid "SASL enabled"
+msgstr "SASL activé"
+
+msgctxt "gofast:gofast_audit"
+msgid "Has confidential access"
+msgstr "Possède les accès confidentiels"
+
+msgctxt "gofast:gofast_audit"
+msgid "Doesn't have confidential access"
+msgstr "Ne possède pas les accès confidentiels"
+
+msgctxt "gofast:gofast_audit"
+msgid "external"
+msgstr "Externe"
+
+msgctxt "gofast:gofast_audit"
+msgid "internal"
+msgstr "Interne"
+      
 msgid "An archive has been created and can be downloaded from: !url"
 msgstr "Une archive a été créée et peut être téléchargée sur : !url"
 
@@ -49989,9 +50097,6 @@ msgid ""
 msgstr ""
 "Si l'option est activée, les messages ne seront pas envoyés, mais "
 "loggué dans le watchdog, et affiché dans le pied de page."
-
-msgid "Automatic"
-msgstr "Automatique"
 
 msgid ""
 "Check that all entered values for this field are unique. The same "
@@ -51185,10 +51290,6 @@ msgstr "texte"
 #: /node/19?language=fr
 msgid "Submission Data"
 msgstr "Données de la soumission"
-
-#: /modal/ajax/add_to_dashboard/organisation
-msgid "Add as shortcut on dashboard"
-msgstr "Ajouter comme raccourci sur le tableau de bord"
 
 msgid "Paste an exported Rules configuration here."
 msgstr "Collez une configuration exportée de Rules ici."
@@ -59467,11 +59568,11 @@ msgstr "Paramètres de configuration de Module Filter"
 
 #: /modal/ajax/linksharing/4321
 msgid ""
-"An email has been sent to the user(s) with the document's sharing "
+"An email has been sent to the user(s) with the @node_type's sharing "
 "link."
 msgstr ""
 "Votre message a été envoyé par email avec le lien de "
-"téléchargement du document."
+"téléchargement du @node_type."
 
 msgid "Generate vocabularies"
 msgstr "Générer des vocabulaires"
@@ -61676,9 +61777,24 @@ msgstr "Créé par"
 msgid "Start value for a date range"
 msgstr "Valeur de début pour un intervalle de date"
 
-#: /update_node_field
-msgid "Title contains illegals characters or an invalid name."
+msgctxt "gofast"
+msgid "Title contains illegal characters or an invalid name."
 msgstr "Le titre contient des caractères non pris en charge."
+
+#: sites/all/modules/gofast/gofast_ajax_file_browser/gofast_ajax_file_browser.js
+msgctxt "gofast:gofast_ajax_file_browser"
+msgid "The name cannot be longer than @max characters."
+msgstr "Le nom ne peut pas dépasser @max caractères."
+
+#: sites/all/modules/gofast/gofast.module
+msgctxt "gofast"
+msgid "Title cannot be longer than @max characters."
+msgstr "Le titre ne peut pas dépasser @max caractères."
+
+#: sites/all/modules/gofast/gofast.module
+msgctxt "gofast"
+msgid "A space title cannot contain the following characters [#] [%]."
+msgstr "Un titre d'espace ne peut pas contenir les caractères suivants [#] [%]."
 
 msgid "Select the parent book page you wish to move the book page into"
 msgstr ""
@@ -67159,10 +67275,6 @@ msgid "Add a group member or a userlist to %group"
 msgstr "Ajouter un membre ou une liste d’utilisateurs à l’espace %group"
 
 #: /modal/ajax/dashboard_add_folder_to_dashboard
-msgid "Add as folder shortcut on dashboard"
-msgstr "Ajouter un raccourci de dossier sur le tableau de bord"
-
-#: /modal/ajax/dashboard_add_folder_to_dashboard
 msgid "Folders selected to be added"
 msgstr "Dossiers sélectionnés pour être ajoutés à vos favoris"
 
@@ -67448,12 +67560,6 @@ msgstr "Ajouter les résultats de la recherche au panier"
 #: /views/ajax
 msgid "Delete node location : "
 msgstr "L'emplacement du nœud supprimé  :"
-
-#: /devel/php
-msgid "A user account with the same identifier \"%user\" already exists."
-msgstr ""
-"Un compte utilisateur avec le même identifiant \"% user\" existe "
-"déjà."
 
 #: /helloworld/sayhelloworld
 msgid "Hello World Test"
@@ -67756,6 +67862,10 @@ msgid "Workflows & Tasks"
 msgstr "Processus et tâches"
 
 #: /node/1690
+msgid "Workflows & Tasks (Legacy)"
+msgstr "Processus et tâches (Ancien)"
+
+#: /node/1690
 msgid "Content and deadline"
 msgstr "Contenus et échéances"
 
@@ -68030,8 +68140,8 @@ msgstr "Votre mot de passe expire le %time"
 
 #: /devel/php
 msgctxt "gofast:gofast_ldap"
-msgid "Change it immediately here"
-msgstr "Modifiez-le immédiatement ici"
+msgid "Change password"
+msgstr "Changer le mot de passe"
 
 #: /user/11
 msgid "Click here"
@@ -68367,7 +68477,7 @@ msgstr "Aucunes listes d'utilisateurs trouvées"
 
 #: /gofast/user/67/get_section?section=requests
 msgid "No requests in progress"
-msgstr "Aucunes requêtes en attente"
+msgstr "Aucune demande en attente"
 
 #: /admin/structure/views/view/gofast_audit/edit
 msgid "Date between"
@@ -68395,7 +68505,7 @@ msgstr "Carte supprimée"
 
 #: sites/all/modules/gofast/gofast_user/js/gofast_profile.js
 msgid "No spaces found"
-msgstr "Aucuns espaces trouvés"
+msgstr "Aucun espace trouvé"
 
 #: /devel/php
 msgid "Number / Position in Wiki Book"
@@ -68585,7 +68695,7 @@ msgstr "Sélectionnez pour éditer en masse"
 msgid "You have successfully merged terms into <b>%term</b>"
 msgstr "Les étiquettes ont été fusionnées dans <b>%term</b> avec succès"
 
-#: /devel/php
+#: /devel/php; sites/all/modules/gofast/gofast_directory/js/gofastAdminDirectoryCategoriesTable.js
 msgid "Filter by space(s)"
 msgstr "Filtrer par espace(s)"
 
@@ -68662,10 +68772,6 @@ msgstr "Gérer l'emplacement de cet article wiki"
 #: /devel/php
 msgid "Conference password"
 msgstr "Mot de passe"
-
-#: /devel/php
-msgid "\"Wikis\" is a reserved folder name"
-msgstr "\"Wikis\" est un nom de dossier réservé"
 
 #: /devel/php
 msgid "You can't rename a \"Wikis\" folder"
@@ -68828,6 +68934,10 @@ msgstr "Membre ajouté avec succès"
 #: sites/all/modules/gofast/gofast_ajax_file_browser/gofast_ajax_file_browser.js
 msgid "Something went wrong!"
 msgstr "Quelque chose a mal tourné!"
+
+#: sites/all/modules/gofast/gofast_ajax_file_browser/gofast_ajax_file_browser.js
+msgid "One or several selected item(s) are in a mirrored location"
+msgstr "Un ou plusieurs éléments sélectionnés se trouvent dans un emplacement miroir"
 
 #: /ajax_file_browser/unzip_file
 msgid "Please note!"
@@ -69501,6 +69611,15 @@ msgctxt "gofast"
 msgid " have more than one emplacements"
 msgstr " ont plus d'un emplacement"
 
+#:/devel/php
+msgctxt "gofast"
+msgid ""
+"The files listed below as linked files will NOT be deleted, but their links "
+"will be deleted."
+msgstr ""
+"Les fichiers listés ci-dessous comme liés ne seront PAS supprimés, cependant "
+"leurs liens seront supprimés."
+
 #: sites/all/modules/gofast/gofast_ajax_file_browser/gofast_ajax_file_browser_mobile.js; sites/all/modules/gofast/gofast_ajax_file_browser/gofast_ajax_file_browser.js; sites/all/modules/gofast/gofast_mobile/js/gofast_mobile_ajax_file_browser.js
 msgctxt "gofast"
 msgid "Almost ready"
@@ -69815,7 +69934,7 @@ msgstr "Enregistrer cette langue comme langue préférée ?"
 
 #: /gofast_ajaxification/ajax?url=%2Fadmin%2Fconfig%2Fgofast%2Fglobal
 msgctxt "gofast"
-msgid " SMTP Authentication"
+msgid "SMTP Authentication"
 msgstr "Authentification SMTP"
 
 #: /index.php; sites/all/modules/gofast/gofast_ajax_file_browser/gofast_ajax_file_browser.js
@@ -70105,6 +70224,10 @@ msgstr "Se rapportent à l'utilisateur qui a envoyé le message privé."
 msgctxt "gofast"
 msgid "None"
 msgstr "Aucun(e)"
+
+#: /gofast/audit/get/site/0
+msgid "Automatic"
+msgstr "Automatique"
 
 #: /gofast_ajaxification/ajax?url=%2Fadmin%2Fconfig%2Fgofast%2Fglobal
 msgctxt "gofast"
@@ -71417,6 +71540,11 @@ msgstr "Contenus Supprimés/disponible"
 msgctxt "gofast"
 msgid "Location/Sharing"
 msgstr "Emplacements / Visibilité "
+
+#: /devel/php
+msgctxt "gofast"
+msgid "Please select at least one location."
+msgstr "Veuillez sélectionner au moins un emplacement."
 
 #: /user/903
 msgctxt "gofast"
@@ -73358,11 +73486,6 @@ msgctxt "gofast"
 msgid "Display all profiles"
 msgstr "Afficher tous les profils"
 
-#: /system/ajax
-msgctxt "gofast"
-msgid "Title contains illegals characters or an invalid name."
-msgstr "Le titre contient des caractères non pris en charge."
-
 #: /admin/config/gofast/global
 msgctxt "gofast"
 msgid " Contribute to public content"
@@ -73899,8 +74022,8 @@ msgstr ""
 
 #: /gofast/node-actions/filebrowser
 msgctxt "gofast"
-msgid "Co-edit with onyloffice"
-msgstr "Co-éditer avec onyloffice"
+msgid "Co-edit with OnlyOffice"
+msgstr "Co-éditer avec OnlyOffice"
 
 #: /gofast/node-actions/filebrowser
 msgctxt "gofast"
@@ -74014,12 +74137,8 @@ msgstr "Label du champ référence documentaire"
 
 #: /admin/config/gofast/global/getform/edit-general
 msgctxt "gofast"
-msgid ""
-"Assign a customized label to the document reference field. The default "
-"value is \"Document reference\""
-msgstr ""
-"Assigner un label customisé pour le champ référence documentaire. "
-"La valeur par défaut est \"Référence documentaire\""
+msgid "Name of the document reference field"
+msgstr "Nom du champ de référence documentaire"
 
 #: /gofast_ajaxification/ajax?url=https%3A%2F%2Fgofast-dev.ceo-vision.com%2Fgofast%2Fnode-info%2F535
 msgctxt "gofast"
@@ -74413,7 +74532,7 @@ msgstr ""
 
 #: /admin/config/gofast/ldap/modal/ajax/sync-form
 msgctxt "gofast"
-msgid "Grab data"
+msgid "Retrieve data"
 msgstr "Récupérer les données"
 
 #: /modal/ajax/riot/38/add/room
@@ -75052,6 +75171,16 @@ msgstr ""
 "installé pour utiliser le protocole d'ouverture de LibreOffice à la "
 "place du protocole ms-office"
 
+#: /admin/config/gofast/global/getform/edit-documents
+msgctxt "gofast"
+msgid "Use DAV protocol to open documents"
+msgstr "Utiliser le protocole DAV pour ouvrir les documents"
+
+#: /admin/config/gofast/global/getform/edit-documents
+msgctxt "gofast"
+msgid "Check this if you need to use your default system handler for editing documents"
+msgstr "Cocher cette case s'il est nécessaire d'utiliser le gestionnaire par défaut du système pour éditer les documents"
+
 #: /devel/php
 msgctxt "gofast"
 msgid "GoFast Essential"
@@ -75182,6 +75311,11 @@ msgstr "Les composants suivants sont installés dans GoFAST"
 msgctxt "gofast"
 msgid "Remove subspaces to delete"
 msgstr "Enlevez les sous-espaces pour supprimer"
+
+#: /gofast/node-actions/1
+msgctxt "gofast"
+msgid "Remove subspaces to perform this action"
+msgstr "Enlevez les sous-espaces pour faire cette action"
 
 #: /devel/php
 msgctxt "gofast"
@@ -76418,6 +76552,16 @@ msgctxt "gofast"
 msgid "Name of the custom date field"
 msgstr "Nom du champ personnalisé de date"
 
+#: /admin/config/gofast/global/getform/edit-documents
+msgctxt "gofast"
+msgid "Fill metadata before documents upload"
+msgstr "Remplir les métadonnées avant le téléchargement des documents"
+
+#: /admin/config/gofast/global/getform/edit-documents
+msgctxt "gofast"
+msgid "Metadata pre-fill"
+msgstr "Pré-remplissage des métadonnées"
+
 msgctxt "gofast"
 msgid "Manage Members"
 msgstr "Gérer les membres"
@@ -76606,6 +76750,15 @@ msgid "Please use your actual username, an email will not work."
 msgstr ""
 "Veuillez utiliser votre nom d'utilisateur, un e-mail ne fonctionnera "
 "pas."
+
+#: /
+msgctxt "gofast"
+msgid ""
+"Resetting a user password only works for users logging in exclusively trough "
+"the \"!idp_link_label\" link"
+msgstr ""
+"La réinitialisation de mot de passe ne fonctionne que pour les utilisateur se "
+"connectant exclusivement avec le lien \"!idp_link_label\""
 
 #: /modal/ajax/directory/bulk_action/contacts/delete/289-6466-
 msgctxt "gofast::directory::contacts::bulk::delete"
@@ -77104,6 +77257,11 @@ msgstr "Espace personnel"
 msgctxt "gofast:ajax_file_browser"
 msgid "File duplicated"
 msgstr "Fichier dupliqué"
+
+#: sites/all/modules/gofast/gofast_ajax_file_browser/gofast_ajax_file_browser.js
+msgctxt "gofast:ajax_file_browser"
+msgid "File duplication failed"
+msgstr "La duplication du fichier a échouée"
 
 #: /devel/php; sites/all/modules/gofast/js/gofast.js; sites/all/modules/gofast/js/utils.js
 msgctxt "gofast:ajax_file_browser"
@@ -77651,6 +77809,11 @@ msgid ""
 msgstr ""
 "Le fil d'activité peut être vide en raison de l'absence d'activité "
 "sur votre contenu au cours des deux dernières semaines."
+
+#: /activity/page; sites/all/modules/gofast/gofast_activity_feed/js/gofast_activity_stream_filters.js
+msgctxt "gofast:gofast_activity_feed"
+msgid "You cannot filter by root spaces in the activity feed."
+msgstr "Vous ne pouvez pas filtrer le fil d'activité par des espaces racine."
 
 #: /
 msgctxt "gofast:gofast_acts_publication"
@@ -80163,8 +80326,12 @@ msgstr "Informations supplémentaires"
 
 #: /system/ajax
 msgctxt "gofast:gofast_conference"
-msgid "Meeting powered by GoFAST"
-msgstr "Réunion propulsée par GoFAST"
+msgid "Meeting powered by @sitename"
+msgstr "Réunion propulsée par @sitename"
+
+msgctxt "gofast:gofast_conference"
+msgid "Meeting reminder powered by @sitename"
+msgstr "Rappel de réunion propulsé par @sitename"
 
 #: /system/ajax
 msgctxt "gofast:gofast_conference"
@@ -80342,14 +80509,12 @@ msgid "Folders selected to be added"
 msgstr "Dossiers sélectionnés pour être ajoutés à vos favoris"
 
 #: /devel/php
-msgctxt "gofast:gofast_dashboard"
-msgid "Add as shortcut on dashboard"
-msgstr "Ajouter comme raccourci sur le tableau de bord"
+msgid "Add a shortcut to bookmarks"
+msgstr "Ajouter un raccourci aux favoris"
 
 #: /devel/php
-msgctxt "gofast:gofast_dashboard"
-msgid "Add as folder shortcut on dashboard"
-msgstr "Ajouter un raccourci de dossier sur le tableau de bord"
+msgid "Add a folder shortcut to bookmarks"
+msgstr "Ajouter un raccourci de dossier aux favoris"
 
 #: /devel/php
 msgctxt "gofast:gofast_dashboard"
@@ -80370,6 +80535,11 @@ msgstr "Mes contenus favoris"
 msgctxt "gofast:gofast_dashboard"
 msgid "My favorite folders"
 msgstr "Mes répertoires favoris"
+
+#: /devel/php
+msgctxt "gofast_dashboard"
+msgid "My in charge spaces"
+msgstr "Espaces à ma charge"
 
 #: /devel/php
 msgctxt "gofast:gofast_dashboard"
@@ -82004,10 +82174,10 @@ msgstr "Au moins 1 lettre minuscule"
 msgctxt "gofast:gofast_ldap"
 msgid ""
 "Search by first-name, last-name or id, select a suggestion then hit "
-"\"Grab data\""
+"\"Retrieve data\""
 msgstr ""
 "Recherchez par prénom, nom ou identifiant, sélectionnez une "
-"suggestion puis cliquez sur \"Saisir des données\""
+"suggestion puis cliquez sur \"Récupérer les données\""
 
 #: /system/ajax
 msgctxt "gofast:gofast_ldap"
@@ -82309,7 +82479,7 @@ msgstr "vous a partagé"
 
 #: /modal/ajax/linksharing/4601
 msgctxt "gofast:gofast_link_sharing"
-msgid "Email of the person to whom the document will be shared"
+msgid "Email of the person to whom the @node_type will be shared"
 msgstr ""
 "Saisissez le nom des utilisateurs ou l'adresse email des destinataires "
 "non utilisateurs."
@@ -82356,8 +82526,13 @@ msgstr "à partagé avec vous"
 
 #: /modal/ajax/linksharing/14654
 msgctxt "gofast:gofast_link_sharing"
-msgid "Document Sharing"
-msgstr "Partage de document"
+msgid "@node_type Sharing"
+msgstr "Partage de @node_type"
+
+#: /modal/ajax/linksharing/14654
+msgctxt "gofast:gofast_link_sharing"
+msgid "Click on the link to fill the webform"
+msgstr "Cliquer sur le lien pour remplir le formulaire"
 
 #: /modal/ajax/linksharing/4601
 msgctxt "gofast:gofast_link_sharing"
@@ -82386,10 +82561,15 @@ msgstr ""
 "Si vous le souhaitez, vous pouvez télécharger le fichier et le "
 "modifier."
 
+#: /modal/ajax/linksharing/14654
+msgctxt "gofast:gofast_link_sharing"
+msgid "If you want, you can download the folder."
+msgstr "Si vous le souhaitez, vous pouvez télécharger le dossier"
+
 #: /modal/ajax/linksharing/4601
 msgctxt "gofast:gofast_link_sharing"
-msgid "Link to the document %title"
-msgstr "Lien vers le document %title"
+msgid "Link to the @node_type %title"
+msgstr "Lien vers le @node_type %title"
 
 #: /modal/ajax/linksharing/4601
 msgctxt "gofast:gofast_link_sharing"
@@ -82453,8 +82633,8 @@ msgstr "Expéditeur (moi)"
 
 #: /modal/ajax/linksharing/18607
 msgctxt "gofast:gofast_link_sharing"
-msgid "You shared a document with users in "
-msgstr "Vous avez partagé un document avec des utilisateurs sur "
+msgid "You shared a @node_type with users in "
+msgstr "Vous avez partagé un @node_type avec des utilisateurs sur "
 
 #: /modal/ajax/linksharing/37
 msgctxt "gofast:gofast_link_sharing"
@@ -82648,8 +82828,8 @@ msgstr "{tag} a téléchargé votre document sur la plateforme GoFAST"
 
 #: /devel/php
 msgctxt "gofast:gofast_link_sharing"
-msgid "shared with you a document on "
-msgstr "a partagé avec vous un document sur "
+msgid "shared with you a @node_type on "
+msgstr "a partagé avec vous un @node_type sur "
 
 #: /devel/php; sites/all/modules/gofast/js/gofast.js
 msgctxt "gofast:gofast_link_sharing"
@@ -82688,8 +82868,8 @@ msgstr "Télécharger le dossier ici."
 
 #: /modal/0/share_folder_by_email/Sites/_adm/mercy_mutsvene/
 msgctxt "gofast:gofast_link_sharing"
-msgid "You shared a folder with users in "
-msgstr "Vous avez partagé un dossier avec des utilisateurs dans"
+msgid "You shared a folder with users in @site_name"
+msgstr "Vous avez partagé un dossier avec des utilisateurs dans @site_name"
 
 #: /modal/ajax/node/347/lne/cancel_workflow
 msgctxt "gofast:gofast_lne"
@@ -82977,6 +83157,11 @@ msgstr "Aucun contenu favori n'a été trouvé"
 msgctxt "gofast:gofast_menu"
 msgid "Filter"
 msgstr "Filtrer"
+
+#: /devel/php
+msgctxt "gofast:gofast_metadata"
+msgid "Responsible"
+msgstr "Responsable"
 
 #: /gofast_ajaxification/ajax?url=https%3A%2F%2Fgofast-dev-gf4.ceo-vision.com%2Fgofast%2Fnode-info%2F1806
 msgctxt "gofast:gofast_metadata"
@@ -84455,6 +84640,16 @@ msgctxt "gofast:gofast_pastell"
 msgid "Send to Iparapheur for signature"
 msgstr "Envoyer à IParapheur pour signature"
 
+#: /devel/php
+msgctxt "gofast:gofast_pastell"
+msgid "Submitted version: @version"
+msgstr "Version soumise : @version"
+
+#: /devel/php
+msgctxt "gofast:gofast_pastell"
+msgid "Created version: @version"
+msgstr "Version créée : @version"
+
 #: /modal/ajax/node/21554/compare_versions
 msgctxt "gofast:gofast_pdf_compare"
 msgid "Target version"
@@ -84870,6 +85065,11 @@ msgstr "La configuration de la DUA a réussi"
 
 #: /devel/php
 msgctxt "gofast:gofast_retention"
+msgid "The retention period cannot be negative"
+msgstr "La période de DUA ne peut pas être négative"
+
+#: /devel/php
+msgctxt "gofast:gofast_retention"
 msgid "The retention apply was successful"
 msgstr "L'application de la DUA a réussi"
 
@@ -84895,6 +85095,10 @@ msgstr ""
 msgctxt "gofast:gofast_riot"
 msgid "Delete Chat room"
 msgstr "Supprimer Salon de discussion"
+
+msgctxt "gofast:gofast_riot"
+msgid "This feature has been disabled on your server"
+msgstr "Cette fonctionnalité a été désactivée sur ce serveur"
 
 #: /gofast/node-actions/3303
 msgctxt "gofast:gofast_riot"
@@ -85488,6 +85692,28 @@ msgstr ""
 msgctxt "gofast:gofast_search"
 msgid "Strict search"
 msgstr "Recherche stricte"
+
+#: sites/all/modules/gofast/gofast_search/gofast_search.module
+msgctxt "gofast:gofast_search"
+msgid ""
+"Search too broad, results and filters are partial: please refine your "
+"search."
+msgstr ""
+"Recherche trop large, résultats et filtres partiels : veuillez affiner "
+"votre recherche"
+
+#: sites/all/modules/gofast/gofast_search/tpl/gofast-search-results-content.tpl.php
+msgctxt "gofast:gofast_search"
+msgid ""
+"Your search starts with a wildcard (* or ?). This kind of search is much "
+"slower and its results and filters may be incomplete. Place the wildcard "
+"at the end of the word instead, or use the advanced search to look into a "
+"specific field."
+msgstr ""
+"Votre recherche commence par un caractère générique (* ou ?). Ce type de "
+"recherche est beaucoup plus lent et ses résultats comme ses filtres "
+"peuvent être incomplets. Placez plutôt le caractère générique à la fin "
+"du mot, ou utilisez la recherche avancée pour cibler un champ précis."
 
 #: /devel/php
 msgctxt "gofast:gofast_search"
@@ -86550,26 +86776,6 @@ msgstr "Espace utilisé"
 
 #: /devel/php
 msgctxt "gofast:gofast_stats"
-msgid "Indexed documents"
-msgstr "Documents indexés"
-
-#: /devel/php
-msgctxt "gofast:gofast_stats"
-msgid "Pending for indexation"
-msgstr "En attente d’indéxation"
-
-#: /devel/php
-msgctxt "gofast:gofast_stats"
-msgid "Not indexed"
-msgstr "Non indexés"
-
-#: /devel/php
-msgctxt "gofast:gofast_stats"
-msgid "Only metadata indexed"
-msgstr "Métadonnées indexés"
-
-#: /devel/php
-msgctxt "gofast:gofast_stats"
 msgid "Active members"
 msgstr "Membres actifs"
 
@@ -86981,7 +87187,7 @@ msgstr "Êtes-vous sûr de vouloir modifier les espaces de la catégorie ?"
 
 #: /devel/php
 msgctxt "gofast:gofast_taxonomy"
-msgid "Are you sure you want to update the categories spaces"
+msgid "Are you sure you want to update the categories spaces?"
 msgstr "Êtes-vous sûr de vouloir modifier les espaces des catégories ?"
 
 #: /modal/ajax/directory/bulk_action/categories/manage-spaces/7-10-15-27-31-33-38-42-43-48-51-56-94-130-131-165-433-621-622
@@ -87058,12 +87264,12 @@ msgctxt "gofast:gofast_taxonomy"
 msgid "A standard category cannot be modified"
 msgstr "Une catégorie standard ne peut pas être modifiée"
 
-#: /devel/php
+#: /devel/php; sites/all/modules/gofast/gofast_directory/js/gofastAdminDirectoryCategoriesTable.js
 msgctxt "gofast:gofast_taxonomy"
 msgid "If disabled, only non-standard categories will be shown"
 msgstr "Si cette option est désactivée, seules les catégories non standard seront affichées"
 
-#: /devel/php
+#: /devel/php; sites/all/modules/gofast/gofast_directory/js/gofastAdminDirectoryCategoriesTable.js
 msgctxt "gofast:gofast_taxonomy"
 msgid "If enabled, only categories with defined retention rules will be shown"
 msgstr "Si cette option est activée, seules les catégories pour lesquelles une DUA a été définie seront affichées."
@@ -88651,8 +88857,13 @@ msgstr "Partager / Modifier les emplacements"
 
 #: /modal/ajax/user/196/delete
 msgctxt "gofast:gofast_views"
-msgid "The user has been deleted"
-msgstr "L'utilisateur a été supprimé"
+msgid "The user is being deleted"
+msgstr "L'utilisateur est en cours de suppression"
+
+#: /modal/ajax/user/196/delete
+msgctxt "gofast:gofast_views"
+msgid "The users are being deleted"
+msgstr "Les utilisateurs sont en cours de suppression"
 
 #: /devel/php
 msgctxt "gofast:gofast_views"
@@ -89238,6 +89449,11 @@ msgstr "Effectuer la tâche"
 msgctxt "gofast:gofast_workflows"
 msgid "Task executed"
 msgstr "Tâche effectuée"
+
+#: sites/all/modules/gofast/gofast_workflows/gofast_workflows.js
+msgctxt "gofast:gofast_workflows"
+msgid "This task is no longer available. It may have already been completed."
+msgstr "Cette tâche n'est plus disponible. Elle a peut-être déjà été effectuée."
 
 #: sites/all/modules/gofast/gofast_workflows/gofast_workflows.js
 msgctxt "gofast:gofast_workflows"
@@ -90198,8 +90414,8 @@ msgstr "!actor_displayname a terminé la tâche suivante :"
 
 #: /devel/php
 msgctxt "gofast:gofast_workflows"
-msgid "Workflow powered by GoFAST"
-msgstr "Processus propulsé par GoFAST"
+msgid "Workflow powered by @sitename"
+msgstr "Processus propulsé par @sitename"
 
 #: /workflow/api/sendmail_taskdone?caseId=4001&step=task_assigned&destinataire=adm&title=test
 msgctxt "gofast:gofast_workflows"
@@ -90933,7 +91149,7 @@ msgid "Blocked users"
 msgstr "Utilisateurs bloqués"
 
 #: /api
-msgctxt "gofast:stats"
+msgctxt "gofast:gofast_stats"
 msgid "Pending for indexation"
 msgstr "En attente d’indéxation"
 
@@ -90963,7 +91179,7 @@ msgid "Broadcasters"
 msgstr "Broadcasters"
 
 #: /api
-msgctxt "gofast:stats"
+msgctxt "gofast:gofast_stats"
 msgid "Not indexed"
 msgstr "Non indexés"
 
@@ -90983,9 +91199,9 @@ msgid "Inactive members"
 msgstr "Membres inactifs"
 
 #: /api
-msgctxt "gofast:stats"
-msgid "Indexed documents"
-msgstr "Documents indexés"
+msgctxt "gofast:gofast_stats"
+msgid "Indexed contents"
+msgstr "Contenus indexés"
 
 #: /api
 msgctxt "gofast:stats"
@@ -91023,7 +91239,7 @@ msgid "Evolution"
 msgstr "Evolution"
 
 #: /api
-msgctxt "gofast:stats"
+msgctxt "gofast:gofast_stats"
 msgid "Only metadata indexed"
 msgstr "Métadonnées indexés"
 
@@ -91296,6 +91512,15 @@ msgctxt "gofast:taxonomy"
 msgid "Processed but you might not have some necessary rights."
 msgstr "Effectué mais il vous manque peut-être certains droits."
 
+#: sites/all/modules/gofast/gofast_taxonomy/js/gofast_taxonomy.js
+msgctxt "gofast:taxonomy"
+msgid ""
+"Processed but you might not have some necessary rights or a file with "
+"the same name exists in at least one of the destinations."
+msgstr ""
+"Effectué mais il vous manque peut être certains droits ou un fichier avec "
+"le même nom existe dans au moins une des destinations."
+
 #: sites/all/modules/gofast/gofast_taxonomy/js/gofast_taxonomy.js; sites/all/modules/gofast/gofast_og/gofast_og.js
 msgctxt "gofast:taxonomy"
 msgid "This modification cannot be done currently. Please try again later."
@@ -91547,11 +91772,6 @@ msgstr "Liste d'utilisateur vide"
 
 #: /dashboard
 msgctxt "gofast_cd74"
-msgid "Add as shortcut on dashboard"
-msgstr "Ajouter comme raccourci sur le tableau de bord"
-
-#: /dashboard
-msgctxt "gofast_cd74"
 msgid "Remove shortcut from dashboard"
 msgstr "Retirer le raccourci du tableau de bord"
 
@@ -91759,11 +91979,6 @@ msgstr "L'espace pour lequel créer un raccourci"
 msgctxt "gofast_cdel"
 msgid "Show my calendar"
 msgstr "Visualiser mon calendrier"
-
-#: /dashboard
-msgctxt "gofast_cdel"
-msgid "Add as shortcut on dashboard"
-msgstr "Ajouter comme raccourci sur le tableau de bord"
 
 #: /dashboard
 msgctxt "gofast_cdel"
@@ -92101,11 +92316,6 @@ msgstr "Mes contenus favoris"
 msgctxt "gofast_dashboard"
 msgid "The following contents have been added to your favorites: %spaces"
 msgstr "Les contenus suivants ont été ajoutés à vos favoris: %spaces"
-
-#: /
-msgctxt "gofast_dashboard"
-msgid "Add as folder shortcut on dashboard"
-msgstr "Ajouter un raccourci de dossier sur le tableau de bord"
 
 #: /dashboard
 msgctxt "gofast_dashboard"
@@ -96385,6 +96595,13 @@ msgctxt "gofast:gofast_directory"
 msgid "Filter by space path"
 msgstr "Filtrer par chemin d'espace"
 
+#: /devel/php
+msgctxt "gofast:gofast_directory"
+msgid "Cannot set users as external and User-Support simultaneously."
+msgstr ""
+"Impossible de rendre des utilisateurs externes et Support-Utilisateur "
+"simultanément."
+
 #: sites/all/modules/gofast/gofast_stats/js/gofast_stats.js
 msgid "Enter login"
 msgstr "Saisir identifiant"
@@ -96732,16 +96949,31 @@ msgstr ""
 #: /workflow/api/validate/access_document/?type_file_param=node&reference=1;&uid=1;
 msgctxt "gofast:gofast_workflows"
 msgid ""
-"The @title document is not available for @username. If the user were "
+"The !title document is not available for @username. If the user were "
 "to view the document, the document would be made exceptionally "
-"available to the user for the duration of the task. Please be "
+"available to the user for the duration of their !assignation_list. Please be "
 "sure to know what you're doing before submitting."
 msgstr ""
-"Le document @title n'est pas disponible pour @username. Si "
+"Le document !title n'est pas disponible pour @username. Si "
 "l'utilisateur devait voir le document, celui-ci serait "
-"exceptionnellement mis à sa disposition pendant la durée de la "
-"tâche. Assurez-vous de savoir ce que vous faites avant de "
+"exceptionnellement mis à sa disposition pendant la durée de leur "
+"!assignation_list. Assurez-vous de savoir ce que vous faites avant de "
 "valider."
+
+#: /devel/php
+msgctxt "gofast:gofast_workflows"
+msgid "work"
+msgstr "travail"
+
+#: /devel/php
+msgctxt "gofast:gofast_workflows"
+msgid "validation"
+msgstr "validation"
+
+#: /devel/php
+msgctxt "gofast:gofast_workflows"
+msgid "signature"
+msgstr "signature"
 
 #: /devel/php
 msgctxt "gofast_workflows"
@@ -96773,7 +97005,8 @@ msgid "Download again"
 msgstr "Télécharger à nouveau"
 
 #: sites/all/modules/gofast/js/gofast.js
-msgid "Download complete"
+msgctxt "gofast:gofast_link_sharing"
+msgid "Download completed"
 msgstr "Téléchargement terminé"
 
 #: /devel/php
@@ -96786,6 +97019,13 @@ msgctxt "gofast:gofast_ajax_file_browser"
 msgid "You can't create a @itemType with one of these characters @characters"
 msgstr ""
 "Vous ne pouvez pas créer un @itemType avec l'un de ces caractères "
+"@characters"
+
+#: sites/all/modules/gofast/gofast_ajax_file_browser/gofast_ajax_file_browser.js
+msgctxt "gofast:gofast_ajax_file_browser"
+msgid "You can't set a title with one of these characters @characters"
+msgstr ""
+"Vous ne pouvez pas saisir un titre avec l'un de ces caractères "
 "@characters"
 
 #: sites/all/modules/gofast/gofast_ajax_file_browser/gofast_ajax_file_browser.js
@@ -97003,6 +97243,30 @@ msgctxt "gofast:gofast_og"
 msgid "You can't be the creator and the secondary administrator of a space in the same time."
 msgstr "Vous ne pouvez pas être le créateur et l'administrateur secondaire d'un espace en même temps."
 
+#: /node/add/group
+msgctxt "gofast:gofast_og"
+msgid "Secondary administrator user does not exist."
+msgstr "L'utilisateur administrateur secondaire n'existe pas."
+
+#: /node/add/group
+msgctxt "gofast:gofast_og"
+msgid ""
+"Secondary administrator cannot be an external user, this space type is "
+"configured to disallow external users."
+msgstr ""
+"L'administrateur secondaire ne peut pas être externe, ce type d'espace est "
+"configuré pour interdire les externes."
+
+#: /node/add/group
+msgctxt "gofast:gofast_og"
+msgid ""
+"Secondary administrator cannot be a user list with external users, this space "
+"type is configured to disallow external users."
+msgstr ""
+"L'administrateur secondaire de cet espace ne peut pas être une liste "
+"d'utilisateurs contenant des externes, ce type d'espace est configuré pour "
+"interdire les externes."
+
 #: /modal/ajax/directory/bulk_action/contacts/delete/293-289
 msgctxt "gofast::directory::contacts::bulk::delete"
 msgid "Contacts deleted"
@@ -97208,14 +97472,14 @@ msgstr "Mot de passe Bluemind"
 
 #: /modal/ajax/user/228/edit
 msgctxt "gofast:gofast_bluemind"
-msgid "Enter your bluemind email address."
-msgstr "Saisissez votre adresse e-mail bluemind."
+msgid "Enter your Bluemind email address."
+msgstr "Saisissez votre adresse e-mail Bluemind."
 
 #: /modal/ajax/user/228/edit
 msgctxt "gofast:gofast_bluemind"
-msgid "Please enter your bluemind email and password to sync your conferences "
+msgid "Please enter your Bluemind email and API key to sync your conferences "
 "and meetings."
-msgstr "Veuillez saisir votre adresse e-mail et votre mot de passe bluemind "
+msgstr "Veuillez saisir votre adresse e-mail et votre clé d'API Bluemind "
 "pour synchroniser vos conférences et réunions."
 
 #: /gofast_ajaxification/ajax?url=%2Fgofast_audit
@@ -97241,6 +97505,11 @@ msgstr "Ajouter le calendrier"
 msgctxt "gofast:gofast_bluemind"
 msgid "Calendar Type"
 msgstr "Type de calendrier"
+
+#: /modal/ajax/calendar/add_calendar
+msgctxt "gofast:gofast_bluemind"
+msgid "Choose the ics file to import"
+msgstr "Choisissez le fichier ics à importer"
 
 #: /system/ajax
 msgctxt "gofast:gofast_bluemind"
@@ -97325,11 +97594,6 @@ msgstr "Synchroniser le calendrier Bluemind"
 msgctxt "gofast:gofast_calendar"
 msgid "Import Calendar from ics"
 msgstr "Importer un calendrier à partir d'un fichier ics"
-
-#: sites/all/modules/gofast/gofast_calendar/js/gofast_calendar.js
-msgctxt "gofast:gofast_bluemind"
-msgid "This will only import events from the last week going ahead and not the past."
-msgstr "Ceci n'importera que les événements de la dernière semaine et non ceux du passé."
 
 #: /system/ajax
 msgctxt "gofast:gofast_bluemind"
@@ -97690,6 +97954,11 @@ msgctxt "gofast:gofast_conference"
 msgid "The value of the recurrence field is invalid"
 msgstr "La valeur du champs de récurrence est invalide"
 
+#: /dashboard
+msgctxt "gofast"
+msgid "Recurrent meeting"
+msgstr "Réunion récurrente"
+
 #: /system/ajax
 msgctxt "gofast:gofast_bluemind"
 msgid "Link"
@@ -97821,11 +98090,12 @@ msgid "Bluemind Email"
 msgstr "Email Bluemind"
 
 #: /modal/ajax/user/256/edit
-msgid "Bluemind Password"
-msgstr "Mot de passe Bluemind"
+msgid "Bluemind API Key"
+msgstr "Clé d'API Bluemind"
+
+#: /modal/ajax/user/256/edit
 msgid "Calendar Type"
 msgstr "Type de calendrier"
-
 
 #: /admin/config/gofast/global/getform/edit-bluemind
 msgctxt "gofast:gofast_bluemind"
@@ -97865,6 +98135,11 @@ msgstr "Synchronisation des événements Bluemind"
 msgctxt "gofast:gofast_bluemind"
 msgid "Calendar synchronization has started successfully"
 msgstr "La synchronisation du calendrier a commencé avec succès"
+
+#: /calendar/synchronize
+msgctxt "gofast:gofast_bluemind"
+msgid "Calendar Synchronization is not enabled on your account"
+msgstr "La synchronisation du calendrier n'est pas activée sur votre compte"
 
 #: /modal/ajax/user/228/edit
 msgctxt "gofast:gofast_bluemind"
@@ -98072,6 +98347,15 @@ msgctxt "gofast:gofast_calendar"
 msgid "Import Calendar from ics"
 msgstr "Importer un calendrier à partir d'un fichier ics"
 
+#: sites/all/modules/gofast/gofast_calendar/js/gofast_calendar.js
+msgctxt "gofast:gofast_calendar"
+msgid "The Bluemind calendar synchronization is deactivated globally"
+msgstr "La synchronisation du calendrier Bluemind est désactivée globalement"
+
+#: sites/all/modules/gofast/gofast_calendar/js/gofast_calendar.js
+msgctxt "gofast:gofast_calendar"
+msgid "You deactivated the Bluemind calendar synchronization in your profile"
+msgstr "Vous avez désactivé la synchronisation du calendrier Bluemind dans votre profil"
 
 #: /modal/ajax/calendar/add_calendar
 msgid "Calendar Type"
@@ -98384,12 +98668,16 @@ msgstr "Activation"
 #: /taxonomy/naming_rules/apply_category_confirm
 msgctxt "gofast:gofast_naming_rules"
 msgid ""
-"But all the fields required by the naming rule are not filled. You "
-"have to fill all the required fields in order to apply the category."
+"All the fields required by the naming rule are not filled. They will be replaced by empty strings."
 msgstr ""
-"Mais tous les champs requis par la règle de nommage ne sont pas "
-"remplis. Vous devez remplir tous les champs requis pour appliquer la "
-"catégorie."
+"Tous les champs requis par la règle de nommage ne sont pas remplis. Ils seronts remplacés par des chaînes vides."
+
+#: /taxonomy/naming_rules/apply_category_confirm
+msgctxt "gofast:gofast_naming_rules"
+msgid ""
+"The naming rule results in an empty title and therefore it will not be applied."
+msgstr ""
+"La règle de nommage a pour résultat un titre vide et ne sera donc pas appliquée."
 
 #: /update_node_field
 msgid "C1 – Internal use"
@@ -98464,6 +98752,10 @@ msgctxt "gofast"
 msgid "Click here to change the title metadata"
 msgstr "Cliquez ici pour modifier la métadonnée titre"
 
+#: /user/407
+msgctxt "gofast:gofast_user"
+msgid "Change user avatar"
+msgstr "Changer l'avatar"
 
 #: sites/all/modules/gofast/gofast_kanban/js/gofastKanbanCardDetail.js
 msgctxt "gofast_kanban"
@@ -98484,6 +98776,7 @@ msgstr "Copie"
 msgctxt "gofast_kanban"
 msgid "Are you sure you want to copy this card ?"
 msgstr "Êtes-vous sûr de vouloir copier cette carte?"
+
 #: sites/all/modules/gofast/js/gofastNode.js
 msgid "The description has been successfully updated"
 msgstr "La description a été mise à jour avec succès"
@@ -98849,6 +99142,16 @@ msgstr "!author a apporté des modifications au contenu."
 msgid "Updated member (from userlist %userlist): "
 msgstr "Membre mis à jour (de la liste %userlist) :"
 
+#: /gofast_ajaxification/ajax?url=https%3A%2F%2Fgofast-dev.ceo-vision.com%2Fgofast%2Fnode-info%2F8676
+
+msgctxt "gofast"
+
+msgid "Templates have no source links"
+
+msgstr "Les modèles n'ont pas de liens source"
+
+
+
 #: /devel/php
 msgctxt "gofast"
 msgid "Board columns"
@@ -98891,9 +99194,14 @@ msgstr ""
 "(dernière synchronisation le @sync_datetime)."
 
 #: /node/177
-msgctxt "gofast"
-msgid " and "
-msgstr " et "
+msgctxt "gofast:list_enumeration"
+msgid "!head and !last"
+msgstr "!head et !last"
+
+#: /node/177
+msgctxt "gofast:list_enumeration"
+msgid "!head, !tail"
+msgstr "!head, !tail"
 
 #: /devel/php
 msgctxt "gofast:stats"
@@ -98949,6 +99257,49 @@ msgstr "Pas de statistiques utilisateurs pour l'espace personnel"
 msgctxt "gofast:gofast_stats"
 msgid "There is no subspaces in private space"
 msgstr "Il n'y a pas de sous-espaces dans l'espace personnel"
+
+#: /admin/config/gofast/global/getform/edit-sso
+msgctxt "gofast"
+msgid "Service provider's organization URL is invalid"
+msgstr "L'URL de l'organisation du fournisseur de services est invalide"
+
+#: /admin/config/gofast/global/getform/edit-sso
+msgctxt "gofast"
+msgid "Identity provider's login URL is invalid"
+msgstr "L'URL de connexion du fournisseur d'identité est invalide"
+
+#: /admin/config/gofast/global/getform/edit-sso
+msgctxt "gofast"
+msgid "Identity provider's logout URL is invalid"
+msgstr "L'URL de déconnexion du fournisseur d'identité est invalide"
+
+#: /admin/config/gofast/global/getform/edit-sso
+msgctxt "gofast"
+msgid ""
+"Identity provider's login URL is too long (maximum %max characters, "
+"got %length)"
+msgstr ""
+"L'URL de connexion du fournisseur d'identité est trop longue (au "
+"dessus du maximum de %max caractères, %length reçus)"
+
+#: /admin/config/gofast/global/getform/edit-sso
+msgctxt "gofast"
+msgid ""
+"Identity provider's logout URL is too long (maximum %max characters, "
+"got %length)"
+msgstr ""
+"L'URL de déconnexion du fournisseur d'identité est trop longue (au "
+"dessus du maximum de %max caractères, %length reçus)"
+
+#: /modal/ajax/user/67-40/delete
+msgctxt "gofast"
+msgid "Delete these users"
+msgstr "Supprimer ces utilisateurs"
+
+#: /modal/ajax/user/67-40/delete
+msgctxt "gofast"
+msgid "Are you sure you want to delete these users ?"
+msgstr "Voulez-vous vraiment supprimer ces utilisateurs ?"
 
 #: /gofast/node-actions/8498
 msgid "@first_user and @second_user are co-editing"
@@ -99023,6 +99374,11 @@ msgstr ""
 msgctxt "gofast:gofast_audit"
 msgid "Role modification"
 msgstr "Modification de rôle"
+
+#: /devel/php
+msgctxt "gofast:gofast_audit"
+msgid "Restoration"
+msgstr "Restauration"
 
 #: /devel/php
 msgctxt "gofast"
@@ -99134,9 +99490,34 @@ msgid "GoFAST AI"
 msgstr "GoFAST IA"
 
 #: /devel/php
+msgctxt "gofast:gofast_riot"
+msgid "Hello, I am GoFAST AI. You can ask me for assistance."
+msgstr "Bonjour, je suis GoFAST AI. Vous pouvez me contacter pour obtenir de l'aide."
+
+#: /devel/php
 msgctxt "gofast:gofast_mistral"
 msgid "GoFAST AI settings"
 msgstr "Paramètres d'IA GoFAST"
+
+#: /devel/php
+msgctxt "gofast:gofast_mistral"
+msgid "Spaces where AI tools are available"
+msgstr "Espaces où les outils d'IA sont disponibles"
+
+#: /devel/php
+msgctxt "gofast:gofast_mistral"
+msgid "If no space is filled, AI will be available in all spaces."
+msgstr "Si aucun espace n'est saisi, l'IA sera disponible dans tous les espaces."
+
+#: /devel/php
+msgctxt "gofast:gofast_mistral"
+msgid "GoFAST AI is not allowed in the document location"
+msgstr "GoFAST AI n'est pas autorisé à l'emplacement du document"
+
+#: /devel/php
+msgctxt "gofast:gofast_mistral"
+msgid "You are not allowed to use GoFAST AI"
+msgstr "Vous n'êtes pas autorisé à utiliser GoFAST AI"
 
 #: /devel/php
 msgctxt "gofast:gofast_mistral"
@@ -99490,6 +99871,22 @@ msgctxt "gofast"
 msgid "Apply naming rules"
 msgstr "Appliquer les règles de nommage"
 
+#: /node/8589
+msgctxt "gofast:ajax_file_browser"
+msgid ""
+"You cannot move a space's home page wiki article (%fileName)."
+msgstr ""
+"Vous ne pouvez pas déplacer l'article wiki de la page d'acceuil d'un "
+"espace (%fileName)."
+
+#: /node/8589
+msgctxt "gofast:ajax_file_browser"
+msgid ""
+"You cannot delete a space's home page wiki article (%fileName)."
+msgstr ""
+"Vous ne pouvez pas supprimer l'article wiki de la page d'acceuil d'un "
+"espace (%fileName)."
+
 #: /userlist/8580/edit
 msgctxt "gofast:gofast_userlist"
 msgid ""
@@ -99528,6 +99925,30 @@ msgstr "Un contenu @itemName existe déjà à cet emplacement."
 msgctxt "gofast:gofast_ajax_file_browser"
 msgid "Type here the name of the zip file :"
 msgstr "Saisissez ici le nom du fichier zip :"
+
+#: sites/all/modules/gofast/gofast_ajax_file_browser/gofast_ajax_file_browser.js
+msgctxt "gofast:ajax_file_browser"
+msgid "Select an item to rename."
+msgstr "Selectionnez un élément à renommer."
+
+#: sites/all/modules/gofast/gofast_ajax_file_browser/gofast_ajax_file_browser.js
+msgctxt "gofast:ajax_file_browser"
+msgid "You cannot rename multiple items at once. Select only one."
+msgstr ""
+"Vous ne pouvez pas renommer plus d'un élément à la fois. N'en selectionnez "
+"qu'un."
+
+#: sites/all/modules/gofast/gofast_ajax_file_browser/gofast_ajax_file_browser.js
+msgctxt "gofast:ajax_file_browser"
+msgid "You cannot rename this technical folder: @folder_name."
+msgstr "Vous ne pouvez pas renommer ce dossier technique: @folder_name."
+
+#: sites/all/modules/gofast/gofast_ajax_file_browser/gofast_ajax_file_browser.js
+msgctxt "gofast:ajax_file_browser"
+msgid "You cannot rename spaces from the file browser. You tried to rename \"@space_name\"."
+msgstr ""
+"Vous ne pouvez pas renommer les espaces depuis l'explorateur de fichiers. Vous "
+"avez tenté de renommer \"@space_name\"."
 
 #: /devel/php
 msgctxt "gofast:gofast_link_sharing"
@@ -99635,6 +100056,11 @@ msgctxt "gofast:gofast_search_advanced"
 msgid "There is no result to export"
 msgstr "Il n'y a pas de résultat à exporter"
 
+#: sites/all/modules/gofast/gofast_search_advanced/js/gofast_search_advanced.js
+msgctxt "gofast:gofast_search_advanced"
+msgid "Status"
+msgstr "Statut"
+
 
 #: /devel/php
 msgctxt "gofast"
@@ -99704,13 +100130,24 @@ msgctxt "gofast:gofast_og"
 msgid "A space must have at least two administrators"
 msgstr "Un espace doit avoir au moins deux administrateurs"
 
+#: /spaces/ajax/node/199/admin/bulk-instant-edit-membership/1/user:9-user:6
+msgctxt "gofast:gofast_og"
+msgid "You can't remove the responsible of a space"
+msgstr "Vous ne pouvez pas supprimer le responsable d'un espace"
+
 #: /spaces/ajax/node/199/admin/bulk-instant-edit-membership/1/286-285-375-407	
 msgid "Change memberships in group @group"
 msgstr "Modifier les droits des membres du groupe @group"
 
-#: /devel/php
-msgid "You have selected more than 30 items, please try again with fewer items."
-msgstr "Vous avez sélectionné plus de 30 éléments, veuillez réessayer avec moins d'éléments."
+#: /node/add/alfresco-item?path=/Sites/_Groups/_Wiki%20actions%20test
+msgctxt "gofast:gofast_cmis"
+msgid "No templates available"
+msgstr "Aucun modèle disponible"
+
+#: sites/all/modules/gofast/js/gofast.js
+msgctxt "gofast:gofast_cmis"
+msgid "You can filter only by one space at a time"
+msgstr "Vous ne pouvez filtrer que par un espace à la fois"
 
 #: /gofast_workflow_dashboard_export
 msgctxt "gofast:gofast_workflows"
@@ -99847,6 +100284,11 @@ msgstr "Dépublier ce formulaire"
 
 #: /modal/ajax/node/316/webform/manage
 msgctxt "gofast_webform"
+msgid "Share the webform"
+msgstr "Partager le formulaire"
+
+#: /modal/ajax/node/316/webform/manage
+msgctxt "gofast_webform"
 msgid "Are you sure you want to publish this webform ?"
 msgstr "Êtes-vous sûr de vouloir publier ce formulaire ?"
 
@@ -99937,8 +100379,417 @@ msgstr "a terminé sa tâche de validation et a &lt;strong "
 "style=&#039;color:#c0392b&#039;&gt;refusé&lt;/strong&gt; la validation"
 
 #: /devel/php
+msgctxt "gofast:gofast_workflows"
+msgid "Signature declined"
+msgstr "Signature refusée"
+
+#: /devel/php
 msgid "group manager"
 msgstr "Gestionnaire d'espace"
+
+
+msgctxt "gofast"
+msgid "Subscription informations"
+msgstr "Informations d'abonnement"
+
+msgctxt "gofast"
+msgid "Subscription end date"
+msgstr "Date de fin d'abonnement"
+
+msgctxt "gofast"
+msgid "Internal accounts limit"
+msgstr "Limite de comptes internes"
+
+msgctxt "gofast"
+msgid "External accounts limit"
+msgstr "Limite de comptes externes"
+
+msgctxt "gofast"
+msgid "Specific modules"
+msgstr "Modules spécifiques"
+
+msgctxt "gofast"
+msgid "Specific options"
+msgstr "Options spécifiques"
+
+msgctxt "gofast"
+msgid "License"
+msgstr "Licence"
+
+msgctxt "gofast"
+msgid "Upload a license file"
+msgstr "Charger un fichier de licence"
+
+msgctxt "gofast"
+msgid "License Accounts informations"
+msgstr "Informations sur les comptes"
+
+msgctxt "gofast"
+msgid "Number internal actives"
+msgstr "Nombre de comptes internes actifs"
+
+msgctxt "gofast"
+msgid "Number external actives"
+msgstr "Nombre de comptes externes actifs"
+
+msgctxt "gofast"
+msgid "Number internal inactives"
+msgstr "Nombre de comptes internes inactifs"
+
+msgctxt "gofast"
+msgid "Number external inactives"
+msgstr "Nombre de comptes externes inactifs"
+
+msgctxt "gofast"
+msgid "The GoFast subscription was not renewed on time, support and updates are suspended while the subscription is regularized."
+msgstr "L'abonnement GoFast n'a pas été renouvelé à temps, le support et les mises à jour sont suspendus le temps que l'abonnement soit régularisé."
+
+
+
+#: /devel/php
+msgctxt "gofast:gofast_user"
+msgid "[GOFAST] Annual Reporting – User Verification and GoFAST Subscription Renewal"
+msgstr "[GOFAST] Reporting annuel – Vérification des utilisateurs et renouvellement d’abonnement GoFAST"
+
+#: /devel/php
+msgctxt "gofast:gofast_user"
+msgid ""
+"Hello,<br /><br />\n"
+"As part of the annual renewal of your GoFAST subscription scheduled "
+"for @renewal_date, we are providing you with information regarding "
+"user billing:<br /><br />\n"
+"Our policy for adjusting user accounts is detailed in our <a "
+"href='@mautic_link_cgv'>Terms and Conditions</a> under the section "
+"'PRICING AND PAYMENT TERMS'. <b>Those T&Cs are considered read and "
+"approved.</b><br /><br />\n"
+"The adjustment is made by calculating the difference between the "
+"average number of user accounts opened during the current year and the "
+"user accounts billed on the current subscription (expiring in 30 "
+"days); that is:<br /><br />\n"
+"Number of internal users billed at the start of the subscription = "
+"@limit_internal_users<br />\n"
+"Number of external users billed at the start of the subscription = "
+"@limit_external_users<br /><br />\n"
+"Average number of active internal users during the period = "
+"@annual_average_internal_users<br />\n"
+"Average number of active external users during the period = "
+"@annual_average_external_users<br /><br />"
+msgstr ""
+"Bonjour,<br /><br />Dans le cadre du renouvellement annuel de votre "
+"abonnement GoFAST prévu pour le @renewal_date, nous vous fournissons "
+"des informations relatives à la facturation des utilisateurs:<br "
+"/><br /> Notre politique de régularisation des comptes utilisateurs "
+"est renseigné dans nos <a href='@mautic_link_cgv'>CGVs </a> dans la "
+"rubrique \"TARIFS ET MODALITES DE REGLEMENT\". <b>Ces CGVs sont "
+"considérées comme lues et approuvées.</b><br /><br /> La "
+"régularisation s'opère en effectuant la différence entre la moyenne "
+"des comptes utilisateurs ouverts sur l'année en cours et les comptes "
+"utilisateur facturés sur l'abonnement en cours (arrivant à "
+"échéance dans 30j.) ; soit : <br /><br /> Nombre d’utilisateurs "
+"interne facturé en début d'abonnement = @limit_internal_users<br /> "
+"Nombre d’utilisateurs externe facturé en début d'abonnement  = "
+"@limit_external_users<br /><br /> Moyenne des utilisateurs internes "
+"actifs sur la période = @annual_average_internal_users<br /> Moyenne "
+"des utilisateurs externes actifs sur la période = "
+"@annual_average_external_users<br /><br />"
+
+#: /devel/php
+msgctxt "gofast:gofast_user"
+msgid "After calculation:<br /><br />"
+msgstr "Après calcul :<br /><br /> "
+
+#: /devel/php
+msgctxt "gofast:gofast_user"
+msgid ""
+"If you have any questions, please do not hesitate to contact us.<br "
+"/>Best regards,<br /><br />The GoFAST – CEO-Vision Team"
+msgstr ""
+"Si vous avez des questions, n'hésitez pas à nous contacter.<br "
+"/>Cordialement,<br /><br />L'équipe GoFAST – CEO-Vision"
+
+#: /devel/php
+msgctxt "gofast:gofast_user"
+msgid ""
+"Internal accounts to be adjusted: @annual_average_internal_users - "
+"@limit_internal_users = @difference_internal additional internal user "
+"accounts during the current period. An adjustment invoice will be "
+"issued to cover these @difference_internal additional accounts.<br "
+"/><br />"
+msgstr ""
+"Comptes internes à régulariser : @annual_average_internal_users - "
+"@limit_internal_users = @difference_internal comptes utilisateurs "
+"internes supplémentaire sur la période en cours, une facture de "
+"régularisation vous sera adressée pour régulariser ces "
+"@difference_internal comptes supplémentaires.<br /><br />"
+
+#: /devel/php
+msgctxt "gofast:gofast_user"
+msgid ""
+"External accounts to be adjusted: @annual_average_external_users - "
+"@limit_external_users = 0 – No additional external user accounts "
+"were created during the period, therefore no adjustment invoice will "
+"be issued.<br /><br />"
+msgstr ""
+"Comptes externes à régulariser : @annual_average_external_users - "
+"@limit_external_users = 0 –  Aucun compte utilisateur externe "
+"supplémentaire n’a été créé lors de la période, aucune facture "
+"de régularisation ne vous sera adressée.<br /><br /> "
+
+#: /devel/php
+msgctxt "gofast:gofast_user"
+msgid ""
+"Internal accounts to be adjusted: @annual_average_internal_users - "
+"@limit_internal_users = 0 – No additional internal user accounts "
+"were created during the period, therefore no adjustment invoice will "
+"be issued.<br /><br />"
+msgstr ""
+"Comptes internes à régulariser : @annual_average_internal_users - "
+"@limit_internal_users = 0 – Aucun compte utilisateur interne "
+"supplémentaire n’a été créé lors de la période, aucune facture "
+"de régularisation ne vous sera adressée.<br /><br /> "
+
+#: /devel/php
+msgctxt "gofast:gofast_user"
+msgid ""
+"External accounts to be adjusted: @annual_average_external_users - "
+"@limit_external_users = @difference_external additional external user "
+"accounts during the current period. An adjustment invoice will be "
+"issued to cover these @difference_external additional accounts.<br "
+"/><br />"
+msgstr ""
+"Comptes externes à régulariser : @annual_average_external_users - "
+"@limit_external_users = @difference_external comptes utilisateurs "
+"externes supplémentaire sur la période en cours, une facture de "
+"régularisation vous sera adressée pour régulariser ces "
+"@difference_external comptes supplémentaires.<br /><br /> "
+
+#: /devel/php
+msgctxt "gofast"
+msgid "Make space confidential"
+msgstr "Rendre l'espace confidentiel"
+
+#: /devel/php
+msgctxt "gofast"
+msgid "Make space not confidential"
+msgstr "Rendre l'espace non-confidentiel"
+
+#: /devel/php
+msgctxt "gofast:gofast_cmis"
+msgid "This space is confidential"
+msgstr "Cet espace est confidentiel"
+
+#: /devel/php
+msgctxt "gofast"
+msgid "You cannot change the confidentiality of this space"
+msgstr "Vous ne pouvez pas changer la confidentialité de cet espace"
+
+#: /devel/php
+msgctxt "gofast"
+msgid "You do not have the clearance for this action on this space"
+msgstr "Vous n'avez pas l'habilitation pour cette action sur cet espace"
+
+#: /devel/php
+msgctxt "gofast"
+msgid "You cannot grant or revoke users confidential clearance."
+msgstr ""
+"Vous ne pouvez pas donner ou retirer l'habilitation confidentielle aux "
+"utilisateurs."
+
+#: /devel/php
+msgctxt "gofast"
+msgid ""
+"You cannot remove a user's confidential clearance if they are a member of a "
+"confidential space"
+msgstr ""
+"Vous ne pouvez pas retirer l'habilitation confidentielle d'un utilisateur "
+"s'il sont membre d'un espace confidentiel"
+
+#: /devel/php
+msgctxt "gofast"
+msgid "You can't move a non-confidential subspace in a confidential space"
+msgstr "Vous ne pouvez pas déplacer un sous-espace non-confidentiel dans un "
+"espace confidentiel"
+
+#: /devel/php
+msgctxt "gofast"
+msgid "You can't create a non confidential subspace in a confidential space"
+msgstr ""
+"Vous ne pouvez pas créer un sous-espace non-confidentiel dans un espace "
+"confidentiel"
+
+#: /devel/php
+msgctxt "gofast"
+msgid "A space named \"@title\" already exists in this location. Please choose a different name."
+msgstr "Un espace nommé \"@title\" existe déjà à cet emplacement. Veuillez choisir un nom différent."
+
+#: /devel/php
+msgctxt "gofast"
+msgid "You cannot put a user without confidential clearance in confidential spaces"
+msgstr "Vous ne pouvez pas placer un utilisateur sans habilitation confidentielle dans des espaces confidentiels"
+
+#: /devel/php
+msgctxt "gofast"
+msgid "You cannot remove a user's confidential clearance if they have a pending join request on a confidential space"
+msgstr "Vous ne pouvez pas supprimer l'habilitation confidentielle d'un utilisateur s'il a une demande d'adhésion en attente sur un espace confidentiel"
+
+#: /devel/php
+msgctxt "gofast:gofast_ac"
+msgid "doesn't have the confidential clearance"
+msgstr "n'a pas l'habilitation confidentielle"
+
+#: /devel/php
+msgctxt "gofast"
+msgid "Confidentiality"
+msgstr "Confidentialité"
+
+#: /devel/php; sites/all/modules/gofast/gofast_directory/js/gofastDirectorySpacesTable.js
+msgid "Confidential"
+msgstr "Confidentiel"
+
+#: /devel/php
+msgctxt "gofast"
+msgid "User lists cannot be added to confidential spaces"
+msgstr ""
+"Les listes d'utilisateurs ne peuvent pas être ajoutées aux espaces "
+"confidentiels"
+
+#: /devel/php
+msgctxt "gofast"
+msgid ""
+"User without confidential clearance @username cannot be added to confidential "
+"space"
+msgstr ""
+"L'utilisateur sans habilitation confidentielle @username ne peut être ajouté à "
+"un espace confidentiel"
+
+#: /devel/php
+msgctxt "gofast"
+msgid "Make space confidential?"
+msgstr "Rendre l'espace confidentiel ?"
+
+#: /devel/php
+msgctxt "gofast"
+msgid "Make space non-confidential?"
+msgstr "Rendre l'espace non confidentiel ?"
+
+#: /devel/php
+msgctxt "gofast"
+msgid ""
+"Making this space confidential will remove non-confidential users and user "
+"list members. This cannot be undone."
+msgstr ""
+"Rendre cet espace confidentiel retirera tous les membre utilisateurs "
+"non-confidentiels et toutes les listes membres. Cette action est irréversible."
+
+#: /devel/php
+msgctxt "gofast"
+msgid ""
+"Making this space non-confidential will allow adding non-confidential users "
+"and user lists members again."
+msgstr ""
+"Rendre cet espace non-confidentiel permettra d'ajouter à nouveau des "
+"utilisateurs non-confidentiels et des listes membres."
+
+#: /devel/php
+msgctxt "gofast"
+msgid "You do not have permission to change the confidentiality of contents."
+msgstr ""
+"Vous n'avez pas la permission de changer la confidentialité des contenus."
+
+#: /devel/php
+msgctxt "gofast"
+msgid ""
+"Cannot set space to confidential, space will end up without an administrator "
+"member or responsible."
+msgstr ""
+"Impossible de rendre l'espace confidentiel, il se retrouverait sans membre "
+"administrateur ou sans responsable."
+
+#: /devel/php
+msgctxt "gofast"
+msgid ""
+"Cannot set space to confidential, some subspace is not confidential."
+msgstr ""
+"Impossible de rendre l'espace confidentiel, un sous-espace n'est pas "
+"confidentiel."
+
+#: /devel/php
+msgctxt "gofast"
+msgid ""
+"Cannot remove space confidentiality, its parent space is confidential."
+msgstr ""
+"Impossible de retirer la confidentialité de l'espace, l'espace parent est "
+"confidentiel. "
+
+#: /devel/php
+msgctxt "gofast"
+msgid ""
+"This user's confidential clearance cannot be removed since they are a member "
+"of at least one confidential space."
+msgstr ""
+"L'habilité confidentiellle de cet utilisateur ne peut être retirée puisqu'il "
+"est membre d'au moins un espace confidentiel"
+
+#: /devel/php
+msgctxt "gofast"
+msgid ""
+"Users with confidential clearance will be allowed to be in confidential spaces."
+msgstr ""
+"Les utilisateur avec l'habilitation confidentielle pourront être membre "
+"d'espaces confidentiels."
+
+#: /devel/php
+msgctxt "gofast"
+msgid "Confidential clearance"
+msgstr "Habilitation confidentielle"
+
+#: /devel/php
+msgctxt "gofast"
+msgid ""
+"You are adding members to a confidential space, only users with the "
+"confidential clearance will be suggested."
+msgstr ""
+"Vous ajoutez des membres à un espace confidentiel, seuls les utilisateurs avec "
+"l'habilitation confidentielle seront suggérés."
+
+#: /devel/php
+msgctxt "gofast"
+msgid ""
+"You are pre-adding members to a confidential space, only users with the "
+"confidential clearance will be suggested."
+msgstr ""
+"Vous pré-ajoutez des membres à un espace confidentiel, seuls les utilisateurs "
+"avec l'habilitation confidentielle seront suggérés."
+
+#: /devel/php
+msgctxt "gofast"
+msgid ""
+"When the default classification for spaces is set to a confidential "
+"classification, the default will only be applied if the user creating the "
+"space has the appropriate clearance."
+msgstr ""
+"Quand la classification par défaut des espaces est paramétrée sur une "
+"classification confidentielle, la valeur par défaut ne s'appliquera que si "
+"l'utilisateur créant l'espace a l'habilitation appropriée."
+
+#: /devel/php
+msgctxt "gofast"
+msgid "Classification metadata label"
+msgstr "Libellé de la métadonnée classification"
+
+#: /devel/php
+msgctxt "gofast"
+msgid ""
+"Optional label to display instead of the classification metadata label. When "
+"this field is empty, the default label is used."
+msgstr ""
+"Libellé optionnel à afficher à la place du libellé de la métadonnée "
+"classification. Quand ce champs est vide, le libellé par défaut est utilisé."
+
+#: /devel/php
+msgctxt "gofast:gofast_contextual_menu"
+msgid "This space has subspaces"
+msgstr "Cet espace a des sous-espaces"
 
 #: /devel/php
 msgctxt "gofast"
@@ -99949,6 +100800,11 @@ msgstr "Vous êtes sur le point d'activer ou de débloquer ce(s) utilisateur(s) 
 msgctxt "gofast:gofast_user"
 msgid "This user creation is on standby. {Click here} to validate the account creation"
 msgstr "Cette création d'utilisateur est en attente. {Click here} pour valider la création du compte."
+
+#: /devel/php
+msgctxt "gofast:gofast_user"
+msgid "A user cannot be external and a User-Support simultaneously."
+msgstr "Un utilisateur ne peut être externe et Support-Utilisateur simultanément."
 
 #: /devel/php
 msgctxt "gofast:gofast_tour"
@@ -99963,3 +100819,594 @@ msgstr "Le nœud se trouve dans un dossier miroir, vous ne pouvez donc pas le pa
 msgctxt "gofast:last_event"
 msgid "the field @date_label"
 msgstr "le champ @date_label"
+
+#: /devel/php
+msgctxt "gofast:gofast_og"
+msgid "Some documents can't be deleted because they are locked (being edited)"
+msgstr ""
+"Certains documents ne peuvent pas être supprimés "
+"parce qu'ils sont verrouillés (en cours d'édition)."
+
+#: /devel/php
+msgctxt "gofast:gofast_calendar"
+msgid "Display children's spaces calendars"
+msgstr "Voir les calendriers des espaces enfants"
+
+#: /devel/php
+msgctxt "gofast:gofast_calendar"
+msgid "Space(s)"
+msgstr "Espace(s)"
+
+#: /devel/php
+msgctxt "gofast"
+msgid "You can not perform this action on confidential spaces"
+msgstr "Vous ne pouvez pas effectuer cette action sur des espaces confidentiels"
+
+#: /devel/php
+msgctxt "gofast:gofast_taxonomy"
+msgid "If you trigger new uploads before the current ones are finished, the values chosen here will be applied to the newer uploads as well."
+msgstr "Si vous déclenchez de nouveaux téléchargements avant que les téléchargements actuels ne soient terminés, les valeurs choisies ici seront également appliquées aux nouveaux téléchargements."
+
+msgid "Closing Date"
+msgstr "Date de clôture"
+
+msgid "No actions available"
+msgstr "Aucune action disponible"
+
+#: /devel/php
+msgctxt "gofast"
+msgid "Restore space"
+msgstr "Restaurer l'espace"
+
+#: /devel/php
+msgctxt "gofast"
+msgid "Restore"
+msgstr "Restaurer"
+
+#: /devel/php
+msgctxt "gofast"
+msgid "Restore"
+msgstr "Restaurer"
+
+#: /devel/php; sites/all/modules/gofast/gofast_og/gofast_og.js
+msgctxt "gofast"
+msgid "1 item remaining..."
+msgid_plural "@count items remaining..."
+msgstr[0] "1 élément restant..."
+msgstr[1] "@count éléments restants..."
+
+#: /devel/php
+msgctxt "gofast:og"
+msgid ""
+"Are you sure you want to delete this space ? This destructive action may not "
+"be fully undone."
+msgstr ""
+"Voulez-vous vraiment supprimer cet espace&nbsp;? Cette action est "
+"destructive et peut ne pas être complètement annulable."
+
+#: /devel/php
+msgctxt "gofast:og"
+msgid ""
+"When deleting a space, some elements will be definitively lost and will not "
+"be recoverable:"
+msgstr ""
+"Lors de la suppression d'un espace, certains éléments seront définitivement "
+"perdus et irrécupérables&nbsp;:"
+
+#: /devel/php
+msgctxt "gofast:og"
+msgid ""
+"Documents with multiple locations will be removed from ![em]their locations "
+"in this space![/em]. The document will still be available within their other "
+"locations, ![em]including broadcasted locations![/em]."
+msgstr ""
+"Les documents avec plusieurs emplacements verront ![em]leurs emplacements dans "
+"cet espace![/em] supprimés. Le document sera toujours disponible depuis ses "
+"autres emplacements, ![em]emplacements broadcastés inclus![/em]."
+
+#: /devel/php
+msgctxt "gofast:og"
+msgid ""
+"Directories with multiple locations in this space which were created "
+"elsewhere will be removed from ![em]their locations in this space![/em]."
+msgstr ""
+"Les répertoires avec plusieurs emplacements dans cet espace créés ailleurs "
+"verront ![em]leurs emplacements dans cet espace![/em] supprimés."
+
+#: /devel/php
+msgctxt "gofast:og"
+msgid ""
+"Directories with multiple locations which were originally created in this "
+"space will be removed from ![em]all their locations![/em]."
+msgstr ""
+"Les répertoires avec plusieurs emplacements originalement créés dans cet "
+"espace verront ![em]tous leurs emplacements![/em] supprimés."
+
+#: /devel/php
+msgctxt "gofast"
+msgid "Step @number: !description"
+msgstr "Etape @number&nbsp;: !description"
+
+#: /devel/php
+msgctxt "gofast"
+msgid "Are you sure you want to restore this space?"
+msgstr "Êtes-vous sûr de vouloir restaurer cet espace&nbsp;?"
+
+#: /devel/php
+msgctxt "gofast"
+msgid "Restore folder."
+msgstr "Restaurer le dossier."
+
+#: /devel/php
+msgctxt "gofast"
+msgid "Restore documents."
+msgstr "Restaurer les documents."
+
+#: /devel/php
+msgctxt "gofast"
+msgid "Restore space."
+msgstr "Restaurer l'espace."
+
+#: /devel/php
+msgid "Restore this space"
+msgstr "Restaurer cet espace"
+
+#: /devel/php
+msgctxt "gofast"
+msgid "Not allowed"
+msgstr "Non autorisé"
+
+#: /devel/php
+msgctxt "gofast"
+msgid "Deleted folder node does not exist"
+msgstr "Le noeud du dossier supprimé n'existe pas"
+
+#: /devel/php
+msgctxt "gofast"
+msgid "Folder with same name already exists in restoration location"
+msgstr ""
+"Un dossier avec le même nom existe déjà dans l'emplacement de restauration"
+
+#: /devel/php
+msgctxt "gofast"
+msgid "Unknown error while restoring folder"
+msgstr "Erreur inconnue durant la restauration du dossier"
+
+#: /devel/php
+msgctxt "gofast"
+msgid "Unknown error while restoring space contents"
+msgstr "Erreur inconue durant la restauration des contenus de l'espace"
+
+#: /devel/php
+msgctxt "gofast"
+msgid "Metadata was added"
+msgstr "Les métadonnées ont été ajoutées"
+
+#: /devel/php
+msgctxt "gofast:gofast_naming_rules"
+msgid "All the fields required by the naming rule are not filled. You have to fill all the required fields in order to apply the category."
+msgstr "Tous les champs requis par la règle de nommage ne sont pas renseignés. Vous devez les remplir tous pour appliquer la catégorie."
+
+#: /devel/php
+msgctxt "gofast:gofast_naming_rules"
+msgid ""
+"The selected category has the following naming rule: "
+"&lt;rule&gt;&lt;/rule&gt;"
+msgstr ""
+"La catégorie sélectionnée a la règle de nommage suivante : "
+"&lt;rule&gt;&lt;/rule&gt;"
+
+#: /devel/php
+msgctxt "gofast:gofast_naming_rules"
+msgid ""
+"The selected category has the following naming rule: &lt;rule&gt;&lt;/rule&gt;. Please be sure to know what you are doing before applying it."
+msgstr ""
+"La catégorie sélectionnée a la règle de nommage suivante : &lt;rule&gt;&lt;/rule&gt ;. Assurez-vous de savoir ce que vous faites avant de l'appliquer."
+
+msgctxt "gofast:gofast_naming_rules"
+msgid "One of these fields contains unsupported characters and the naming rule would produce an invalid title:"
+msgstr "L'un de ces champs contient des caractères non pris en charge et la règle de nommage générerait un titre non valide :"
+
+msgctxt "gofast:gofast_naming_rules"
+msgid "Characters not allowed: "
+msgstr "Caractères non autorisés : "
+
+msgctxt "gofast:gofast_naming_rules"
+msgid "Naming rule not applied: \"@field\" contains unsupported characters (@chars)."
+msgstr "Règle de nommage non respectée : « @field » contient des caractères non pris en charge (@chars)."
+
+msgctxt "gofast"
+msgid "Hide the chat on @sitename"
+msgstr "Masquer le chat sur @sitename"
+
+#: /devel/php
+msgctxt "gofast:gofast_link_sharing"
+msgid "shared with you a folder on "
+msgstr "a partagé avec vous un dossier sur "
+
+#: /modal/ajax/manage-mail-sharing
+msgctxt "gofast:gofast_link_sharing"
+msgid "Information about shared folders"
+msgstr "Informations sur les dossiers partagés"
+
+#: /devel/php
+msgctxt "gofast:gofast_link_sharing"
+msgid "You shared @count folders with users in @site_name"
+msgstr "Vous avez partagé @count dossiers avec des utilisateurs sur @site_name"
+
+#: /devel/php
+msgctxt "gofast:gofast_link_sharing"
+msgid "You shared !folder_link with:"
+msgstr "Vous avez partagé !folder_link avec :"
+
+#: /devel/php
+msgctxt "gofast:gofast_link_sharing"
+msgid "You shared @count folders with:"
+msgstr "Vous avez partagé @count dossiers avec :"
+
+#: /devel/php
+msgctxt "gofast"
+msgid "Long-term Security Support by Tag1 D7ES"
+msgstr "Support Sécurité Long-terme par Tag1 D7ES"
+
+#: /devel/php
+msgid "Rename this document"
+msgstr "Renommer ce document"
+
+#: /devel/php
+msgid "Rename this folder"
+msgstr "Renommer ce dossier"
+
+#: /devel/php
+msgctxt "gofast:gofast_views"
+msgid "The user has been unblocked or activated"
+msgstr "L'utilisateur a été débloqué ou activé"
+
+#: /devel/php
+msgctxt "gofast:gofast_user"
+msgid "Adding external users to @space_type is disabled by the current platform configuration."
+msgstr "L'ajout d'utilisateurs externes à des @space_type est désactivé par la configuration actuelle de la plateforme."
+
+#: /devel/php
+msgctxt "gofast"
+msgid "Classification"
+msgstr "Classification"
+
+#: /devel/php
+msgctxt "gofast:gofast_user"
+msgid "Users are being deleted in the background...<br />This process may take some time."
+msgstr "Les utilisateurs sont en train d'être supprimés en arrière-plan...<br />Ce processus peut prendre un certain temps."
+
+#: sites/all/modules/gofast/gofast_ac/js/gofast_ac.js
+msgctxt "gofast:gofast_ac"
+msgid "This field can only have one tag"
+msgstr "Ce champ ne peut avoir qu'une seule étiquette"
+
+#: sites/all/modules/gofast/gofast_ac/js/gofast_ac.js
+msgctxt "gofast:gofast_ac"
+msgid "This field allows up to @count tags only"
+msgstr "Ce champ accepte un maximum de @count étiquettes."
+
+#: /devel/php
+msgctxt "gofast"
+msgid "You have selected only spaces on which you are already member"
+msgstr "Vous avez sélectionné uniquement des espaces dont vous êtes déjà membre."
+
+#: /devel/php
+msgctxt "gofast_og:space_archive"
+msgid "All the spaces you have selected are already archived."
+msgstr "Tous les espaces que vous avez sélectionnés sont déjà archivés."
+
+#: /devel/php
+msgctxt "gofast_og:space_archive"
+msgid ""
+"The selected spaces could not be archived because you either do not have the "
+"permissions to archive some spaces, some are already archived or have subspaces"
+msgstr ""
+"Les espaces sélectionnés n'ont pas pu être archivés car vous ne disposez pas des autorisations "
+"nécessaires pour archiver certains espaces, certains sont déjà archivés ou comportent des sous-espaces."
+
+#: /devel/php
+msgctxt "gofast_og:space_archive"
+msgid ""
+"You do not have the permission to archive some of the spaces you have selected, some are already "
+"archived and some have subspaces. These spaces will not be archived."
+msgstr ""
+"Vous n'avez pas l'autorisation d'archiver certains des espaces que vous avez sélectionnés, certains "
+"sont déjà archivés et d'autres contiennent des sous-espaces. Ces espaces ne seront pas archivés."
+
+#: /devel/php
+msgctxt "gofast_og:space_archive"
+msgid "You do not have the permission to archive the space(s) you selected."
+msgstr "Vous n'avez pas l'autorisation d'archiver le(s) espace(s) que vous avez sélectionné(s)."
+
+#: /devel/php
+msgctxt "gofast_og:space_archive"
+msgid "Some spaces you have selected have subspaces. These spaces will not be archived."
+msgstr ""
+"Certains des espaces que vous avez sélectionnés contiennent des sous-espaces. Ces espaces ne seront pas archivés."
+
+#: /devel/php
+msgctxt "gofast_og:space_archive"
+msgid "This space cannot be archived."
+msgstr "Cet espace ne peut pas être archivé."
+
+#: /devel/php
+msgctxt "gofast_og:space_archive"
+msgid "Some spaces you have selected are already archived and will not be re-archived."
+msgstr "Certains espaces que vous avez sélectionnés sont déjà archivés et ne seront pas réarchivés."
+
+#: /devel/php
+msgctxt "gofast_og:space_archive"
+msgid "You do not have the permission to archive some spaces. These spaces will not be archived."
+msgstr "Vous n'avez pas l'autorisation d'archiver certains espaces. Ces espaces ne seront pas archivés."
+
+#: /devel/php
+msgctxt "gofast"
+msgid "Are you sure you want to archive these spaces?"
+msgstr "Êtes-vous sûr de vouloir archiver ces espaces ?"
+
+#: /devel/php
+msgctxt "gofast:gofast_og"
+msgid "Archiving your space(s)"
+msgstr "Archiver votre ou vos espaces"
+
+#: /devel/php
+msgctxt "gofast_og:space_archive"
+msgid "Archive the space(s)"
+msgstr "Archiver le(s) espace(s)"
+
+#: /devel/php
+msgctxt "gofast_og:space_archive"
+msgid "You do not have the permission to archive this space @space."
+msgstr "Vous n'avez pas l'autorisation d'archiver cet espace @space."
+
+#: /devel/php
+msgctxt "gofast_og:space_archive"
+msgid "The space @space cannot be archived because it contains sub-spaces."
+msgstr "L'espace @space ne peut pas être archivé car il contient des sous-espaces."
+
+#: /devel/php
+msgctxt "gofast_og:space_archive"
+msgid "@space is already archived"
+msgstr "@space est déjà archivé"
+
+#: /devel/php
+msgctxt "gofast:og"
+msgid "Archiving space: @space"
+msgstr "Archivage de l'espace : @space"
+
+#: /devel/php
+msgctxt "gofast:space_archive"
+msgid "The spaces have been archived successfully"
+msgstr "Les espaces ont été archivés avec succès"
+
+#: /admin/config/gofast/global
+msgctxt "gofast:gofast_ldap"
+msgid "Maximum password history must be an integer"
+msgstr "L'historique maximal des mots de passe doit être un nombre entier."
+
+#: /admin/config/gofast/global
+msgctxt "gofast:gofast_ldap"
+msgid "Minimum password length must be an integer"
+msgstr "La longueur minimale du mot de passe doit être un nombre entier."
+
+#: /admin/config/gofast/global
+msgctxt "gofast:gofast_ldap"
+msgid "Minimum password lifetime must be an integer"
+msgstr "La durée de vie minimale du mot de passe doit être un nombre entier."
+
+#: /admin/config/gofast/global
+msgctxt "gofast:gofast_ldap"
+msgid "Maximum password lifetime must be an integer"
+msgstr "La durée de vie maximale du mot de passe doit être un nombre entier."
+
+#: /admin/config/gofast/global
+msgctxt "gofast:gofast_ldap"
+msgid "Days number before warning must be an integer"
+msgstr "Le nombre de jours avant la notification doit être un nombre entier."
+
+#: /admin/config/gofast/global
+msgctxt "gofast:gofast_ldap"
+msgid "The password policy value for « Number of passwords stored into history » must be a minimum of : @value"
+msgstr "La valeur de la politique de mot de passe pour « Nombre de mots de passe enregistrés dans l'historique » doit être au minimum de : @value"
+
+#: /admin/config/gofast/global
+msgctxt "gofast:gofast_ldap"
+msgid "The password policy value for « Minimum password length » must be a minimum of : @value"
+msgstr "La valeur de la politique de mot de passe pour la « longueur minimale du mot de passe » doit être au minimum de : @value"
+
+#: /admin/config/gofast/global
+msgctxt "gofast:gofast_ldap"
+msgid "The password policy value for « Minimum password lifetime » must be a minimum of : @value"
+msgstr "La valeur de la stratégie de mot de passe pour « Durée de vie minimale du mot de passe » doit être au minimum de : @value"
+
+#: /admin/config/gofast/global
+msgctxt "gofast:gofast_ldap"
+msgid "The password policy value for « Maximum password lifetime » must be a minimum of : @value"
+msgstr "La valeur de la stratégie de mot de passe pour « Durée de vie maximale du mot de passe » doit être au minimum de : @value"
+
+#: /admin/config/gofast/global
+msgctxt "gofast:gofast_ldap"
+msgid "The password policy value for « Number of days before expiration when users shall be notified » must be a minimum of : @value"
+msgstr "La valeur de la politique de mot de passe pour « Nombre de jours avant l'expiration pendant lesquels les utilisateurs doivent être avertis » doit être au minimum de : @value"
+
+#: /admin/config/gofast/global
+msgctxt "gofast:gofast_ldap"
+msgid "The password policy value for « Number of days before expiration when users shall be notified » should not be greater than the value of « Maximum password lifetime »"
+msgstr "La valeur de la politique de mot de passe pour « Nombre de jours avant l'expiration pendant lesquels les utilisateurs doivent être avertis » ne doit pas être supérieure à la valeur de « Durée de vie maximale du mot de passe »."
+
+#: /devel/php
+msgctxt "gofast:gofast_cmis"
+msgid "This document is confidential"
+msgstr "Ce document est confidentiel"
+
+
+#: /user
+msgctxt "gofast:gofast_riot"
+msgid "Element chat settings"
+msgstr "Paramètres du chat Element"
+
+#: /user
+msgctxt "gofast:gofast_riot"
+msgid "Recovery key"
+msgstr "Clé de récupération"
+
+#: /user
+msgctxt "gofast:gofast_riot"
+msgid "Copy recovery key to clipboard"
+msgstr "Copier la clé de récupération dans le presse papier"
+
+#: /devel/php
+msgctxt "gofast:gofast_directory"
+msgid "Permissions and profiles can only be changed one user at a time."
+msgstr "Les permissions et profils ne peuvent être modifiés que sur un utilisateur à la fois."
+
+msgctxt "gofast:gofast_directory"
+msgid "You cannot change your own permissions and profiles."
+msgstr "Vous ne pouvez pas modifier vos propres permissions et profils."
+
+msgctxt "gofast"
+msgid "You are not authorized to perform this action on your own account"
+msgstr "Vous n'êtes pas autorisé à effectuer cette action sur votre propre compte"
+
+#: /
+msgctxt "gofast"
+msgid "No RSS feed configured"
+msgstr "Aucun flux RSS configuré"
+
+msgctxt "gofast:gofast_mail_inbound_outbound"
+msgid "Opens a window with the mail module options"
+msgstr "Ouvre une fenêtre avec les options du module Courrier"
+
+msgctxt "gofast:gofast_mail_inbound_outbound"
+msgid "Mail subject"
+msgstr "Objet du courrier"
+
+msgctxt "gofast:gofast_mail_inbound_outbound"
+msgid "Registration number"
+msgstr "Numéro d'enregistrement"
+
+msgctxt "gofast:gofast_mail_inbound_outbound"
+msgid "Mail origin"
+msgstr "Origine du courrier"
+
+msgctxt "gofast:gofast_mail_inbound_outbound"
+msgid "Mail reception date"
+msgstr "Date d'arrivée du courrier"
+
+msgctxt "gofast:gofast_mail_inbound_outbound"
+msgid "Assignment"
+msgstr "Imputation"
+
+msgctxt "gofast:gofast_mail_inbound_outbound"
+msgid "Copies"
+msgstr "Copie(s)"
+
+msgctxt "gofast:gofast_mail_inbound_outbound"
+msgid "Answer required"
+msgstr "Nécessité de répondre"
+
+msgctxt "gofast:gofast_mail_inbound_outbound"
+msgid "Sending department"
+msgstr "Département de provenance"
+
+msgctxt "gofast:gofast_mail_inbound_outbound"
+msgid "Mail sending date"
+msgstr "Date de départ du courrier"
+
+msgctxt "gofast:gofast_mail_inbound_outbound"
+msgid "Mail recipient"
+msgstr "Destinataire du courrier"
+
+msgctxt "gofast:gofast_mail_inbound_outbound"
+msgid "Acknowledgement of receipt number"
+msgstr "Numéro d'accusé de réception"
+
+msgctxt "gofast:gofast_mail_inbound_outbound"
+msgid "Mail reference"
+msgstr "Référence du courrier"
+
+msgctxt "gofast:gofast_mail_inbound_outbound"
+msgid "Mail reception/sending date"
+msgstr "Date d'arrivée/départ du courrier"
+
+msgctxt "gofast:gofast_mail_inbound_outbound"
+msgid "These documents were shared with you by an outgoing mail process"
+msgstr "Ces documents vous ont été partagés par un processus de courrier sortant"
+
+msgctxt "gofast:gofast_mail_inbound_outbound"
+msgid "Mail sender"
+msgstr "Émetteur du courrier"
+
+msgctxt "gofast:gofast_mail_inbound_outbound"
+msgid "Mail instruction"
+msgstr "Instruction du courrier"
+
+msgctxt "gofast:gofast_mail_inbound_outbound"
+msgid "Recipient department"
+msgstr "Service destinataire"
+
+msgctxt "gofast:gofast_mail_inbound_outbound"
+msgid "Recipient person"
+msgstr "Personne destinataire"
+
+msgctxt "gofast:gofast_mail_inbound_outbound"
+msgid "Assign to"
+msgstr "Imputer à"
+
+msgctxt "gofast:gofast_mail_inbound_outbound"
+msgid "Mandatory answer"
+msgstr "Réponse obligatoire"
+
+msgctxt "gofast:gofast_mail_inbound_outbound"
+msgid "Link between inbound and outbound mail"
+msgstr "Lien entre courrier entrant et sortant"
+
+msgctxt "gofast:gofast_mail_inbound_outbound"
+msgid "This space is marked as a mail processing space"
+msgstr "Cet espace est marqué comme un espace de traitement du courrier"
+
+msgctxt "gofast:gofast_mail_inbound_outbound"
+msgid "User list associated with this mail processing space:"
+msgstr "Liste d'utilisateurs associée à cet espace de traitement du courrier :"
+
+msgctxt "gofast:gofast_mail_inbound_outbound"
+msgid "Space associated with this mail processing space:"
+msgstr "Espace associé à cet espace de traitement du courrier :"
+
+msgctxt "gofast:gofast_mail_inbound_outbound"
+msgid "Space processing the mails"
+msgstr "Espace traitant les courriers"
+
+msgctxt "gofast:gofast_mail_inbound_outbound"
+msgid "Space processing the inbound mails"
+msgstr "Espace traitant les courriers entrants"
+
+msgctxt "gofast:gofast_mail_inbound_outbound"
+msgid "Space processing the outbound mails"
+msgstr "Espace traitant les courriers sortants"
+
+msgctxt "gofast:gofast_mail_inbound_outbound"
+msgid "User list of the people who receive and assign the mail"
+msgstr "Liste d'utilisateurs des personnes qui reçoivent le courrier et l'imputent"
+
+msgctxt "gofast:gofast_mail_inbound_outbound"
+msgid "User list of the people who check the assignment and can change it"
+msgstr "Liste d'utilisateurs des personnes qui vérifient l'imputation et qui peuvent la modifier"
+
+msgctxt "gofast:gofast_mail_inbound_outbound"
+msgid "User list of the people who check the assignment, can change it and distribute the mail to the heads of the departments"
+msgstr "Liste d'utilisateurs des personnes qui vérifient l'imputation, qui peuvent la modifier et qui distribuent le courrier aux responsables des différents services"
+
+msgctxt "gofast:gofast_mail_inbound_outbound"
+msgid "User list processing the mails"
+msgstr "Liste d'utilisateurs traitant les courriers"
+
+msgctxt "gofast:gofast_stats"
+msgid "Reserved to the administrators of the space"
+msgstr "Réservé aux administrateurs de l'espace"
+
+msgctxt "gofast"
+msgid "Personal space of @name"
+msgstr "Espace personnel de @name"

@@ -8,7 +8,7 @@
 
 
 (function ($, Gofast, Drupal) {
-  
+
   Gofast = Gofast || {};
 
   Drupal.settings.gofast = Drupal.settings.gofast || {};
@@ -104,6 +104,12 @@
               'is_timestamp': is_timestamp,
             },
             success: function (content, status) {           
+              if (content && content.status == "error") {
+                Gofast.toast(content.msg, "error");
+                spinner.addClass('d-none');
+                resetSelectValue(elem);
+                return;
+              }
               $.get(Drupal.settings.gofast.baseUrl + "/gofast/metadata/node/" + Gofast.get("node").id + "/load", function (data) {
                 data = JSON.parse(data);
                 if(filed_name == "language"){
@@ -128,7 +134,6 @@
                     }
                   })
                 }
-                Drupal.settings.gofast.context.entity = data;
                 Gofast.decrementMetadataEditCounter();
               });
               spinner.addClass('d-none');
@@ -146,9 +151,9 @@
         let isSwitchInput = field.hasClass("document__editable--switch");
         let select = fieldContainer.hasClass("document__editable--select");
         let selectAcAuthor = fieldContainer.hasClass("document__editable--selectAcAuthor");
+        let userSelect = field.hasClass("document__editable--userselect");
         let selectTags = fieldContainer.hasClass("document__editable--tags");
         let spinner = fieldContainer.parent().find(".document__editable--spinner");
-        let GofastMetadataURLPattern = /^((([A-Za-z]{3,9}:(?:\/\/)?)(?:[\-;:&=\+\$,\w]+@)?[A-Za-z0-9\.\-]+|(?:www\.|[\-;:&=\+\$,\w]+@)[A-Za-z0-9\.\-]+)((?:\/[\+~%\/\.\w\-_]*)?\??(?:[\-\+=&;%@\.\w_]*)#?(?:[\.\!\/\\\w]*))?)$/;
 
         label.on('click', gofastMetadataLabelClickEvent)
 
@@ -204,9 +209,20 @@
           
           field.on("select2:selecting", function (data) {
             $(this).attr("data-original-value", $(this).val());
+          })
+          field.on("select2:selecting select2:clearing", function (data) {
+            if (data.currentTarget.classList.contains("external-links")) {
+              return;
+            }
+            // no wrapper: something is wrong, don't save anything
+            if (!label[0]) {
+              return;
+            }
+
+            Gofast.incrementMetadataEditCounter();
           });
 
-          field.on('select2:select select2:clear', function (data) {
+          field.on('select2:select select2:clear', async function (data) {
             if (data.currentTarget.classList.contains("external-links")) {
               return;
             }
@@ -236,7 +252,10 @@
               label.html(selectTemplate);
             }
             // we pass the value as a param instead of setting it to the field in order to avoid showing the user a technical/english value
-            postMetadata($(this), spinner, data.params.data.id);
+            await postMetadata($(this), spinner, data.params.data.id);
+            if(['select2:select', 'select2:clear'].includes(data.type)){
+              Gofast.decrementMetadataEditCounter();
+            }
           });
         }
         // END of normal slect process
@@ -280,7 +299,7 @@
 
           function onPasteEvent(e) {
             const pastedData = e.originalEvent.clipboardData.getData('text');
-            if (GofastMetadataURLPattern.test(pastedData)) {
+            if (Gofast.isValidUrl(pastedData)) {
               // if needed, hide dropdown and unhide it on select2:open event
               setTimeout(() => {
                 // e.originalEvent.target.dispatchEvent(keyboardEvent);
@@ -339,7 +358,7 @@
                 var hasValid = true;
                 newTagsArray.forEach((element, index) => {
                   const external_link_url = element;
-                  if (!GofastMetadataURLPattern.test(external_link_url)) {
+                  if (!Gofast.isValidUrl(external_link_url)) {
                     Gofast.toast(external_link_url + " " + Drupal.t("is not a valid url", {}, {context: 'gofast:gofast_cmis'}), "warning");
                     delete newTagsArray[index];
                     // Remove the tag in the select2
@@ -453,6 +472,50 @@
           });
         }
 
+        if (userSelect == true) {
+          let spaceId = field.attr("data-id");
+          // parse default data expected by the userselect editable input
+          let defaultUser = JSON.parse(atob(field.attr("data-user")));
+          defaultUser.id = defaultUser.uid;
+          defaultUser.text = defaultUser.firstname + " " + defaultUser.lastname;
+          GofastEditableInput(field[0], defaultUser , "userselect", {
+            isEditable : true,
+            searchUrl : (search) => {
+              // this endpoint originally intended for kanban is actually the space-restricted autocomplete we need
+              return window.origin + "/kanban/autocomplete/user/" + spaceId + "/" + search;
+            },
+            save: (newData) => {
+              postMetadata(field, spinner, newData.uid);
+            },
+            templates: {
+                value: function(data){
+                    if (!data || data.uid == 0) {
+                        return "<div class=\"text-muted\">" + Drupal.t("Nobody assigned") + "</div>";
+                    }
+                    var displayName = data.firstname + " " + data.lastname;
+                    return "<div class=\"d-flex flex-row-fluid justify-content-end align-items-center text-truncate\">" + displayName + "<div class=\"ml-2 symbol symbol-20 flex-shrink-0\"> <img alt=\"Pic\" src=\"" + data.picture + "\"></div></div>";
+                },
+                selectionItemTemplate: function(user){
+                  let template = "<div class=\"d-flex align-items-center\"> <div>" + Drupal.t('Nobody selected', {}, {context: "gofast"}) + "</div></div>";
+                  if(user){
+                      template = "<div class=\"select2__suggestionItem d-flex align-items-center\">" + (user.picture ? "<div class=\"suggestion__avatar symbol symbol-25 mr-4\"> <img alt=\"Gofast user avatar\" loading=\"lazy\" src=\"" + user.picture + "\"> </div>" : "") + " <div class=\"suggestion__label\">" + user.text + "</div></div>";
+                  }
+                  return $(template)
+                },
+                suggestionItemTemplate: function(user) {
+                  if (!user.uid) {
+                    user = defaultUser;
+                  }
+                  let picture = user.picture ? `<div class="suggestion__avatar symbol symbol-20 mr-2"> <img alt="Gofast user avatar" loading="lazy" src="${user.picture}"></div>` : "";
+                  let text = `<div class="suggestion__label text-truncate" id="itemTextContainer">${user.text}</div>`;
+                  let $template = $(`<div class="select2__suggestionItem d-flex align-items-center w-100"> ${picture} ${text}</div>`);
+
+                  return $template;
+              }
+            }
+        })
+        }
+
         // End Select With Autocomplete Process
         
         
@@ -536,6 +599,11 @@
     });
   }
 
+  // Display manage_taxonomy modal from a full page node context
+  Gofast.metadata.manageTaxonomy = async function(nid) {
+    Drupal.CTools.Modal.showCtoolsModal("/modal/nojs/manage-taxonomy?page=true&upload=" + nid);
+  }
+
   Gofast.metadata.updateExternalLink = function(e, url){
     // Prevent triggering editable input
     e.preventDefault()
@@ -551,4 +619,64 @@
     const defaultIcon = $('<i class="fas fa-external-link-square-alt mr-2"></i>')
     $(e.target).replaceWith(defaultIcon)
   }
+
+  // Metadata hook definitions
+  Gofast.hooks ??= {};
+  Gofast.hooks.beforePostMetadata ??= [];
+  Gofast.hooks.beforePostMetadata.push(
+    /**
+     * Hook to display a confirmation modal when changing a space classification would change its confidentiality.
+     * @param {JQuery<HTMLElement>} elem Metadata input element that was just updated
+     * @param {string} value Input value
+     * @returns A promise that resolves to true if the metadata should be updated.
+     */
+    async function classificationConfidentialityConfirm(elem, value) {
+      // Is input for field_classification
+      if (elem.attr("name") !== "field_classification") {
+        return true;
+      }
+
+      // Check The parent info tab id to know if we're editing a space or not.
+      // This is not an ideal solution...
+      const $inputParentInfoTab = elem.parents('.gofast_metadata_infotab');
+      const isEditingSpace = $inputParentInfoTab.attr('id') === 'space__infotab'
+      if (!isEditingSpace) {
+        return true;
+      }
+
+      const getOptionConfidentiality = ($opt) =>
+        $opt.exists() ? JSON.parse($opt.attr("data-confidentiality")) ?? false : false;
+
+      const $selectedOption = elem.find("option[selected]").first();
+      const oldConfidentialityValue = getOptionConfidentiality($selectedOption);
+
+      const newOptionSelector = value && 'option[value="' + value.replace('"', '\\"') + '"]';
+      // Explicitly handle selector being falsy (no value) by wrapping the
+      // ternary with a JQuery call. When called with null, the result is empty.
+      const $newOption = $(newOptionSelector ? elem.find(newOptionSelector) : null);
+      const newConfidentialityValue = getOptionConfidentiality($newOption);
+
+      const confidentialityChanged = oldConfidentialityValue !== newConfidentialityValue;
+
+      if (!confidentialityChanged) {
+        return true;
+      }
+
+      // Retrieve current space node ID.
+      const spaceId = elem.parents('[data-nid]').first().attr('data-nid');
+
+      const query = new URLSearchParams({ classification: value });
+
+      const modalUrl =
+        "/modal/ajax/node/" +
+        spaceId +
+        "/confidentiality/update?" +
+        query.toString();
+
+      Drupal.CTools.Modal.showCtoolsModal(modalUrl);
+      // The classification metadata will be updated by the modal form itself,
+      // polling/refreshing will update the visual display.
+      return false;
+    },
+  );
 })(jQuery, Gofast, Drupal);

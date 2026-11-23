@@ -2,9 +2,9 @@
     "use strict";
   
     // Refresh user thumbnail when updating profile avatar.
-    $(document).on('kanbanLogoChange', function(e, src) {
-      if (src) {
-        $("#gofastKanbanTaskLogo").css("backgroundImage", "url(" + src + "?id=" + Math.random() * 1000 + ")");
+    $(document).on('kanbanLogoChange', function(e, data) {
+      if (data.src) {
+        $("#gofastKanbanTaskLogo").css("backgroundImage", "url(" + data.src + "?id=" + Math.random() * 1000 + ")");
       }
     });
   

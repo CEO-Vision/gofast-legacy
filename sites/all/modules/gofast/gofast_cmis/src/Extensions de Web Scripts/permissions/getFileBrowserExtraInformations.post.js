@@ -145,12 +145,15 @@ var currentfolder = requestparams[2].substr(15);
 var output_files_dates = [];
 var output_files_permissions = [];
 var output_files_visibility = [];
+var output_files_properties = [];
 var output_folders_alf_refs = [];
 
 var output_folders_visibility = [];
 var output_folders_permissions = [];
+var output_folders_properties = [];
 
 var output_current_folder_permissions = [];
+var output_current_folder_properties = [];
 
 var output_files_nids = [];
 var output_files_node_refs = [];
@@ -225,6 +228,18 @@ if (files !== null) {
                 output_files_visibility.push(null);
             }
 
+            try {
+              // Retrieve properties
+              var mappedProperties = {};
+              Object.keys(node.properties).forEach((k) => {
+                mappedProperties[utils.shortQName(k)] = node.properties[k];
+              });
+              output_files_properties.push(mappedProperties);
+            } catch (e) {
+              logger.log(e);
+              output_files_properties.push(null);
+            }
+
         }
     }
 }
@@ -238,6 +253,7 @@ if (folders !== null) {
         if (node === null) {
             output_folders_visibility.push(null)
             output_folders_permissions.push(null);
+            output_folders_properties.push(null);
         } else {
 
             try {
@@ -269,6 +285,12 @@ if (folders !== null) {
             try {
                 var alfRef = node.id;
                 output_folders_alf_refs.push(alfRef);
+                // Retrieve properties
+                var mappedProperties = {};
+                Object.keys(node.properties).forEach((k) => {
+                  mappedProperties[utils.shortQName(k)] = node.properties[k];
+                });
+                output_folders_properties.push(mappedProperties);
             } catch(e){
                 logger(e);
             }
@@ -282,6 +304,7 @@ var node = companyhome.childByNamePath(currentfolder);
 
 if (node === null) {
     output_current_folder_permissions.push(null);
+    output_current_folder_properties = null;
 } else {
 
     try {
@@ -290,9 +313,16 @@ if (node === null) {
         //Match file permissions with user permissions and extract the final permissions
         var final_permission = getFinalPermission(user_groups, permissions, node, true);
         output_current_folder_permissions.push(final_permission);
+        // Retrieve properties
+        var mappedProperties = {};
+        Object.keys(node.properties).forEach((k) => {
+          mappedProperties[utils.shortQName(k)] = node.properties[k];
+        });
+        output_current_folder_properties = mappedProperties;
     } catch (e) {
         logger.log(e);
         output_current_folder_permissions.push(null);
+        output_current_folder_properties = null;
     }
 }
 
@@ -304,18 +334,21 @@ var output = {
         props: {
             nids: output_files_nids,
             nodeRefs: output_files_node_refs,
-        }
+        },
+        properties: output_files_properties,
     },
     folders: {
         permissions: output_folders_permissions,
-        visibility: output_folders_visibility, 
+        visibility: output_folders_visibility,
+        properties: output_folders_properties,
         props: {
             folderRefs: output_folders_alf_refs,
         }
     },
     current_folder: {
-        permissions: output_current_folder_permissions
-    }
+        permissions: output_current_folder_permissions,
+        properties: output_current_folder_properties,
+    },
 };
 
 model.output = jsonUtils.toJSONString(output);

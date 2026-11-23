@@ -338,6 +338,12 @@ class LdapServer {
       }
     }
     else {
+      // @patch CEO-Vision: the configured password is only a fallback for the service account, an empty
+      // password must not authenticate another account
+      if ($userdn != NULL && $userdn != $this->binddn && drupal_strlen((string) $pass) == 0) {
+        watchdog('ldap', "LDAP bind failure for user %user: empty password.", array('%user' => $userdn));
+        return LDAP_LOCAL_ERROR;
+      }
       $userdn = ($userdn != NULL) ? $userdn : $this->binddn;
       $pass = ($pass != NULL) ? $pass : $this->bindpw;
 
@@ -346,10 +352,15 @@ class LdapServer {
         ldap_set_rebind_proc($this->connection, array($rebHandler, 'rebind_callback'));
       }
 
-      if (drupal_strlen($pass) == 0 || drupal_strlen($userdn) == 0) {
-        watchdog('ldap', "LDAP bind failure for user userdn=%userdn, pass=%pass.", array('%userdn' => $userdn, '%pass' => $pass));
+      if (drupal_strlen($pass) == 0) {
+        watchdog('ldap', "LDAP bind failure: Password missing for non-anonymous bind.");
         return LDAP_LOCAL_ERROR;
-      }  
+      }
+
+      if (drupal_strlen($userdn) == 0) {
+        watchdog('ldap', "LDAP bind failure: DN missing for non-anonymous bind.");
+        return LDAP_LOCAL_ERROR;
+      }
       
       //technical bind with manager account
       if(strpos($userdn, "cn=manager") !== false){         
@@ -588,10 +599,10 @@ class LdapServer {
           $old_value = $old_attributes[$key_lcase];
         }
       }
-      
+      // START @patch CEO-Vision
       // Encode the password according to the server settings.
       // Fail if the encoding failed.
-      if ($key === "userpassword" && strpos($cur_val, "{SASL}") === FALSE) {
+      if (strtolower($key) === "userpassword" && strpos($cur_val, "{SASL}") === FALSE) {
         //$encoded_password = ldap_servers_encode_text($cur_val, "md5");         
         $encoded_password = ldap_servers_encode_text(str_replace("&#039;", "'", $cur_val), "bcrypt");
         if($encoded_password !== FALSE) {
@@ -602,7 +613,7 @@ class LdapServer {
           return FALSE;
         }
       }
-
+      // END @patch CEO-Vision
       if ($cur_val == '' && $old_value != '') { // remove empty attributes
         unset($attributes[$key]);
         $result = @ldap_mod_del($this->connection, $dn, array($key_lcase => $old_value));

@@ -62,7 +62,7 @@
             },
             template: function (data) {
               return data.is_standard == 1
-                ? "<i data-toggle=\"popover\" data-trigger=\"hover\" data-html=\"true\" data-content=\"<div class='p-2'>"
+                ? "<i data-is-standard data-toggle=\"popover\" data-trigger=\"hover\" data-html=\"true\" data-content=\"<div class='p-2'>"
                   + GofastCategoriesTexts.standard_category
                   + "</div>\" class=\"fas fa-check-circle text-success\"></i>"
                 : "<i class=\"fas fa-times-circle text-danger\"></i>";
@@ -330,7 +330,7 @@
         });
       }, 100);
 
-      $("#gofastCategoriesTable").on("datatable-on-check", function (event, args) {
+      $("#gofastCategoriesTable").on("datatable-on-check datatable-on-uncheck", function (event, args) {
         $(".kt-checkbox--solid input[disabled]").prop("checked", false);
         var selected_records = _table.getSelectedRecords().filter(function (record) {
             return (
@@ -338,8 +338,13 @@
             );
           });
         _selection = "";
+        var selected_standards = [];
         selected_records.each(function (index) {
           var tid = $(this).find(".tid_span").html();
+          var isStandard = $(this).find("[data-is-standard]").length;
+          if (isStandard) {
+            selected_standards.push(tid);
+          }
           _selection += tid + "-";
         });
         _selection = _selection.slice(0, -1);
@@ -362,33 +367,15 @@
           }
         );
 
+        if (selected_standards.length == selected_records.length) {
+          $("#container-selected-items .navi-item .ctools-use-modal.standard-categories-forbidden").addClass("disabled");
+          $("#container-selected-items .navi-item .ctools-use-modal.standard-categories-forbidden").parent().css("cursor", "not-allowed");
+        } else {
+          $("#container-selected-items .navi-item .ctools-use-modal.standard-categories-forbidden").removeClass("disabled");
+          $("#container-selected-items .navi-item .ctools-use-modal.standard-categories-forbidden").parent().css("cursor", "pointer");
+        }
+
         GofastTriggerKDataTableMegaDropdown(selected_records, "gofastCategoriesTable", GofastCategoriesDefaultAction);
-      });
-
-      $("#gofastCategoriesTable").on("datatable-on-uncheck", function (event, args) {
-        var selected_records = _table.getSelectedRecords();
-        _selection = "";
-        selected_records.each(function (index) {
-          var tid = $(this).find(".tid_span").html();
-          _selection += tid + "-";
-        });
-
-        $("#container-selected-items .navi-item .ctools-use-modal").each(
-          function (index) {
-            var href = $(this).attr("href");
-            if (!href) {
-              return;
-            }
-            var array_href = href.split("/");
-            array_href[array_href.length - 1] = _selection;
-            var new_href = array_href.join("/");
-            $(this).attr("href", new_href);
-            $(this).removeClass("ctools-use-modal-processed");
-            $(this).off("click");
-          }
-        );
-
-        GofastTriggerKDataTableMegaDropdown(selected_records,"gofastCategoriesTable", GofastCategoriesDefaultAction);
       });
 
       const interferringEvents = ["datatable-on-ajax-done", "datatable-on-goto-page", "datatable-on-update-perpage"];

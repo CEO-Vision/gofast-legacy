@@ -47,6 +47,12 @@ function gofast_metadata_filter_common_field_values($nodes){
       } else {
         $node_metadatas = array_values($node_metadatas[$main_module_name])[0] ?? [];
       }
+      // Only the fields of this node's bundle (a module may declare space-only
+      // ones), and never the slots the display layer hides.
+      $node_metadatas = array_filter($node_metadatas, function ($metadata) use ($node) {
+        return (empty($metadata["bundles"]) || in_array($node->type, $metadata["bundles"], TRUE))
+          && empty($metadata["hidden_in_ui"]);
+      });
 
       if(!isset($metadatas[$main_module_name])){
         $metadatas[$main_module_name] = $node_metadatas;

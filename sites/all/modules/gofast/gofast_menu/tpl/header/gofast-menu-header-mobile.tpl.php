@@ -6,7 +6,7 @@ $is_mobile = gofast_mobile_is_phone();
      class="header-mobile align-items-center header-mobile-fixed<?= (gofast_essential_is_essential() && !gofast_mobile_is_phone()) ? " d-none" : ""; ?>">
     <!--begin::Logo-->
     <a id="gf-mobile-home-button" href="/home_page_navigation#navBrowser">
-        <img alt="Logo" src="/sites/all/themes/bootstrap-keen/logo.png"
+        <img alt="Logo" src="<?= theme_get_setting('logo') ?? '/sites/all/themes/bootstrap-keen/logo.png' ?>"
              class="h-30px">
     </a>
     <!--end::Logo-->

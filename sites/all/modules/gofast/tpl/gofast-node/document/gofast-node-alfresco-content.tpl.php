@@ -55,16 +55,36 @@
     };
 
     // some content may have transparency: remove background spinner once content is loaded
-    if (typeof $contentFrame == "undefined") {
-      let $contentFrame;
-    }
-    $contentFrame = jQuery("#container_preview_element > *:first-child:not(.processed)");
-    if ($contentFrame.length) {
-      // this needs to be attached after content element has been inserted but before the whole DOM is ready since the load event may be triggered sooner than the ready event
-      $contentFrame.addClass("processed").load(function() {
-        jQuery(this).parent().addClass("no-spinner");
+    // NOTE: Introduce scope with IIFE to not leak global non-redefinable
+    // variables and rename jQuery function to $.
+    (($) => {
+      const $contentPreviewContainer = $('#container_preview_element');
+      const $contentPreviewRoot = $contentPreviewContainer.find("> :first-child:not(.processed)");
+      if ($contentPreviewRoot.length == 0) {
+        return;
+      }
+      // NOTE: this needs to execute after content element has been inserted but
+      // before the whole DOM is ready since the load event may be triggered
+      // before than the ready event.
+      // The code must work for multiple types of elements which do not
+      // have a trivial mechanism to check the "loaded" state after firing the
+      // load event (e.g.: <embed>, <iframe>).
+      $contentPreviewRoot.addClass("processed");
+
+      // Try to find an explicit content element using specific style-less CSS
+      // class, if not found, fallback to root element assuming it is the element
+      // with loading behavior.
+      // The former is used for elements whose preview might be wrapped by
+      // another element, like images. The latter is used for most other previews.
+      let $contentPreviewElement = $contentPreviewRoot.find('.gf-loading-content');
+      if ($contentPreviewElement.length == 0) {
+        $contentPreviewElement = $contentPreviewRoot;
+      }
+
+      $contentPreviewElement.on('load', function() {
+        $contentPreviewContainer.addClass("no-spinner");
       });
-    }
+    })(jQuery)
 
     jQuery(document).ready(function() {
         window.initDocumentEditableInputs();

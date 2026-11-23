@@ -142,9 +142,14 @@
                 },
                 
                 rows: {
+                    beforeTemplate: function (row, data, index) {
+                      if(data.can_update){
+                        row.attr('data-can-manage', '');
+                      }
+                    },
                     afterTemplate: function (row, data, index) {
-                        Drupal.attachBehaviors(row);
-                    }
+                      Drupal.attachBehaviors(row);
+                    },
                 },
                 
                 // columns definition
@@ -268,6 +273,8 @@
                     return $(this).find(".kt-checkbox--solid input[disabled]").length == 0;
                 });
                 _selection = "";
+                // Check if user can manage all selected rows
+                const containUnmanageableRow = selected_records.toArray().some(e => !e.hasAttribute('data-can-manage'));
                 selected_records.each(function( index ) {
                    var nid = $(this).find(".nid_span").html();  
                    _selection += nid+"-";  
@@ -286,9 +293,15 @@
                       $(this).attr("href", new_href);
                       $(this).removeClass("ctools-use-modal-processed");
                       $(this).off( "click");
-                });                           
+                });
+
+                if(containUnmanageableRow) {
+                  $("[id='contacts-delete-button']").addClass('disabled');
+                } else {
+                  $("[id='contacts-delete-button']").removeClass('disabled');
+                }
                 
-                GofastTriggerKDataTableMegaDropdown(selected_records,"gofastDirectoryContactListingTable");
+                GofastTriggerKDataTableMegaDropdown(selected_records,"gofastDirectoryContactListingTable", false, false);
                 
                 //disable the search button 
                 if(selected_records.length > 0){
@@ -309,6 +322,8 @@
                    var nid = $(this).find(".nid_span").html();                
                    _selection += nid +"-";  
                 });
+                // Check if user can manage all selected rows
+                const containUnmanageableRow = selected_records.toArray().some(e => !e.hasAttribute('data-can-manage'));
                
                 $("#container-selected-items .navi-item .ctools-use-modal").each(function(index){
                       var href = $(this).attr("href");
@@ -320,8 +335,13 @@
                       $(this).off( "click");
                 });
 
-                GofastTriggerKDataTableMegaDropdown(selected_records,"gofastDirectoryContactListingTable");
+                GofastTriggerKDataTableMegaDropdown(selected_records,"gofastDirectoryContactListingTable", false, false);
                 
+                if(containUnmanageableRow) {
+                  $("[id='contacts-delete-button']").addClass('disabled');
+                } else {
+                  $("[id='contacts-delete-button']").removeClass('disabled');
+                }
                 //enable the search button
                 if(selected_records.length == 0){
                     $("#btnSubmit").css("pointer-events", "auto")

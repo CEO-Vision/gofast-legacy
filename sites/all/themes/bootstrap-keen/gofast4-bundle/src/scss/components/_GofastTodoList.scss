@@ -1,12 +1,16 @@
 .GofastTodoList {
+    &__list {
+      @media (max-width: 768px){
+        overflow-x: scroll;
+      }
+    }
     &__item {
         display: grid;
-        grid-template-columns: 20px 1fr 200px 100px 24px;
-        grid-column-gap: 1rem;
+        grid-template-columns: 20px minmax(150px, 1fr) 200px 90px 20px;
+        grid-column-gap: .2rem;
         min-height: 33px;
         margin: 0.3rem 0;
         word-break: break-word;
-
         .EditionInput {
             display: flex;
             align-items: center;
@@ -21,16 +25,18 @@
         margin: auto;
     }
 
-    &__deadlineInput, &__responsableInput {
-        .EditionInput__content {
-            text-align: center;
-        }
+    &__deadlineInput, &__responsableInput, &__nameInput {
+      display: flex;
+      align-items: center;
+      .EditableInput__input {
+        flex-grow: 1;
+      }
     }
     
     &__responsableInput {
-        .EditableInput__input .select2-container{
-            max-width: 210px;
-        }
+      .EditableInput__input .select2-container{
+          max-width: 210px;
+      }
     }
 
 

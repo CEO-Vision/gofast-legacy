@@ -2,16 +2,22 @@
   <div id="file_browser_mobile_header" class="panel-body">
     <div id="file_browser_mobile_header_breadcrumb" class="d-flex justify-content-between align-items-center">
       <ul></ul>
-      <button id="file_browser_mobile_upload_button" class="d-none btn btn-icon btn-primary btn-circle btn-sm" onclick="$('#mobile_ajax_file_browser_upload_input').trigger('click');">
+    </div>
+
+    <div class="d-flex align-items-center">
+
+      <div id="file_browser_mobile_mobile_toolbar_search" class="input-group input-group-sm">
+        <span class="input-group-addon" id="sizing-addon3"><span class="icon glyphicon glyphicon-search" aria-hidden="true"></span></span>
+        <input id="file_browser_mobile_toolbar_search_input" type="text" class="form-control" placeholder="<?php echo t('Filter', array(), array('context' => 'gofast:ajax_file_browser')); ?>" aria-describedby="sizing-addon3">
+        <div id="file_browser_mobile_toolbar_refresh_group" class="btn-group input-group-append">
+          <button title="<?php echo t('Refresh'); ?>" id="file_browser_mobile_tooolbar_refresh" type="button" class="btn btn-default btn-sm" ><i class="fa fa-refresh" aria-hidden="true"></i></button>
+        </div>
+      </div>
+
+      <button id="file_browser_mobile_upload_button" class="d-none btn btn-icon btn-primary btn-circle btn-sm ml-3 flex-shrink-0" onclick="$('#mobile_ajax_file_browser_upload_input').trigger('click');">
           <i class="fas fa-plus"></i>
       </button>
-    </div>
-    <div id="file_browser_mobile_mobile_toolbar_search" class="input-group input-group-sm">
-      <span class="input-group-addon" id="sizing-addon3"><span class="icon glyphicon glyphicon-search" aria-hidden="true"></span></span>
-      <input id="file_browser_mobile_toolbar_search_input" type="text" class="form-control" placeholder="<?php echo t('Filter', array(), array('context' => 'gofast:ajax_file_browser')); ?>" aria-describedby="sizing-addon3">
-      <div id="file_browser_mobile_toolbar_refresh_group" class="btn-group">
-        <button title="<?php echo t('Refresh'); ?>" id="file_browser_mobile_tooolbar_refresh" type="button" class="btn btn-default btn-sm dropdown-toggle" ><i class="fa fa-refresh" aria-hidden="true"></i></button>
-      </div>
+
     </div>
   </div>
   <div id="file_browser_mobile_files" class="panel-body">

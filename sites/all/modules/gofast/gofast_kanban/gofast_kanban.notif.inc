@@ -555,6 +555,15 @@ function gofast_kanban_get_recipients($for, $from, $to) {
   }
   if(!empty($to)){
     $array_to = explode(",", $to);
+     if(count($array_to) > 0){
+       foreach($array_to as $key=>$receipt){
+          if($receipt === 'admin'){
+            unset($array_to[$key]);
+            break;
+          }
+      }
+     }
+    
   }
   $array_from_diff = array_diff($array_from, $array_to);
   $array_to_diff = array_diff($array_to, $array_from);
@@ -600,6 +609,10 @@ function gofast_kanban_notif_get_recipients_for_state($from, $to) {
 function gofast_kanban_notif_compare_tasks($from, $to, $order_by_recipients = FALSE) {
   $compare_array = array();
   foreach ($from as $k_from => $v_from) {
+    // Prevent non string castable value to be compared
+    if(!is_scalar($v_from) || !is_scalar($to[$k_from] ?? null)){
+      continue;
+    }
     $isSame = (strcmp($v_from, $to[$k_from]) == 0); //Same values   
     if ($isSame) {
       continue;

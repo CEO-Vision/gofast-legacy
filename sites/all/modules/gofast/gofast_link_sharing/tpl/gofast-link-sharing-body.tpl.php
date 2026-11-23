@@ -130,8 +130,11 @@
                             <td>
                               <img src="<?= $base_url . '/' . drupal_get_path('module', 'gofast_mail_queue') . '/icon/' . 'share-white.png' ?>" alt="<?= t("Information Icon", array(), array("context" => "gofast:gofast")) ?>" width="18" />
                             </td>
-                            <td><span style="color: #FFFFFF; font-size: 18px; font-weight: 600;">&nbsp;
-                                <?= t('Document', array(), $l) ?></span></td>
+                            <td>
+                              <span style="color: #FFFFFF; font-size: 18px; font-weight: 600;">&nbsp;
+                                <?= t($node_type, array(), $l) ?>
+                              </span>
+                            </td>
                           </tr>
                         </tbody>
                       </table>
@@ -417,7 +420,7 @@
               <tbody>
                 <tr>
                   <td align="left" style="font-size:0px;padding:10px 25px;word-break:break-word;">
-                    <div style="font-family:Poppins, Candara, Helvetica, Arial, sans-serif;font-size:14px;font-weight:400;line-height:1;text-align:left;color:#000000;"><?= t('If you want, you can download the file and edit it.', array(), $l) ?> <?= $expiry_msg ?></div>
+                    <div style="font-family:Poppins, Candara, Helvetica, Arial, sans-serif;font-size:14px;font-weight:400;line-height:1;text-align:left;color:#000000;"><?= $helper_message . ' ' . $expiry_msg ?></div>
                   </td>
                 </tr>
               </tbody>

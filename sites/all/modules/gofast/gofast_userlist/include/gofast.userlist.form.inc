@@ -157,8 +157,23 @@ function gofast_userlist_custom_form_cancel($form, &$form_state) {
  * @param array $form_state
  */
 function gofast_userlist_form_userlist_node_form_validate($form, &$form_state) {
+  $existing_members = [];
+  $userlist_memberships = [];
   if (isset($form['#node']->nid)) { // edition mode
     $form_state['values']['status'] = 1; // in case the value has been set to 0 in an admin form_alter hook
+    $ulid = reset(gofast_userlist_get_ulid_by_nid($form['#node']->nid));
+    $existing_members = array_keys(gofast_userlist_get_members($ulid));
+    $root_spaces = array_values(gofast_og_get_root_spaces(FALSE, TRUE));
+    $userlist_memberships = db_select("og_membership", "ogm")
+      ->fields("ogm", ["gid"])
+      ->condition("ogm.entity_type", "userlist")
+      ->condition("ogm.group_type", "node")
+      ->condition("ogm.field_name", "og_userlist_node")
+      ->condition("ogm.etid", $ulid)
+      ->condition("ogm.state", 1)
+      ->condition("ogm.gid", $root_spaces, "NOT IN")
+      ->execute()->fetchCol();
+
   }
   $members = array();
 
@@ -167,6 +182,31 @@ function gofast_userlist_form_userlist_node_form_validate($form, &$form_state) {
   foreach ($members_value as $member_value) {
     array_push($members, $member_value->value);
   }
+
+  $members_to_delete = array_values(array_diff($existing_members, $members));
+
+  //Check if we're not removing a space's responsible
+  if(!empty($members_to_delete) && !empty($userlist_memberships)) {
+    $in_charge_spaces = db_select("field_data_field_person_in_charge", "pic")
+      ->fields("pic", ["entity_id"])
+      ->condition("pic.field_person_in_charge_target_id", $members_to_delete, "IN")
+      ->condition("pic.bundle", ["extranet", "group", "organisation"], "IN")
+      ->condition("pic.entity_id", $userlist_memberships, "IN")
+      ->execute()->fetchCol();
+    $leave_space_without_person_in_charge = FALSE;
+    foreach ($in_charge_spaces as $gid) {
+      $space_node = node_load($gid);
+      $person_in_charge_memberships = gofast_userlist_get_user_memberships($gid, $space_node->field_person_in_charge[LANGUAGE_NONE][0]["target_id"]);
+        if (count($person_in_charge_memberships) <= 1) {
+          $leave_space_without_person_in_charge = TRUE;
+          break;
+        }
+    }
+    if ($leave_space_without_person_in_charge) {
+      form_set_error("person_in_charge", t("You can't remove the responsible of a space", array(), array('context' => "gofast:gofast_og")));
+    }
+  }
+
   $form_state['values']['fieldset_userlist']['field_userlist_members'] = implode(',', $members);
   
   $admins = array();

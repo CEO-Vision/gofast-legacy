@@ -270,6 +270,72 @@ function gofast_og_update_7404() {
     ->execute();
 }
 
+/**
+ * Populate field_person_in_charge for spaces.
+ */
+function gofast_og_update_7405() {
+  usurp(1);
+  // Get all OG rids by bundle
+  $roles = db_select("og_role", "or")
+    ->fields("or", ["rid", "group_bundle"])
+    ->condition('or.name', "administrator member")
+    ->execute()->fetchAll();
+  $admin_rids = [];
+  foreach($roles as $role) {
+    $admin_rids[$role->group_bundle] = $role->rid;
+  }
+
+  // Get all non-root spaces
+  $root_spaces = array_values(gofast_og_get_root_spaces(FALSE, TRUE));
+  $spaces = db_select("node", "n")
+    ->fields("n", ["uid", "nid", "type"])
+    ->condition('n.type', ["group", "extranet", "organisation"], "IN")
+    ->condition('n.nid', $root_spaces, 'NOT IN')
+    ->execute()->fetchAll();
+
+
+  // For each space, determine if space creator is still in it
+  // Otherwise fallback to oldest admin member
+  $entities = [];
+  foreach($spaces as $space) {
+    $admin_rid = $admin_rids[$space->type];
+    $query = db_select("og_membership", "ogm")
+      ->fields("ogm", ["etid"]);
+    $query->innerJoin("og_users_roles", "our", "our.uid = ogm.etid AND our.gid = ogm.gid");
+    $admins = $query->condition("ogm.entity_type", "user")
+      ->condition("ogm.gid", $space->nid)
+      ->condition("ogm.state", 0, ">")
+      ->condition("our.rid", $admin_rid)
+      ->orderBy("ogm.id", "ASC") // get oldest membership first
+      ->execute()->fetchCol();
+    if (empty($admins)) {
+      watchdog("gofast_og", "No administrators found for space $space->nid", [], WATCHDOG_WARNING);
+      continue;
+    }
+
+    $entity = new stdClass();
+    $entity->nid = $space->nid;
+    $entity->type = $space->type;
+    $entity->field_person_in_charge = [LANGUAGE_NONE => []];
+    if (in_array($space->uid, $admins)) {
+      $entity->field_person_in_charge[LANGUAGE_NONE][0] = ["target_id" => $space->uid];
+    } else {
+      $entity->field_person_in_charge[LANGUAGE_NONE][0] = ["target_id" => $admins[0]]; // fallback to oldest admin member
+    }
+    $entities[] = $entity;
+  }
+
+  // Do the actual populating
+  gofast_update_field_database($entities, "field_person_in_charge");
+
+  // Then replicate prop on Alfresco
+  foreach ($entities as $entity) {
+    $node = node_load($entity->nid);
+    gofast_cmis_update_aspect_properties($node);
+  }
+  usurp(FALSE);
+}
+
 function gofast_og_uninstall() {
   field_delete_field(GOFAST_OG_CONTENT_VISIBILITY);
 }

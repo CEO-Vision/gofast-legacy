@@ -163,6 +163,37 @@ function gofast_features_taxonomy_field_default_field_instances() {
     ),
   );
 
+  $field_instances['taxonomy_term-classification-field_confidentiality'] = [
+    'bundle' => 'classification',
+    'default_value' => NULL,
+    'deleted' => 0,
+    'description' => '',
+    'display' => [
+      'default' => [
+        'label' => 'hidden',
+        'settings' => [],
+        'type' => 'hidden',
+        'weight' => 7,
+      ],
+    ],
+    'entity_type' => 'taxonomy_term',
+    'field_name' => 'field_confidentiality',
+    'label' => 'needs confidential access',
+    'required' => 0,
+    'settings' => [
+      'user_register_form' => FALSE,
+    ],
+    'widget' => [
+      'active' => 1,
+      'module' => 'options',
+      'settings' => [
+        'display_label' => 1,
+      ],
+      'type' => 'options_onoff',
+      'weight' => 2,
+    ],
+  ];
+
   // Exported field_instance: 'taxonomy_term-format-field_extensions'.
   $field_instances['taxonomy_term-format-field_extensions'] = array(
     'bundle' => 'format',
@@ -262,6 +293,40 @@ function gofast_features_taxonomy_field_default_field_instances() {
       'settings' => array(),
       'type' => 'options_buttons',
       'weight' => 2,
+    ),
+  );
+
+  // Exported field_instance: 'taxonomy_term-state-field_state_has_og'.
+  $field_instances['taxonomy_term-state-field_state_has_og'] = array(
+    'bundle' => 'state',
+    'default_value' => array(
+      0 => array(
+        'value' => 0,
+      ),
+    ),
+    'deleted' => 0,
+    'description' => 'Flag to define if a state term should be included in OG types or not',
+    'display' => array(
+      'default' => array(
+        'label' => 'hidden',
+        'settings' => array(),
+        'type' => 'hidden',
+        'weight' => 0,
+      ),
+    ),
+    'entity_type' => 'taxonomy_term',
+    'field_name' => 'field_state_has_og',
+    'label' => 'state_has_og',
+    'required' => 1,
+    'settings' => array(
+      'user_register_form' => FALSE,
+    ),
+    'widget' => array(
+      'active' => 1,
+      'module' => 'options',
+      'settings' => array(),
+      'type' => 'options_buttons',
+      'weight' => 1,
     ),
   );
 

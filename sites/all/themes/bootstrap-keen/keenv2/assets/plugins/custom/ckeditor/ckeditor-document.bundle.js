@@ -58,4 +58,3 @@ window.DecoupledEditor = __webpack_require__(/*! @ckeditor/ckeditor5-build-decou
 
 /******/ })()
 ;
-//# sourceMappingURL=ckeditor-document.bundle.js.map

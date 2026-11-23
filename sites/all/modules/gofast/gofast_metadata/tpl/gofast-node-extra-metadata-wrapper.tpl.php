@@ -1,5 +1,5 @@
 <?php if ($before) : ?>
-<div class="gofast_metadata_field col-<?php echo isset($info['col_size']) ? $info['col_size'] : '12'; ?> d-flex justify-content-between align-items-center document__editable<?php echo isset($info['order']) ? ' order-' . $info['order'] : '' ?>"<?php echo isset($info['id']) ? ' id="gofast-extra-metadata-item-' . $info['id'] . '"' : '' ?>>
+<div class="gofast_metadata_field col-<?php echo isset($info['col_size']) ? $info['col_size'] : '12'; ?> d-flex justify-content-between align-items-center document__editable"<?php echo isset($info['id']) ? ' id="gofast-extra-metadata-item-' . $info['id'] . '"' : '' ?><?php echo isset($info['order']) ? ' style="order: ' . $info['order'] . ';"': '' ?>>
     <?php if (!empty($info["title"]) && !$info["no_title"]) : ?>
         <div class="font-weight-bolder flex-shrink-0 my-auto">
             <span><?php print $info["title"] ?> :</span>

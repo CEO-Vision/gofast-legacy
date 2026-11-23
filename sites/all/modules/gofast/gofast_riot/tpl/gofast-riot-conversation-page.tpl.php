@@ -20,22 +20,32 @@
 <iframe id="IframeRiot"
         class="gofast-iframe-riot"
         title="Frame Riot"
-        src="<?php print $base_url; ?>/sites/all/libraries/riot/index.html?d=<?php print date('dm'); ?>">
+        src="">
 </iframe>
 
 <script>
     jQuery(document).ready(function() {
         function riotIframeHeightSize(){
+            if (!document.querySelector('#IframeRiot')) {
+                return;
+            }
             // Get width and height of the window excluding scrollbars
             var h = document.documentElement.clientHeight;
             // add height to frame
             document.querySelector('#IframeRiot').setAttribute('height', (h-100) + 'px'); 
         }
+        const waitForSessionReadyInterval = setInterval(() => {
+            if (!document.querySelector("#IframeRiot") || !Gofast.Riot?.sessionReady) {
+            return;
+            }
+            clearInterval(waitForSessionReadyInterval);
+            document.querySelector('#IframeRiot').setAttribute('src', "/sites/all/libraries/riot/index.html")
+        }, 100);
         // Attaching the event listener function to window's resize event
         window.addEventListener("resize", riotIframeHeightSize);
         riotIframeHeightSize();
         const waitForConversationPageLoadInterval = setInterval(() => {
-            if (!Gofast.Riot || !document.querySelector("#IframeRiot") || !document.querySelector("#IframeRiot").contentWindow.document.querySelector(".mx_MatrixChat")) {
+            if (!document.querySelector("#IframeRiot") || !document.querySelector("#IframeRiot")?.contentWindow?.document?.querySelector(".mx_MatrixChat")) {
                 return;
             }
             clearInterval(waitForConversationPageLoadInterval);

@@ -2242,6 +2242,24 @@ function gofast_features_global_field_default_field_bases() {
     'type' => 'list_boolean',
   );
 
+  $field_bases['field_original_status'] = [
+    'field_name' => 'field_original_status',
+    'active' => 1,
+    'cardinality' => 1,
+    'deleted' => 0,
+    'entity_types' => [],
+    'indexes' => [
+      'value' => [
+        0 => 'value',
+      ],
+    ],
+    'locked' => 0,
+    'translatable' => 0,
+    'settings' => [],
+    'module' => 'number',
+    'type' => 'number_integer',
+  ];
+
   // Exported field_base: 'field_tags'.
   $field_bases['field_tags'] = array(
     'active' => 1,
@@ -3166,6 +3184,30 @@ function gofast_features_global_field_default_field_bases() {
     'translatable' => 0,
     'type' => 'text_long',
   );
+
+  $field_bases['field_has_confidential_access'] = [
+    'field_name' => 'field_has_confidential_access',
+    'active' => 1,
+    'cardinality' => 1,
+    'deleted' => 0,
+    'entity_id_type' => NULL,
+    'entity_types' => [],
+    'indexes' => [
+      'value' => [
+        0 => 'value',
+      ],
+    ],
+    'locked' => 0,
+    'module' => 'list',
+    'type' => 'list_boolean',
+    'settings' => [
+      'allowed_values' => [
+        0 => '',
+        1 => '',
+      ],
+    ],
+    'translatable' => 0,
+  ];
 
   return $field_bases;
 }

@@ -30,7 +30,7 @@ function gofast_search_advanced_get_search_advanced_filters(){
 }
 
 
-function gofast_search_advanced_history_save($name, $query, $filters){
+function gofast_search_advanced_history_save($name, $query, $filters, $global_operator){
   global $user;
 
   $account = user_load($user->uid);
@@ -52,6 +52,7 @@ function gofast_search_advanced_history_save($name, $query, $filters){
   $history_values['filters'] = json_encode($filters);
   $history_values['name'] = $name;
   $history_values['date'] = date('d/m/Y H:i:s');
+  $history_values['globalOperator'] = $global_operator;
   
   $search_history[$unique_id] = $history_values;
 
@@ -239,4 +240,35 @@ function gofast_search_advanced_get_entities_contextual_actions(){
   $contextual_actions = theme('contextual_links', array('buttons' => $actions));
   print $contextual_actions;
   exit;
+}
+
+/**
+ * function gofast_search_advanced_format_date_to_solr
+ * @param string $date : date picked by the user, in d/m/Y format
+ * @param bool $end_of_day : TRUE for an upper bound, FALSE for a lower bound
+ * @return string|null
+ *
+ * Convert a date picked in the advanced search into an inclusive Solr bound
+ */
+function gofast_search_advanced_format_date_to_solr($date, $end_of_day = FALSE) {
+
+  $timezone = new DateTimeZone(date_default_timezone_get());
+  $formatted_date = DateTime::createFromFormat('d/m/Y', trim((string) $date), $timezone);
+
+  if (!$formatted_date) {
+    return NULL;
+  }
+
+  // The picker only provides a day, so both bounds are widened to the whole day to stay inclusive
+  if ($end_of_day) {
+    $formatted_date->setTime(23, 59, 59);
+  }
+  else {
+    $formatted_date->setTime(0, 0, 0);
+  }
+
+  // Solr indexes dates in UTC (see apachesolr_date_iso), the user timezone must be converted
+  $formatted_date->setTimezone(new DateTimeZone('UTC'));
+
+  return $formatted_date->format('Y-m-d\TH:i:s\Z');
 }

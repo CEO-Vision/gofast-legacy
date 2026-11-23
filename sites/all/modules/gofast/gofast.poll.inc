@@ -140,27 +140,28 @@ function gofast_poll_handle_metadata($commands, $poll_info, $context, $old_node,
       'manage_locations' => 'when_not_mirrored',
     ]));
   }
+
+  $was_node_confidential_or_internal = gofast_taxonomy_is_node_confidential_or_internal($old_node);
+  $is_node_confidential_or_internal = gofast_taxonomy_is_node_confidential_or_internal($new_node);
+  $has_confidentiality_changed = $was_node_confidential_or_internal != $is_node_confidential_or_internal;
+  if(!gofast_og_is_space($new_node, TRUE) && $has_confidentiality_changed){
+    $commands[] = ajax_command_invoke("#container_preview_element", "html", [gofast_cmis_get_content_preview_element($new_node)]);
+  }
+
   if(!gofast_og_is_space($new_node, TRUE)){
     $commands[] = ajax_command_invoke('.breadcrumb-gofast-show-title', "replaceWith", [gofast_breadcrumb_display_breadcrumb($new_node->nid, ['return' => TRUE, 'only_title' => FALSE, 'show_title' => TRUE, 'alt_theme' => 'gofast_document_breadcrumb'])]);
+
+    $history_tab = gofast_render_historyByNode_async($new_node, FALSE);
+    $commands[] = ajax_command_invoke("{$metadata_panel_selector}__historytab", 'html', array($history_tab));
   }
   $commands[] = gofast_command_toast_message(t("Node metadata updated", array(), array('context' => 'gofast')));
 
   $node_contextual_actions = gofast_get_contextual_actions_node($node);
   $commands[] = ajax_command_invoke("#breadcrumb-alt-actions", 'replaceWith', array(theme('contextual_links', array('btn_group_id' => 'breadcrumb-alt-actions', 'buttons' => $node_contextual_actions))));
-
-  $history_tab = gofast_render_historyByNode_async($new_node, FALSE);
-  $commands[] = ajax_command_invoke("{$metadata_panel_selector}__historytab", 'html', array($history_tab));
   
   // Specific metadata section
   $have_extra_metadata = false;
   foreach (module_implements("extra_metadata") as $module) {
-    
-    $old_category = $old_node->field_category[LANGUAGE_NONE]['0']['tid'];
-    $inbound_mail_taxonomy_term = taxonomy_get_term_by_name("Inbound (e)mail", 'category');
-    $inbound_mail_taxonomy_term_id = array_shift($inbound_mail_taxonomy_term)->tid;
-    $outbound_mail_taxonomy_term = taxonomy_get_term_by_name("Outbound (e)mail", 'category');
-    $outbound_mail_taxonomy_term_id = array_shift($outbound_mail_taxonomy_term)->tid;
-
     
     $metadata = call_user_func($module . "_extra_metadata", $node);
     $extra_datas[] = $metadata;
@@ -171,13 +172,8 @@ function gofast_poll_handle_metadata($commands, $poll_info, $context, $old_node,
   
   if ($have_extra_metadata) {    
     foreach($extra_datas as $extra_data){
-      
-      // Check if we need to create the specific metadata section
-      if($old_category != $inbound_mail_taxonomy_term_id && $old_category != $outbound_mail_taxonomy_term_id){
-        $commands[] = ajax_command_invoke("{$metadata_panel_selector}__infotab", "after",  ['<div class="tab-pane fade" id="' . $extra_data["id"] . '" role="tabpanel" aria-labelledby="extra-metadata-tab"></div>'] );
-      }
-      
-      // Insert mail metadata
+      // Add extra metadata panel
+      $commands[] = ajax_command_invoke("{$metadata_panel_selector}__infotab", "after", ['<div class="tab-pane fade" id="' . $extra_data["id"] . '" role="tabpanel" aria-labelledby="extra-metadata-tab"></div>']);
       $commands[] = ajax_command_html("#" . $extra_data['id'], $extra_data['theme']);
     } 
     $commands[] = ajax_command_replace("#nodeContainer[data-nid='$node->nid'] #node-tabsHeader", gofast_render_extraMetadataTabsByNode_async($node, TRUE));
@@ -185,6 +181,7 @@ function gofast_poll_handle_metadata($commands, $poll_info, $context, $old_node,
     $commands[] = ajax_command_replace("#nodeContainer[data-nid='$node->nid'] #node-tabsHeader", gofast_render_extraMetadataTabsByNode_async($node, TRUE));
     $commands[] = ajax_command_invoke("[id^='{$metadata_panel_selector}__extra_metadata']", 'remove', []);
   }
+  $commands[] = gofast_command_callback("Gofast.syncNodeTabsHeader");
   
   $commands[] = ajax_command_html('#ctools-add-js', "<script type='text/javascript'>jQuery('.tooltip').remove();</script>");
   return $commands;
@@ -264,8 +261,10 @@ function gofast_poll_handle_workflows_document($commands, $poll_info, $context, 
     }
     
     $old_count = $context['workflows_document'] ;
-    $context['workflows_document'] = $count;
-    gofast_set_context($context);
+    // Only send the updated workflows_document key back to the client instead of the full $context.
+    // This avoids overwriting unrelated context keys (e.g. entity.cmis_lock_owner) when multiple poll handlers run within the
+    // same PHP request and their drupal_add_js() settings are deep-merged together in the final response (last value wins for scalar keys).
+    gofast_set_context(array('workflows_document' => $count));
     if($count != 0){
       $commands[] = ajax_command_replace("#node-tabsHeader .gofast-task-notifiation",  '<span id="gofast-task-notifiation" class="label label-danger ml-2 gofast-task-notifiation">'.$count.'</span>');
       // different positioning for badge in collapse button
@@ -309,6 +308,7 @@ function gofast_poll_handle_lock($commands, $poll_info, $context, $old_node, $no
           $commands[] = ajax_command_html("#" . $extra_data['id'], $extra_data['theme']);
         } 
         $commands[] = ajax_command_replace('#node-tabsHeader', gofast_render_extraMetadataTabsByNode_async($node, TRUE));
+        $commands[] = gofast_command_callback("Gofast.syncNodeTabsHeader");
       }
     }
 
@@ -461,15 +461,88 @@ function gofast_poll_handle_standby($commands, $poll_info, $context){
 
 
 function gofast_poll_handle_workflows($commands, $poll_info, $context){
-  $old_count = $context['block_poll']['workflows']['count'];
+  // Track last call's count value so that changes can be detected during single
+  // long poll iteration, in which multiple calls and polling of bonita happen
+  // in a single request.
+  static $last_count = NULL;
+
+  $old_count = $last_count ?? $context['block_poll']['workflows']['count'];
   $previous_last_task_id = $context['block_poll']['workflows']['last_task_id'];
   $old_tasks = $context['block_poll']['workflows']['tasks_progress'];
+  $old_profiles = $context['block_poll']['workflows']['profiles'];
 
  $count = 0;
  $last_task_id = 0;
  if(module_exists("gofast_workflows")){
     $infos = gofast_workflows_get_infos_task_count_rest_api();
     global $user;
+    $workflow_profiles = gofast_workflows_profil_get();
+    $profiles = array();
+    foreach($workflow_profiles as $workflow_profile){
+      // Make profile keys non-numeric to prevent them from being renumbered by array_merge
+      $profile_key = $workflow_profile->type_wf . "-" . $workflow_profile->id;
+      $profiles[$workflow_profile->type_wf][$profile_key] = $workflow_profile;
+    }
+
+    if(isset($old_profiles) && is_array($old_profiles)){
+      // Loop through each workflows
+      $is_updated = false;
+      $updated_profiles = [];
+      foreach($profiles as $wf_type => $wf_profiles){
+        if (!isset($old_profiles[$wf_type])) {
+          continue;
+        }
+
+        $wf_ids = array_keys($wf_profiles);
+        $old_wf_ids = array_keys($old_profiles[$wf_type]);
+
+        sort($wf_ids);
+        sort($old_wf_ids);
+        // Check if the model ids have changed
+        if($wf_ids != $old_wf_ids){
+          // Get added/removed models
+          $removed_profile_ids = array_diff($old_wf_ids, $wf_ids);
+          $added_profile_ids = array_diff($wf_ids, $old_wf_ids);
+          // Remove options of removed models
+          foreach($removed_profile_ids as $removed_profile_id){
+            $is_updated = true;
+            $commands[] = ajax_command_remove("[data-wf-name='$wf_type'] > .gofast_wf_profil select.gofastSelect2 > option[value='{$old_profiles[$wf_type][$removed_profile_id]['id']}']");
+          }
+          // Add options of add models
+          foreach($added_profile_ids as $added_profile_id){
+            $is_updated = true;
+            $commands[] = ajax_command_remove("[data-wf-name='$wf_type'] > .gofast_wf_profil select.gofastSelect2 > option[value='{$wf_profiles[$added_profile_id]->id}']");
+            $commands[] = ajax_command_append("[data-wf-name='$wf_type'] > .gofast_wf_profil select.gofastSelect2", "<option value='{$wf_profiles[$added_profile_id]->id}'>{$wf_profiles[$added_profile_id]->name}</option>");
+          }
+        }
+        
+        foreach($wf_profiles as $profile_key => $wf_profile){
+          $updated_profiles[$wf_type][$profile_key] = $wf_profile;
+          $id = $wf_profile->id;
+          if(isset($old_profiles[$wf_type][$id]) && $wf_profile->name != $old_profiles[$wf_type][$id]["name"]){
+            $is_updated = true;
+            $commands[] = ajax_command_replace(
+              "[data-wf-name='$wf_type'] > .gofast_wf_profil select.gofastSelect2 > option[value='$id']",
+              "<option value='$id'>{$wf_profile->name}</option>"
+            );
+          }
+        }
+        if($is_updated){
+          // Update select2 by triggering it
+          $commands[] = ajax_command_invoke("[data-wf-name='$wf_type'] .gofast_wf_profil > .gofastSelect2", "select2");
+          // Set merge to false to allow remove data from context array
+          $context["merge"] = false;
+          gofast_set_context(['__replace' => ['block_poll.workflows.profiles']]);
+        }
+      }
+      if($is_updated){
+        gofast_poll_set_context("workflows", "profiles", $updated_profiles);
+      }
+    } else {
+      gofast_set_context(['__replace' => ['block_poll.workflows.profiles']]);
+      gofast_poll_set_context("workflows", "profiles", $profiles);
+    }
+    
     // we can't take the userlist tasks count from the bonita api since there is no search descriptor in bonita for activity instance variables
     $userlist_tasks_count = gofast_workflows_get_userlist_tasks_count_for_user($user);
     $count_kanban = gofast_kanban_get_user_tasks_count($user->uid);
@@ -480,6 +553,11 @@ function gofast_poll_handle_workflows($commands, $poll_info, $context){
     global $user;
     $count = gofast_kanban_get_user_tasks_count($user->uid);
   }
+
+  // Always update the last known task count to effectively detect changes to the baseline.
+  gofast_poll_set_context('workflows', 'count', $count);
+  // Keep track of number of tasks between calls of this polling function within single polling request.
+  $last_count = $count;
 
   // count is still the same but the last task is not the same: something has changed
   $alternative_condition = ($last_task_id > 0 && $count == $old_count && $last_task_id != $previous_last_task_id);
@@ -508,7 +586,7 @@ function gofast_poll_handle_workflows($commands, $poll_info, $context){
         );
         }
     }
-    gofast_poll_set_context('workflows', 'count', $count);
+
     gofast_poll_set_context('workflows', 'last_task_id', $last_task_id);
   }else{
     global $user;

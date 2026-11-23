@@ -16,7 +16,7 @@
     <!-- BEGIN Filed publication -->
     <?php foreach (["publication", "anonymization"] as $publication_key): ?>
     <?php if (!empty($node_infos["node_{$publication_key}"]["value"])): ?>
-      <div class="col-12 mt-4">
+      <div class="col-12 mt-4" id="node_metadata_publications">
         <div class="font-weight-bolder my-auto"><?php echo $node_infos["node_{$publication_key}"]["title"] ?> :</div>
         <div class="d-flex text-truncate">
           <?php echo $node_infos["node_{$publication_key}"]["value"] ?>
@@ -59,8 +59,6 @@
     <div class="col-12 col-xxl-6 mt-4">
       <span class="font-weight-bolder mb-4"><?php print t('Links from') ?> :</span>
       <div>
-        <?php //print "<pre>"; print_r($node_infos['node_source_links']);
-        ?>
         <ul class="p-0 m-0 list-unstyled">
           <?php if (isset($node_infos['node_source_links']) && !empty($node_infos['node_source_links'])) { ?>
             <?php
@@ -73,7 +71,13 @@
               }
             ?>
           <?php } else { ?>
-            <div class="p-2"><?php echo t('None') ?></div>
+            <div class="p-2"><?php
+              if ($node_infos['has_template_location']) {
+                echo t('Templates have no source links', [], ['context' => 'gofast']);
+              } else {
+                echo t('None');
+              }
+            ?></div>
           <?php } ?>
         </ul>
       </div>

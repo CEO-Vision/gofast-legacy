@@ -72,7 +72,7 @@ class SolrFilterSubQuery {
     // @todo - escape the value if it has spaces in it and is not a range query or parenthesized.
     $filter = array(
       '#exclude' => (bool) $exclude,
-      '#name' => trim($name),
+      '#name' => isset($name) ? trim($name) : '',
       '#value' => trim($value),
       '#local' => trim($local),
     );
@@ -281,6 +281,7 @@ class SolrBaseQuery extends SolrFilterSubQuery implements DrupalSolrQueryInterfa
    */
   protected $name;
   protected $context = array();
+  protected $sortstring;
   // Makes sure we always have a valid sort.
   protected $solrsort = array('#name' => 'score', '#direction' => 'desc');
   // A flag to allow the search to be aborted.
@@ -493,7 +494,7 @@ class SolrBaseQuery extends SolrFilterSubQuery implements DrupalSolrQueryInterfa
     // Anything that has a name and value
     // check if we have a : in the string
     if (strstr($string, ':')) {
-      [$name, $value] = explode(":", $string, 2);
+      list($name, $value) = explode(":", $string, 2);
     }
     else {
       $value = $string;
@@ -545,7 +546,7 @@ class SolrBaseQuery extends SolrFilterSubQuery implements DrupalSolrQueryInterfa
       return $value ? 'true' : 'false';
     }
     // Convert to trimmed string.
-    return trim($value);
+    return isset($value) ? trim($value) : '';
   }
 
   public function addParams(Array $params) {

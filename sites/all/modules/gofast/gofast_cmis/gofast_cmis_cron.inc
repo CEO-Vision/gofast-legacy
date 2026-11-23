@@ -167,7 +167,14 @@ function gofast_cmis_process_item($node_ref, $name, $person, $path, $gid, $autho
 
   if($nid == null && $item_is_deleted == FALSE){//The node doesn't exist or is about to be created
     gofast_cmis_write_log_info("Creating Drupal node for item " . $node_ref, FALSE);
-    gofast_cmis_process_item_create_node($item, $node_ref, $name, $person, $path, $gid, $author);
+      if($item->properties["cmis:objectTypeId"] == 'cmis:folder'){   
+        if( !gofast_cmis_is_path_mirrored($path."/".$name)){
+            gofast_cmis_process_item_replicate_folder_move($node_ref);
+         }
+          
+      }else{
+          gofast_cmis_process_item_create_node($item, $node_ref, $name, $person, $path, $gid, $author);
+      }
   }
   else if($nid == null && $item_is_deleted == TRUE){ //Node isn't created but Alfresco item is in the trash
     /*$reason = "Drupal was about to create a node programmatically but the Alfresco node is in the trash.";
@@ -177,7 +184,14 @@ function gofast_cmis_process_item($node_ref, $name, $person, $path, $gid, $autho
     $node = node_load($nid);
     if( $node->{GOFAST_CMIS_REFERENCE_FIELD}[LANGUAGE_NONE][0]['value'] !== $node_ref){ //Node found but alfresco_reference mismatch, we create a new node
       gofast_cmis_write_log_info("Creating Drupal node for item " . $node_ref, FALSE);
-      gofast_cmis_process_item_create_node($item, $node_ref, $name, $person, $path, $gid, $author);      
+      if($item->properties["cmis:objectTypeId"] == 'cmis:folder'){
+        if( !gofast_cmis_is_path_mirrored($path."/".$name)){
+          gofast_cmis_process_item_replicate_folder_move($node_ref);
+        }
+      }else{
+         gofast_cmis_process_item_create_node($item, $node_ref, $name, $person, $path, $gid, $author);      
+      }  
+     
     }else{  //We update/delete the node
       gofast_cmis_write_log_info("Updating Drupal node for item " . $node_ref, FALSE);
       gofast_cmis_process_item_update_node($item, $nid, $person, $item_is_deleted);
@@ -194,6 +208,58 @@ function gofast_cmis_process_item($node_ref, $name, $person, $path, $gid, $autho
       }
   }
   usurp(1);
+}
+
+function gofast_cmis_process_item_replicate_folder_move($node_ref){
+   $documents = gofast_cmis_item_get_children($node_ref,TRUE,'documents');
+
+  // foreach, get the new path and gid ( maybe the gid is not changed )
+  if(!empty($documents)){
+    foreach($documents as $document){
+        $node = node_load(gofast_ajax_file_browser_get_nid_from_reference($document->id));
+        if (!$node || empty($node->{GOFAST_CMIS_REFERENCE_FIELD}[LANGUAGE_NONE][0]['value'])) {
+            // Child not replicated to Drupal yet (still queued behind this
+            // folder): nothing to re-parent, its own replication will file
+            // it in the right space. PHP 8: dereferencing would be fatal.
+            gofast_cmis_write_log_info("Folder move: skipping child without Drupal node " . $document->id, FALSE);
+            continue;
+        }
+        $groups_array = array();
+        $parent = gofast_cmis_item_get_parent($node->{GOFAST_CMIS_REFERENCE_FIELD}[LANGUAGE_NONE][0]['value']);
+        $parents_formatted = array();
+        if(!empty($parent->objectList) && count($parent->objectList) > 0){
+            foreach($parent->objectList as $myparent){
+                $parents_formatted[] = array("value" => htmlspecialchars($myparent->properties["cmis:path"]));
+            }
+        }
+        foreach($parents_formatted as $key=>$parent_path){
+            $group_id = gofast_og_get_group_id_from_title_2(htmlspecialchars_decode($parent_path["value"]), TRUE);
+            if($group_id !== false){
+            $groups_array[$group_id] = array("target_id" => $group_id);
+            }
+        }
+       if(count($groups_array) == 0){
+           continue;
+      }
+        sort($groups_array);
+
+      $node->og_group_content_ref["und"] =  $groups_array;
+      $node = gofast_prepare_node_save_technically($node);
+      $ruid = $node->revision_uid;
+      node_save($node);
+      db_update('node_revision')
+          ->fields(array('uid' => $ruid))
+         ->condition('nid', $node->nid)
+          ->execute();
+
+        gofast_process_location_check_async($node->nid, true, true, true, false);
+        cache_clear_all("field:node:$node->nid", 'cache_field');
+
+    }
+  }
+  
+  
+  
 }
 
 /*

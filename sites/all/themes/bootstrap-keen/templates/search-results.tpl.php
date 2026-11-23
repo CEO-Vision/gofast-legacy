@@ -22,7 +22,7 @@
  */
 
 
-$page = theme('gofast_search_results_content', ["results" => $results, "search_results" => $search_results, "results_count" => $results_count, "pager" => $pager, "suggestions" => $suggestions]);
+$page = theme('gofast_search_results_content', ["results" => $results, "search_results" => $search_results, "results_count" => $results_count, "pager" => $pager, "suggestions" => $suggestions, "response" => $response]);
 $sideContent = theme("gofast_search_results_filter", ["results" => $results, "results_count" => $results_count]);
 $page_content = gofast_create_page_content($page, 'content-block-right' , $sideContent);
 

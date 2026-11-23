@@ -15,6 +15,12 @@ define('DRUPAL_ROOT', getcwd());
 include_once DRUPAL_ROOT . '/includes/bootstrap.inc';
 drupal_bootstrap(DRUPAL_BOOTSTRAP_FULL);
 
+// Only Alfresco, on this server, calls this script.
+if (gofast_workflows_is_external_api()) {
+  http_response_code(403);
+  exit;
+}
+
 include(DRUPAL_ROOT . '/sites/default/settings.php');
 include(DRUPAL_ROOT . '/sites/all/modules/gofast/gofast_cmis/gofast_cmis_cron.inc');
 
@@ -235,7 +241,7 @@ function alfresco_script_replication_mode($uid){
  * This function creates a file that triggers soffice restart.
  */
 function execute_soffice_restart_command() {
-  $file = fopen(DRUPAL_ROOT . "/sites/default/files/restart_soffice.txt", "a+");
+  $file = fopen(GOFAST_CONTROL_DIR . "/restart_soffice.txt", "a+");
   fwrite($file, $_SERVER['REQUEST_URI'] . "\n\n");
   fclose($file);
 }

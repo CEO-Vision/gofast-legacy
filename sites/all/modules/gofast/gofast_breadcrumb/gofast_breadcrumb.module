@@ -12,8 +12,8 @@ function gofast_breadcrumb_menu(){
     'page callback' => 'gofast_breadcrumb_display_breadcrumb',
     'page arguments' => [2],
     'type' => MENU_CALLBACK,
-    'access arguments' => ['access content'],
-    'access callback' => 'user_access'
+    'access arguments' => [2],
+    'access callback' => 'gofast_node_member_view_access'
   ];
   
   return $items;
@@ -73,26 +73,34 @@ function gofast_breadcrumb_get_breadcrumb($nid, &$options = []){
  * webdav_path => Webdav path for spaces
  * is_user => Boolean to know if we are in case with userlist or a user 
  */ 
-function gofast_breadcrumb_get_simplified_breadcrumb($nid, $account_id,$webdav_path,$is_user = TRUE){
+function gofast_breadcrumb_get_simplified_breadcrumb($nid, $account_id, $webdav_path, $role = "user"){
 $node = node_load($nid, NULL, TRUE);
-  if($is_user){
-    $roles_list = gofast_og_get_user_final_roles_for_space('node', $node->nid, $account_id);
-    if (!empty($roles_list)) {
-      $role = t(array_shift($roles_list), array(), array('context' => 'gofast:gofast_userlist'));
+  if($role == "user"){
+    if (!empty(gofast_og_get_user_final_roles_for_space('node', $node->nid, $account_id))) {
+      $role = t(array_shift(gofast_og_get_user_final_roles_for_space('node', $node->nid, $account_id)), array(), array('context' => 'gofast:gofast_userlist'));
     }
-  }else{
-    $roles_list = gofast_userlist_og_get_userlist_roles('node', $node->nid, $account_id, FALSE, TRUE);
-    if (!empty($roles_list)) {
-      $role = t(array_shift($roles_list), array(), array('context' => 'gofast:gofast_userlist'));
+  }elseif ($role == "userlist"){
+    if (!empty(gofast_userlist_og_get_userlist_roles('node', $node->nid, $account_id, FALSE, TRUE))) {
+      $role = t(array_shift(gofast_userlist_og_get_userlist_roles('node', $node->nid, $account_id, FALSE, TRUE)), array(), array('context' => 'gofast:gofast_userlist'));
     }
   }
-  $role = " (" . $role . ")";
+  $role = $role ? " (" . $role . ")" : NULL;
   $parts = explode("/", $webdav_path);
   if (count($parts) > 2) {
       $remaining_parts = array_slice($parts, 2);
       $webdav_path = '/' . implode("/", $remaining_parts);
   }
-  return theme('gofast_crumbs_simplified', array('nid' => $nid, 'ulid' => $nid, 'title' => $webdav_path,'section' => "node", "role" => $role));
+
+  $is_space_confidential = gofast_group_is_confidential($node);
+
+  return theme('gofast_crumbs_simplified', array(
+    'nid' => $nid,
+    'ulid' => $nid,
+    'title' => $webdav_path,
+    'section' => "node",
+    "role" => $role,
+    'is_confidential' => $is_space_confidential,
+  ));
 }
 /*
  * CORE Function
@@ -111,7 +119,7 @@ function gofast_breadcrumb_display_breadcrumb($nid, $options = []){
 
   // handle dynamic options
   if ($options['manage_locations'] === 'when_not_mirrored') {
-    $options['manage_locations'] = !gofast_cmis_is_path_mirrored($node->field_emplacement[LANGUAGE_NONE][0]['value']);
+    $options['manage_locations'] = !(gofast_cmis_is_path_mirrored($node->field_emplacement[LANGUAGE_NONE][0]['value']) ?? TRUE);
   }
 
   //Get webdav path for spaces (GOFAST-8093)

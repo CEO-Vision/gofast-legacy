@@ -11,7 +11,7 @@
     <!--end::Header-->
     <!--begin::Body-->
     <div class="card-body h-auto p-4">
-        <div id="<?php echo $block_id ?>">
+        <div id="<?php echo $block_id ?>" class="gofastDashboardCard h-100">
             <div class="spinner spinner-primary mt-15"></div>
         </div>
     </div>

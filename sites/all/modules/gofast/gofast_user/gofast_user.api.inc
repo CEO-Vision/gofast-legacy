@@ -200,7 +200,44 @@ function gofast_user_api_autocomplete_format_jitsi_value($entity_type, $entity)
 {
   $displayname = gofast_user_display_name($entity);
   $avatar = gofast_get_url_picture_by_id($entity->picture->fid);
-  return array('id' => "user_" . $entity->uid, 'name' => $displayname, 'avatar' => $avatar, 'type' => "user");
+  return array('id' => "user_" . $entity->uid, 'name' => $displayname, 'avatar' => $avatar, 'type' => "email");
+}
+
+/**
+ * If user token is not valid, it will generate a new one.
+ * Otherwise it will return the already existing one.
+ * @param $account The Drupal user object
+ * @param $timestamp The timestamp beyond which the new token will expire
+ * @return string $token The user token
+ * 
+ */
+function gofast_user_api_get_token($account, $timestamp) {
+  //Is there already a valid token for this user?
+  $query = db_select('gofast_token', 'gt')
+    ->fields('gt', array('token'))
+    ->condition('gt.uid', $account->uid)
+    ->condition('gt.timestamp', time(), '>');
+  $token = $query->execute()->fetchField();
+
+  if (!$token) {
+    //Remove previous token(s)
+    db_delete("gofast_token")
+      ->condition('uid', $account->uid)
+      ->execute();
+
+    //Generate the token
+    $uuid = gofast_generate_uuid();
+    $token = base64_encode($uuid);
+
+    //Store the token
+    db_insert("gofast_token")
+      ->fields(array(
+        'uid' => $account->uid,
+        'token' => $token,
+        'timestamp' => $timestamp
+      ))->execute();
+  }
+  return $token;
 }
 
 /*
@@ -211,16 +248,23 @@ function gofast_user_api_autocomplete_format_jitsi_value($entity_type, $entity)
  */
 function gofast_api_login_token($params)
 {
+  global $conf;
   if ($params['method'] != "GET") {
     gofast_api_not_implemented("This method");
   }
 
-  if(gofast_workflows_is_external_api()){
+  //Authorize only requests from main and comm servers
+  if(gofast_workflows_is_external_api() && !str_contains($_SERVER['HTTP_REFERER'], $conf['gofast-comm_domain'])){
        gofast_api_forbidden("External access to this action is forbidden.");
   }
 
   //Retrieve name param
-  $name = $params['name'];
+  if (str_contains($_SERVER['HTTP_REFERER'], $conf['gofast-comm_domain'])) {
+    global $user;
+    $name = $user->name;
+  } else {
+    $name = $params['name'];
+  }
   if (!isset($name) && empty($name)) {
     gofast_api_mandatory_parameter('name');
   }
@@ -231,34 +275,10 @@ function gofast_api_login_token($params)
     gofast_api_not_found("User " . $name . " not found");
   }
 
-  //Generate end timestamp
-  $timestamp = time() + 180;
+  //Generate end timestamp (API-generated tokens will be valid for 1 day)
+  $timestamp = time() + 86400;
 
-  //Is there already a valid token for this user?
-  $query = db_select('gofast_token', 'gt')
-    ->fields('gt', array('token'))
-    ->condition('gt.uid', $user->uid)
-    ->condition('gt.timestamp', time(), '>');
-  $token = $query->execute()->fetchField();
-
-  if (!$token) {
-    //Remove previous token(s)
-    db_delete("gofast_token")
-      ->condition('uid', $user->uid)
-      ->execute();
-
-    //Generate the token
-    $uuid = gofast_generate_uuid();
-    $token = base64_encode($uuid);
-
-    //Store the token
-    db_insert("gofast_token")
-      ->fields(array(
-        'uid' => $user->uid,
-        'token' => $token,
-        'timestamp' => $timestamp
-      ))->execute();
-  }
+  $token = gofast_user_api_get_token($user, $timestamp);
 
   $output = array('token' => $token);
 
@@ -275,7 +295,7 @@ function gofast_api_user_invite($params) {
     gofast_api_not_implemented("This method");
   }
   global $user;
-  $inviter = user_load($user);
+  $inviter = user_load($user->uid);
   $inviter_name = gofast_user_display_name($inviter);
   
   $invited_list = gofast_xss_clean($params["invited"]);

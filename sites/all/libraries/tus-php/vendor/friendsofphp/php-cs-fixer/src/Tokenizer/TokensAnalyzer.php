@@ -146,10 +146,23 @@ final class TokensAnalyzer
             $index = $tokens->getNextMeaningfulToken($index);
         }
 
-        $endIndex = $tokens[$index]->equals('(')
-            ? $tokens->findBlockEnd(Tokens::BLOCK_TYPE_PARENTHESIS_BRACE, $index)
-            : $tokens->findBlockEnd(Tokens::BLOCK_TYPE_ARRAY_SQUARE_BRACE, $index)
-        ;
+        return $this->isBlockMultiline($tokens, $index);
+    }
+
+    /**
+     * @param int $index
+     *
+     * @return bool
+     */
+    public function isBlockMultiline(Tokens $tokens, $index)
+    {
+        $blockType = Tokens::detectBlockType($tokens[$index]);
+
+        if (null === $blockType || !$blockType['isStart']) {
+            throw new \InvalidArgumentException(sprintf('Not an block start at given index %d.', $index));
+        }
+
+        $endIndex = $tokens->findBlockEnd($blockType['type'], $index);
 
         for (++$index; $index < $endIndex; ++$index) {
             $token = $tokens[$index];
@@ -326,7 +339,7 @@ final class TokensAnalyzer
 
         $prevIndex = $this->tokens->getPrevMeaningfulToken($index);
 
-        if ($this->tokens[$prevIndex]->isGivenKind([T_AS, T_CLASS, T_CONST, T_DOUBLE_COLON, T_FUNCTION, T_GOTO, CT::T_GROUP_IMPORT_BRACE_OPEN, T_INTERFACE, T_OBJECT_OPERATOR, T_TRAIT, CT::T_TYPE_COLON])) {
+        if ($this->tokens[$prevIndex]->isGivenKind([T_AS, T_CLASS, T_CONST, T_DOUBLE_COLON, T_FUNCTION, T_GOTO, CT::T_GROUP_IMPORT_BRACE_OPEN, T_INTERFACE, T_TRAIT, CT::T_TYPE_COLON]) || $this->tokens[$prevIndex]->isObjectOperator()) {
             return false;
         }
 
@@ -370,6 +383,14 @@ final class TokensAnalyzer
             }
         }
 
+        // check for attribute: `#[Foo]`
+        if (
+            \defined('T_ATTRIBUTE') // @TODO: drop condition when PHP 8.0+ is required
+            && $this->tokens[$prevIndex]->isGivenKind(T_ATTRIBUTE)
+        ) {
+            return false;
+        }
+
         // check for goto label
         if ($this->tokens[$nextIndex]->equals(':')) {
             if (null === $this->gotoLabelAnalyzer) {
@@ -377,6 +398,18 @@ final class TokensAnalyzer
             }
 
             if ($this->gotoLabelAnalyzer->belongsToGoToLabel($this->tokens, $nextIndex)) {
+                return false;
+            }
+        }
+
+        // check for non-capturing catches
+        while ($this->tokens[$prevIndex]->isGivenKind([CT::T_TYPE_ALTERNATION, T_STRING])) {
+            $prevIndex = $this->tokens->getPrevMeaningfulToken($prevIndex);
+        }
+
+        if ($this->tokens[$prevIndex]->equals('(')) {
+            $prevPrevIndex = $this->tokens->getPrevMeaningfulToken($prevIndex);
+            if ($this->tokens[$prevPrevIndex]->isGivenKind(T_CATCH)) {
                 return false;
             }
         }
@@ -557,7 +590,6 @@ final class TokensAnalyzer
                 T_SR => true,                   // >>
                 T_SR_EQUAL => true,             // >>=
                 T_XOR_EQUAL => true,            // ^=
-                CT::T_TYPE_ALTERNATION => true, // |
             ];
 
             // @TODO: drop condition when PHP 7.0+ is required

@@ -15,13 +15,13 @@ function gofast_kanban_autocomplete($type, $space, $filter){
   $space_nid = $space;
 
   if($type=='user'){
-    $roles_filter = array('roles' => array('administrator member', 'group contributor', 'read only member'), 'space_nid' => $space_nid);
+    $roles_filter = array('roles' => array('administrator member', 'group contributor', 'read only member', 'group manager'), 'space_nid' => $space_nid);
   return gofast_modal_user_by_role_autocomplete($filter, $roles_filter); 
   }else if($type=='user-userlist'){
     $roles_filter = array('roles' => array('administrator member', 'group contributor'), 'space_nid' => $space_nid);
     return gofast_modal_user_userlist_autocomplete($filter, $roles_filter);
   }else if($type=='user-not-readonly'){
-    $roles_filter = array('roles' => array('administrator member', 'group contributor'), 'space_nid' => $space_nid);
+    $roles_filter = array('roles' => array('administrator member', 'group contributor', 'group manager'), 'space_nid' => $space_nid);
     return gofast_modal_user_by_role_autocomplete($filter, $roles_filter);
   }else if($type =='node'){
     $other_filters = array('bundle' => array('alfresco_item', 'conference', 'webform', 'forum', 'article'));
@@ -1364,4 +1364,63 @@ function gofast_kanban_post_task_logo($node) {
     exit();
   }
   gofast_og_edit_logo($node, "task_logos");
+}
+
+/**
+ * Tests if a user is concerned by a kanban task.
+ *
+ * A user is concerned if they are in charge of the task or a member.
+ *
+ * @param object $task_node Task node object
+ * @param object|null $account Account to check. if not provided, the current
+ *  user will be used instead.
+ * @return bool True if the user is concerned by the kanban task, false otherwise.
+ */
+function gofast_kanban_task_concerns_user($task_node, $account = NULL) {
+  // assert that the current node is a task, otherwise assume it does not concern the user (in a task sense).
+  // NOTE: I'd really like if the passed value could have insurance that this
+  // check was done before calling the function to not give it this responsibility.
+  // However that requires either classes we try to avoid, additional wrapping that is
+  // easy to side-step or tools we didn't go through to integrate. (e.g.: New type patterns, static analysis)
+  if ($task_node->type !== 'task') {
+    return FALSE;
+  }
+
+  // default checked account to current user
+  if (!isset($account)) {
+    $account = $GLOBALS['user'];
+  }
+
+  // check if is in charge or is member.
+  if ($task_node->field_person_in_charge[LANGUAGE_NONE][0]['target_id'] === $account->uid) {
+    return TRUE;
+  }
+
+  $is_member = gofast_iterable_any(
+    $task_node->field_members[LANGUAGE_NONE],
+    fn($member) => $member['target_id'] === $account->uid,
+  );
+
+  if ($is_member) {
+    return TRUE;
+  }
+
+  // check if is assigned to checklist item on card.
+  $checklists = gofast_kanban_get_task_checklists_raw($task_node->nid, TRUE);
+
+  $checklist_items_iter = gofast_iterable_flat_map(
+    $checklists,
+    fn($checklist) => $checklist->getItems(),
+  );
+
+  $is_assigned_in_checklist_item = gofast_iterable_any(
+    $checklist_items_iter,
+    fn($checklist_item) => $checklist_item->uid === $account->uid,
+  );
+
+  if ($is_assigned_in_checklist_item) {
+    return TRUE;
+  }
+
+  return FALSE;
 }

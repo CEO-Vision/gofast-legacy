@@ -88,6 +88,13 @@ define('GOFAST_SEARCH_PUBLIC_REF', 'node:-1');
 define('GOFAST_CONTENT_STREAM_MAX_SIZE', 100);
 
 /**
+ * Define the max. duration (in seconds) of a single reindexing request. Also
+ * used as the queue worker time limit, so a request can never outlive its own
+ * worker window.
+ */
+define('GOFAST_SEARCH_REINDEX_TIMEOUT', 60);
+
+/**
  * Define username and password of the restricted user (solr authorization).
  * Values are stored in db but still we use a constant because drupal should
  * not modify these values.
@@ -506,6 +513,13 @@ function gofast_search_cronapi($op, $job = NULL) {
     'callback' => 'gofast_search_cron_calculate_min_date',
     'file' => 'gofast_search.cron.inc'
   );
+  
+   $items['gofast_search_cron_empty_trash'] = array(
+    'description' => 'Remove from index document not in Alfresco Trash anymore',
+    'rule' => '35 22 * * *', // runs every day at 22:35
+    'callback' => 'gofast_search_cron_empty_trash',
+    'file' => 'gofast_search.cron.inc'
+  );
 
   return $items;
 }
@@ -716,7 +730,11 @@ function gofast_search_apachesolr_index_document_build_node(ApacheSolrDocument $
 
   // Add node access grants for searching unpublished documents.
   if ($node->status == 0){
-    $result = (array) $node->{GOFAST_OG_CONTENT_MEMBERSHIP_FIELD}[LANGUAGE_NONE];
+    if (gofast_og_is_space($node)) {
+      $result = [["target_id" => $node->nid]];
+    } else {
+      $result = (array) $node->{GOFAST_OG_CONTENT_MEMBERSHIP_FIELD}[LANGUAGE_NONE];
+    }
     if (count($result) > 0) {
       foreach ($result as $grant) {
         $grant_realm = "og_access_node";
@@ -739,6 +757,9 @@ function gofast_search_apachesolr_index_document_build_node(ApacheSolrDocument $
 
   // This flag must be set
   $document->setField('bs_group_group', gofast_og_is_space($node));
+
+  // Index confidentiality of group to allow filtering out nodes from search as needed.
+  $document->setField('bs_group_confidential', gofast_group_is_confidential($node));
 
   // Index all public nodes (except og-nodes) as part of a fake public space to
   // provide facetting and an easy way to filter all public nodes.
@@ -1153,6 +1174,13 @@ function gofast_search_content_get_versions_indexed($nids) {
 function gofast_search_get_stored_content($node) {
   watchdog('Gofast Search', 'Retrieve stored content');
 
+  // Prevent extraction with certain (excluded) file types.
+  $extension = gofast_node_extension($node);
+  if (in_array($extension, gofast_search_files_excluded())) {
+    watchdog('Gofast Search', 'Prevent content extraction, extension excluded (Tika) : .' . $extension);
+    return FALSE;
+  }
+  
   $path = 'solr/gofast/query';
   $username = 'admin';
   $pass = gofast_get_admin_pwd();
@@ -1256,13 +1284,13 @@ function gofast_search_extract_content($node) {
   watchdog('Gofast Search', '--begins extraction');
   // Si le document n'est pas "exclu" on créé un fichier dans lequel on met
   // le contenu brut du document afin que Tika puisse en extraire le texte.
-  $filepath = DRUPAL_ROOT . '/' . variable_get('file_public_path', conf_path() . '/files');
-  $filename = $filepath . '/_gofast_extraction_tmp';
+  // Use a private, unpredictable temp file instead of the web-served public dir.
+  $filename = tempnam(file_directory_temp(), 'gofast_extraction_');
   $file = fopen($filename, 'w+');
   fwrite($file, $content);
   fclose($file);
 
-  $command = sprintf('java -jar %s -x %s', GOFAST_TIKA_PATH, $filename);
+  $command = gofast_tika_command('-x', $filename);
 
   // Activate "tika_runs" flags.
   global $tika_runs;
@@ -1278,6 +1306,7 @@ function gofast_search_extract_content($node) {
   $result = array();
 
   exec($command, $result);
+  unlink($filename);
 
   // Preprocess extracted content (remove <head> content)
   array_splice($result, 0, array_search('</head>', $result) + 1);
@@ -1367,6 +1396,34 @@ function gofast_search_handle_wilcard_expansion(string $term) {
     $term = "$term*";
     return $term;
   }
+  return FALSE;
+}
+
+/**
+ * Tells whether a query holds at least one keyword starting with a wildcard.
+ *
+ * A trailing wildcard walks the sorted term dictionary, a leading one has to
+ * enumerate it entirely for every searched field, which is what makes these
+ * searches slow enough for Solr to give up on them (GOFAST-14523).
+ *
+ * @param string $q A solr query string.
+ * @return boolean
+ */
+function gofast_search_has_leading_wildcard($q) {
+  $q = trim($q);
+
+  // An empty search is turned into '*:*', which is not a user wildcard.
+  if ($q === '' || $q === '*:*') {
+    return FALSE;
+  }
+
+  foreach (preg_split('/\s+/', $q, -1, PREG_SPLIT_NO_EMPTY) as $keyword) {
+    // '+' and '-' are lucene operators, the keyword itself follows them.
+    if (preg_match('/^[+-]?"?[*?]/', $keyword)) {
+      return TRUE;
+    }
+  }
+
   return FALSE;
 }
 
@@ -1527,15 +1584,16 @@ function gofast_search_apachesolr_query_alter(DrupalSolrQueryInterface $query) {
   $query->replaceParam('mm', '1<-1 3<75%');
   if ($exact_search || $phrase_match) {
     // Don't search into "classique" fields ( with stemming, stopwords, etc)
+    // Don't search into 'label' because it break the mm feature (GOFAST-13974)
     $defaults = array(
-      "label^100000.0",
       'tws_label^10000.0',  // used for highlighting (precision)
       'tos_name^3.0',   // to properly boost matches against profiles we'll use a bq.
       'tos_mail^100.0', // set higher boost because we know it's a profile field.
       'tos_mod_name^3.0',
       'tos_unr_author^3.0',
       'tos_unr_document_reference^3.0',
-      'tus_unr_field_title^3.0'
+      'tus_unr_field_title^100000.0', // Title is meant to be nearly as important as document file name
+      'tws_content^1.0',
     );
     // All terms must match except for wildcard expansion.
     if ($term_expansion === FALSE) {
@@ -1556,7 +1614,7 @@ function gofast_search_apachesolr_query_alter(DrupalSolrQueryInterface $query) {
       'tos_mod_name^3.0',
       'tos_unr_author^3.0',
       'tos_unr_document_reference^3.0',
-      'tos_unr_field_title^3.0',
+      'tos_unr_field_title^100000.0', // Title is meant to be nearly as important as document file name
       'taxonomy_names^3.0',
       'tags_h1^5.0',
       'tags_h2_h3^3.0',
@@ -1571,7 +1629,8 @@ function gofast_search_apachesolr_query_alter(DrupalSolrQueryInterface $query) {
     'tus_label^100000.0',    
     'tus_summary^20.0',
     'tus_content^10.0',
-    'tum_comments^5.0'
+    'tum_comments^5.0',
+    'tos_unr_field_title^100000.0', // Title is meant to be nearly as important as document file name
   ];
   
   // Taxonomy qf - Get all fields related to vocabulary terms
@@ -1983,8 +2042,23 @@ function gofast_search_query_alter_access($account, DrupalSolrQueryInterface &$q
       default:
         // do nothing
     }
-  }else{
-      
+  }
+
+  // Add filter for confidential groups. (confidential partitioning)
+  if (gofast_any_confidential_group_exists()) {
+    $confidentiality_sub_query = apachesolr_drupal_subquery('OR');
+    if ($confidentiality_sub_query === FALSE) {
+      throw new Exception('Could not create Solr Sub query');
+    }
+    // Item is not a space: keep.
+    $confidentiality_sub_query->addFilter('bs_group_group', 0);
+    // Item is not confidential: keep.
+    $confidentiality_sub_query->addFilter('bs_group_confidential', 0);
+    // Item is one of the spaces the user is a member of: keep.
+    foreach (gofast_og_get_spaces_by_user($account) as $gid) {
+      $confidentiality_sub_query->addFilter('entity_id', $gid);
+    }
+    $query->addFilterSubQuery($confidentiality_sub_query);
   }
 }
 
@@ -2082,6 +2156,16 @@ function gofast_search_process_response($response, DrupalSolrQueryInterface $que
   }
   $results['total'] = $response->response->numFound;
   
+  // Solr gave up on `timeAllowed` and skipped the components that had not run yet
+  // so anything it had not produced is missing from the response (GOFAST-14523).
+  if (!empty($response->responseHeader->partialResults)) {
+    drupal_set_message(t(
+      'Search too broad, results and filters are partial: please refine your search.',
+      array(),
+      array('context' => 'gofast:gofast_search')
+    ), 'warning');
+  }
+
   pager_default_initialize($results['total'], $query->getParam('rows'));
   if ($results['total'] > 0) {
     $fl = $query->getParam('fl');
@@ -2171,7 +2255,7 @@ function gofast_search_process_response($response, DrupalSolrQueryInterface $que
       
       $formatedGroupes = [];
       if($bundle != "user"){
-        $groups = db_query("SELECT DISTINCT gid FROM {og_membership} WHERE etid = :nid", array(':nid' => $doc->entity_id))->fetchAll();          
+        $groups = db_query("SELECT DISTINCT gid FROM {og_membership} WHERE entity_type = :type AND etid = :nid", array(':type' => $doc->entity_type, ':nid' => $doc->entity_id))->fetchAll();          
         if (!empty($groups)) {
           $string_groups = "";
           foreach($groups as $group){
@@ -2188,6 +2272,11 @@ function gofast_search_process_response($response, DrupalSolrQueryInterface $que
           }
         }
       }        
+      // Never disclose the name of a space the viewer may not open.
+      $formatedGroupes = array_values(array_filter($formatedGroupes, function ($space) {
+        return ($space_node = node_load($space['nid'])) && node_access('view', $space_node);
+      }));
+
       $result = array(
         // link is a required field, so handle it centrally.
         'link' => url($doc->path, $url_options),
@@ -3406,12 +3495,25 @@ function gofast_search_query($query, $filters){
       $filter = $filter['value'];
     }
     //if $filter is array then reach it and add each value to the filter
+    $or_filter = ['im_field_category'];
     if (is_array($filter)) {
-      foreach ($filter as $filter_value) {
-        if($operator == "includes"){
-          $conditions['fq'][] =  $filter_name . ":" . "*$filter_value*";
-        } else {
-          $conditions['fq'][] =  $operator . $filter_name . ":" . $filter_value;
+      if (in_array($filter_name, $or_filter)) {
+        $values = '';
+        foreach ($filter as $v) {
+            if ($values !== '') {
+                $values .= ' OR ';
+            }
+            $values .= $v;
+        }
+        $conditions['fq'][] = $operator . $filter_name . ':(' . $values . ')';
+      }
+      else{
+        foreach ($filter as $filter_value) {
+          if($operator == "includes"){
+            $conditions['fq'][] =  $filter_name . ":" . "*$filter_value*";
+          } else {
+            $conditions['fq'][] =  $operator . $filter_name . ":" . $filter_value;
+          }
         }
       }
       continue;
@@ -3929,6 +4031,12 @@ function gofast_search_get_more_snippets() {
   }
 
   $results = gofast_search_process_response($response, $query);
+
+  // Second flush: the replay runs long by design (`hl.maxAnalyzedChars` above),
+  // so it can legitimately come back partial without the user's search being at
+  // fault. Its messages would otherwise surface on the next page.
+  drupal_get_messages(NULL, TRUE);
+
   $snippets = [];
 
   foreach ($results as $result) {
@@ -4357,4 +4465,119 @@ function gofast_search_get_index_modification_date($node, $document){
             return apachesolr_date_iso($last_modification_timestamp);
         }
     }
+}
+
+/**
+ * Implements hook_cron_queue_info().
+ */
+function gofast_search_cron_queue_info() {
+  $queues = array();
+
+  $environment = apachesolr_environment_load(GOFAST_SEARCH_ENV_ID);
+
+  $queues['gofast_solr_reindexing'] = array(
+    'worker callback' => 'gofast_search_reindex_queue_worker',
+    'time' => GOFAST_SEARCH_REINDEX_TIMEOUT,
+    // Every item would fail anyway, at the cost of a claim and a log entry.
+    'skip on cron' => empty($environment) || !apachesolr_server_status($environment['url'], $environment['service_class']),
+  );
+
+  return $queues;
+}
+
+function gofast_search_reindex_queue_worker($item) {
+  if (empty($item['nid']) || empty($item['fields']) || !is_array($item['fields'])) {
+    return;
+  }
+
+  $nid = $item['nid'];
+
+  // Skip nodes excluded from the index since they were queued.
+  $excluded = variable_get('gofast_search_index_node_exclude', array());
+  if (isset($excluded[$nid])) {
+    watchdog('Gofast Search', 'Node excluded from index, skipping reindex: @nid', array('@nid' => $nid));
+    return;
+  }
+
+  $node = node_load($nid);
+  if (!$node) {
+    return;
+  }
+
+  $environment = apachesolr_environment_load(GOFAST_SEARCH_ENV_ID);
+  if (!$environment) {
+    watchdog('gofast_search', 'Solr environment not found during queue processing.', array(), WATCHDOG_ERROR);
+    return;
+  }
+
+  $id = apachesolr_document_id($nid, "node");
+
+  $solr_document_fields = array("id" => $id);
+  $has_content = false;
+
+  foreach ($item['fields'] as $solr_field_name => $callback_info) {
+    $content = FALSE;
+    if (!empty($callback_info['callback']) && function_exists($callback_info['callback'])) {
+      $content = call_user_func($callback_info['callback'], $node, $solr_field_name, $callback_info);
+    }
+    elseif (isset($callback_info['value'])) {
+      $content = $callback_info['value'];
+    }
+    else {
+      $content = gofast_search_get_stored_content($node);
+    }
+
+    if ($content !== FALSE && $content !== 'false' && $content !== NULL) {
+      $solr_document_fields[$solr_field_name] = array("set" => $content);
+      $has_content = true;
+    }
+  }
+
+  if (!$has_content) {
+    // An empty document can also mean Solr went down while a callback was
+    // reading from it, in which case the item must survive.
+    drupal_static_reset('apachesolr_server_status');
+    if (!apachesolr_server_status($environment['url'], $environment['service_class'])) {
+      throw new Exception("Solr went down while building the document of node $nid");
+    }
+
+    return;
+  }
+
+  $data = [$solr_document_fields];
+  $payload = json_encode($data);
+  $url = $environment['url'] . '/update?commit=true';
+
+  $ch = curl_init();
+  curl_setopt($ch, CURLOPT_URL, $url);
+  curl_setopt($ch, CURLOPT_POST, TRUE);
+  curl_setopt($ch, CURLOPT_POSTFIELDS, $payload);
+  curl_setopt($ch, CURLOPT_RETURNTRANSFER, TRUE);
+  // Aborting early does not stop Solr, it only stacks the next document on top.
+  curl_setopt($ch, CURLOPT_TIMEOUT, GOFAST_SEARCH_REINDEX_TIMEOUT);
+  curl_setopt($ch, CURLOPT_HTTPHEADER, array(
+      'Content-Type: application/json',
+  ));
+  curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, FALSE);
+  curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, FALSE);
+
+  $response = curl_exec($ch);
+  $info = curl_getinfo($ch);
+  $http_code = $info['http_code'];
+  $curl_error = curl_error($ch);
+  curl_close($ch);
+
+  // No TCP connection means the document never left, so the item can be
+  // replayed. Past that point Solr has it and a failure is dropped.
+  if (empty($info['connect_time'])) {
+    throw new Exception("Solr went down while indexing node $nid: $curl_error");
+  }
+
+  if ($http_code != 200) {
+    watchdog('gofast_search', 'Solr rejected the reindexing of node !nid (HTTP !code), item dropped: !response', array(
+      '!nid' => $nid,
+      '!code' => $http_code,
+      '!response' => substr((string) $response, 0, 500),
+    ), WATCHDOG_ERROR);
+  }
 }

@@ -21,3 +21,7 @@ files[] = handlers/ldap_views_handler_filter.inc
 files[] = handlers/ldap_views_handler_filter_attribute.inc
 files[] = handlers/ldap_views_handler_sort.inc
 files[] = handlers/ldap_views_handler_sort_attribute.inc
+
+version = 7.x-2.7
+project = ldap
+datestamp = 1775066467

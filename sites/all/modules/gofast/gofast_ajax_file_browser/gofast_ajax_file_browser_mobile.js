@@ -82,7 +82,9 @@
       var fullPath = path;
 
       //Don't display upload button on root spaces
-      if (fullPath != "/alfresco/webdav/Sites") {
+       let lastLevel = fullPath.trim().split('/').pop();
+      
+      if(lastLevel !== "Sites" && lastLevel !== "_Extranet" && lastLevel !== "_Public" && lastLevel !== "_Groups" && lastLevel !== "_Organisations"){
         $("#file_browser_mobile_upload_button").removeClass("d-none");
       } else {
         $("#file_browser_mobile_upload_button").addClass("d-none");
@@ -150,7 +152,7 @@
                           return;
                         }
 
-                        var items = asyncResult.Result;
+                        var items = Gofast.ITHit.filterTechnicalFiles(asyncResult.Result);
                         Gofast.ITHitMobile._processItems(items, fullPath, Gofast.ITHitMobile.mobileVersion);
 
                         fullPath = decodeURIComponent(fullPath);
@@ -652,7 +654,7 @@
       }
 
       //Show the menu and position it
-      menu.addClass('open, show');
+      menu.addClass('open show');
       menu.css('position', 'fixed');
       menu.css('left', e.clientX);
       menu.css('top', e.clientY);
@@ -671,10 +673,26 @@
 
       //Get the selected elements
       var data = [];
-      var selected = $('#file_browser_mobile_files_table').find('.selected').find('.item-path');
+      var selected = $('#file_browser_mobile_files_table').find('.selected');
       $.each(selected, function(k, elem){
-        data.push(elem.innerText);
+        const $elem = $(elem);
+
+        const path = decodeURIComponent($elem.find('.item-path').text());
+        const webDavResourceType = $elem.find('.item-real-type').text();
+
+        data.push({
+          path,
+          type: webDavResourceType,
+        });
       });
+
+      // Prevent opening contextual menu on "FOLDERS TEMPLATES" folder
+      data = data.filter((x) => x.path.replace(/\/$/, '').split("/").at(-1) !== "FOLDERS TEMPLATES");
+
+      if (data.length == 0) {
+        menu.remove();
+        return;
+      }
 
       //AJAX request to get the menu
       $.post(location.origin + "/gofast/node-actions/filebrowser", {selected: data}, function( data ) {
@@ -818,12 +836,7 @@
       itemHTML += "<td title='"+item.DisplayName+"' style='width:14%' class='item-icon'>";
         if(item.ResourceType == "Folder"){ //It's a folder
           var icon = Gofast.ITHit._getIconPath(item.DisplayName, item.Href, "fa");
-          for(var i= 0; i <  Gofast._settings.gofast_ajax_file_browser.archived_spaces.length; i++)
-          {
-              if (decodeURIComponent(item.Href) == Gofast._settings.gofast_ajax_file_browser.archived_spaces[i] + '/' ){
-                  icon = 'fa-archive';
-              }
-          }
+
           if(icon === "TEMPLATE"){
             icon = "fa-folder";
             var color = "#f0685a";

@@ -289,6 +289,7 @@ class ApacheSolrDocument implements IteratorAggregate {
    *   }
    *
    */
+  #[\ReturnTypeWillChange]
   public function getIterator() {
     $arrayObject = new ArrayObject($this->_fields);
 
@@ -386,7 +387,7 @@ class ApacheSolrDocument implements IteratorAggregate {
           $xml .= ' boost="' . $fieldBoost . '"';
         }
 
-        $xml .= '>' . htmlspecialchars($value, ENT_NOQUOTES, 'UTF-8') . '</field>';
+        $xml .= '>' . htmlspecialchars( (string) $value, ENT_NOQUOTES, 'UTF-8') . '</field>';
       }
     }
 

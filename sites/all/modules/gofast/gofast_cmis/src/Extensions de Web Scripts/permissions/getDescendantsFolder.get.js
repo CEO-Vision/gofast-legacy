@@ -23,6 +23,29 @@ if (document_type === null) {
   document_type = "all";
 }
 
+/**
+ * Path up to which all items are ignored, itself included
+ * @type {string[]|null|undefined}
+ */
+var skipUntilAfterPath = (function(){
+  /** @type {string} */
+  var path = args.skipUntilAfterPath;
+  // Path not passed, ignore.
+  if (!path) return path;
+  // Remove origin path from beginning of path.
+  if (path.indexOf(origine) === 0) path = path.substr(origine.length);
+  // Split on path separator and remove empty strings
+  return path.split('/').filter(function(s){return s.length;});
+})();
+
+/** Maximum number of items to report */
+var maxItems = args.maxItems;
+if (maxItems == null) {
+  maxItems = Infinity;
+} else if (typeof maxItems === 'string') {
+  maxItems = Number(maxItems);
+}
+
 function nodeIsGroup(nodeName) {
   return nodeName.substr(0, 1) === "_";
 }
@@ -108,6 +131,7 @@ function getFolder(node_folder, isGroup, parentFolder) {
         return;
       }
     }
+
     // If parentFolder not begin by the origin, then replace it by the origin
     if (encodeURIComponent(decodeURIComponent(currentParent)).indexOf(encodeURIComponent(decodeURIComponent(originPath))) === -1 && origine != "/Sites/") {
       // Split the originPath path
@@ -160,14 +184,15 @@ function getFolder(node_folder, isGroup, parentFolder) {
       var lastElement = arrayCurrentNode[arrayCurrentNode.length - 1];
 
 
-      // Add it to the currentParent
-      webdavUrl = "/webdav/Sites" + currentParent + "/" + lastElement;
-
-      // Encode the new webdavUrl without '/'
-      webdavUrl = encodeURI(webdavUrl);
-      webdavUrl = webdavUrl.replace(/%2F/g, "/");
     }
     
+    // Add it to the currentParent
+    webdavUrl = "/webdav/Sites" + currentParent + "/" + node_folder.name;
+
+    // Encode the new webdavUrl without '/'
+    webdavUrl = encodeURI(webdavUrl);
+    webdavUrl = webdavUrl.replace(/%2F/g, "/");
+
     element["url"] = webdavUrl;
     element['name'] = node_folder.properties["cm:name"];
     element['id'] = node_folder.nodeRef;
@@ -200,6 +225,10 @@ function getGroup(node_group, isGroup) {
 
 function getTemplates(node_template) {
   for each(var child in node_template.children) {
+    if (arraydescendants.length > maxItems) {
+      return;
+    }
+
     if (child.isDocument) {
       getDocument(child);
     } else {
@@ -208,52 +237,113 @@ function getTemplates(node_template) {
   }
 }
 
-function getDescendants(node, recursion) {
+// Whether the getDescendants function is skipping to a provided skipUntilAfterPath
+// argument. If the argument is not provided, this changes nothing.
+var skippingToPathSegment = true;
+
+function getDescendants(node, recursion, depth) {
+  // Set default values.
+  if (depth == null) depth = 0;
+
   // Looping for each children of node
   if (node !== null) {
-    for each(var child in node.children) {
+    var registerStart = true;
+    var start = 0;
+    // First check if we need to skip to given path before iterating on children.
+    // For that we do a binary search to find the correct element corresponding
+    // to the current depth passed in the skip path.
+    if (skippingToPathSegment && skipUntilAfterPath && skipUntilAfterPath.length && skipUntilAfterPath.length > depth) {
+      // we assume the children property is already sorted to perform a binary search.
+      var searchArray = node.children;
+      var end = searchArray.length - 1;
+      var found = false;
+      var isLastSegment = depth === (skipUntilAfterPath.length - 1);
+      var targetString = skipUntilAfterPath[depth];
+
+      while (end >= start) {
+        // Adding half of the difference between the bounds ensures we always
+        // stay within safe integer ranges so long as both bounds were within
+        // them as well.
+        var index = start + Math.floor((end - start) / 2);
+        var middleChild = searchArray[index];
+        var comparison = targetString.localeCompare(middleChild.name);
+
+        if (comparison === 0) {
+          start = index;
+          found = true;
+          break
+        } else if (comparison > 0) {
+          start = index + 1;
+        } else {
+          end = index - 1;
+        }
+      }
+
+      // We want to exclude the item if we find it, so we increment the index
+      // from which we'll start iterating on the children.
+      if (found) {
+        registerStart = false;
+        if (isLastSegment) {
+          skippingToPathSegment = false;
+        }
+      }
+    }
+
+    for (var i = start; i < node.children.length; ++i) {
+      var child = node.children[i];
+      if (arraydescendants.length > maxItems) {
+        return;
+      }
+
       // Excluding alfresco technical folders
       if (child.name.indexOf('surf-config') !== -1) {
         continue;
       }
       var isGroup = nodeIsGroup(child.name);
 
-      if (document_type === "documents") {
-        getDocument(child);
-      } else if (document_type === "folders") {
-        getFolder(child, isGroup);
-      } else if (document_type === "groups") {
-        getGroup(child, isGroup);
-      } else if (document_type === "groupsfolders") {
-        getFolder(child, isGroup, node);
-        getGroup(child, isGroup);
-      } else if (document_type === "templates") {
-        if (child.name.equals("TEMPLATES")) {
-          getTemplates(child);
+      if (registerStart || i !== start) {
+        if (document_type === "documents") {
+          getDocument(child);
+        } else if (document_type === "folders") {
+          getFolder(child, isGroup, node);
+        } else if (document_type === "groups") {
+          getGroup(child, isGroup);
+        } else if (document_type === "groupsfolders") {
+          getFolder(child, isGroup, node);
+          getGroup(child, isGroup);
+        } else if (document_type === "templates") {
+          if (child.name.equals("TEMPLATES")) {
+            getTemplates(child);
+          }
+        } else {
+          getDocument(child);
+          getFolder(child, isGroup, node);
+          getGroup(child, isGroup);
         }
-      } else {
-        getDocument(child);
-        getFolder(child, isGroup, node);
-        getGroup(child, isGroup);
       }
+
       if (restrictdepth == "true") {
+        // This condition is most likely always false since the starting value for `recursion` is now false
+        // it could be useful not to delete it right now in case the false
+        // starting value needs to be switched to a 'template' starting value to
+        // fix some bugs.
         if (recursion == true || recursion == "template") {
 
           if (document_type === "templates") {
             if (recursion == "template") {
-              getDescendants(child, false);
+              getDescendants(child, false, depth + 1);
             } else {
-              getDescendants(child, "template");
+              getDescendants(child, "template", depth + 1);
             }
           } else {
             if (child.isContainer && !node.name.equals("TEMPLATES")) {
-              getDescendants(child, false);
+              getDescendants(child, false, depth + 1);
             }
           }
         }
       } else {
         if (child.isContainer && !node.name.equals("TEMPLATES")) {
-          getDescendants(child, true);
+          getDescendants(child, true, depth + 1);
         }
       }
 
@@ -261,9 +351,15 @@ function getDescendants(node, recursion) {
   }
 }
 
-getDescendants(node, true);
+getDescendants(node, false);
 
-descendants = jsonUtils.toJSONString(arraydescendants);
+var hasMore = arraydescendants.length > maxItems;
+arraydescendants.splice(maxItems);
+
+descendants = jsonUtils.toJSONString({
+  descendants: arraydescendants,
+  hasMore: hasMore
+});
 render = descendants;
 
 model.myStatus = render;

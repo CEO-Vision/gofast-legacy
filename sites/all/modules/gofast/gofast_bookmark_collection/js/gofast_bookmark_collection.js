@@ -244,6 +244,9 @@
             menu.css('left', event.pageX - menuParent.offset().left);
             menu.css('top', event.pageY - menuParent.offset().top);
 
+            var menuElement = menuParent.find("> #gofast-bookmarks-node-actions > div");
+            Gofast.ITHit.handleOverflowPosition(menuElement);
+            
             const buildContextualActionsMenu = function(data){
                 if ($(data).find('ul').length == 0) { //Empty menu
                     menu.remove();
@@ -560,8 +563,7 @@
          * Remove bookmark folder and all it's children
          */
         removeBookmarkCollection: function (treeId, bcid) {
-            var targetTreeId = Gofast.Bookmark_Collection.tree[treeId].targetTreeId
-            $.post("/bookmark_collection/remove/" + bcid, { isAjax: true, treeId: targetTreeId }).done((isDeleted) => {
+            $.post("/bookmark_collection/remove/" + bcid, { isAjax: true, treeId: treeId }).done((isDeleted) => {
                 if (isDeleted) {
                     Gofast.toast(Drupal.t("Bookmark collection successfully deleted !", {}, { context: "gofast:gofast_bookmark_collection" }), "info")
                     

@@ -1,9 +1,24 @@
 (function ($, Gofast, Drupal) {
 
+  /** Name of the folder containing wiki pages */
+  const WIKI_FOLDER_NAME = 'Wikis';
+
+  /** Name of the folder containing webform results */
+  const WEBFORM_FOLDER_NAME = 'WEBFORM';
+
+  /** Name of the folder under each space containing document templates */
+  const TEMPLATES_FOLDER_NAME = 'TEMPLATES';
+
+  /** Name of the folder where broadcasted contents land */
+  const BROADCAST_INBOX_FOLDER_NAME = "BROADCAST";
+
+  /** Names of the technical files Drupal never replicates, kept in sync with alfresco_script.php */
+  const TECHNICAL_FILE_PATTERNS = [/^\./, /~\$/, /\.~lock/, /\.tmp/, /Thumbs\.db/];
+
   /*
    * Functions used to implement ITHit Ajax Library
    */
-  Gofast.ITHit = {
+  const GFITHit = {
     /*
      * To truely stop propagation
      */
@@ -49,9 +64,29 @@
      */
     processingQueue: false,
     /*
+     * Tells if multi upload model is being shown _or processed_
+     */
+    hasMultiUploadModal: false,
+    /*
      * Tells if we are already processing items or not to prevent multiple items processing
      */
     processingItems: false,
+    /*
+     * Regex for forbidden characters in item names
+     */
+    forbiddenCharactersPattern: /[\\/:*?"<>|]/,
+    /*
+     * Folders and spaces are path segments: a literal % breaks the URI decoding of the browser
+     */
+    forbiddenPathCharactersPattern: /[\\/:*?"<>|%]/,
+    /*
+     * Names can be encoded in several ways (accents): compare their NFC forms, optionally ignoring
+     * case since Alfresco treats names as case-insensitive
+     */
+    isSameItemName: function (firstName, secondName, ignoreCase = false) {
+      const normalize = (itemName) => ignoreCase ? itemName.normalize("NFC").toLowerCase() : itemName.normalize("NFC");
+      return normalize(firstName) === normalize(secondName);
+    },
     /*
      * Last set of files fetched to the filebrowser with extra informations, used to track context navigation in essential version
      */
@@ -89,9 +124,20 @@
      */
     intervals: {},
     /*
+     * Keep track of promises
+     */
+    promises: {
+      multiUploadModal: {},
+    },
+    /*
      * A variable to remember the upload operation to apply when a user interaction is needed
      */
     rememberUploadOp: null,
+
+    /**
+     * cache which paths are being duplicated currently.
+     */
+    pathsBeingDuplicated: new Set(),
 
     initTreeTooltip: function(treeNodeToTooltip){
       treeNodeToTooltip.forEach((node,i) => {
@@ -219,6 +265,7 @@
       }
       if(["group", "organisation", "extranet", "public", "private_space"].includes(Gofast.get("node").type)){
         $.post('/ajax/getnidfromhref', { href: Gofast.ITHit.getSpacePath(path) }, function (nid) {
+          $("#space__infotab").attr("data-nid", nid);
           $("#ogContainer > .sideContent #space__infotab").html('<div class="spinner spinner-center spinner-primary spinner-lg position-absolute h-100 w-100">');
           var baseUrl = window.location.protocol + "//" + window.location.host;
           Gofast.processAjax(baseUrl + "/gofast/node-info/" + nid, true);
@@ -247,6 +294,10 @@
 
         //Create a new ITHit session
         Gofast.ITHit.Client = ITHit.WebDAV.Client;
+        // Without it WebDAV Drive runs in free mode, limited to 10 users
+        if (Drupal.settings.ithitLicenseId) {
+          ITHit.WebDAV.Client.LicenseId = Drupal.settings.ithitLicenseId;
+        }
         Gofast.ITHit.Session = new Gofast.ITHit.Client.WebDavSession();
 
         //Authentify to Alfresco
@@ -466,6 +517,9 @@
             Gofast.ITHit.progress.set(0.4);
 
             var folder = asyncResult.Result;
+            Gofast.ITHit._resetMirrorFolders();
+            Gofast.ITHit._resetArchiveFolders();
+
             folder.GetChildrenAsync(false, null,
               function (asyncResult) {
                 if (!asyncResult.IsSuccess) {
@@ -487,12 +541,9 @@
                 var error_new_document_browser = ['/alfresco/webdav/Sites', '/alfresco/webdav/Sites/_Public/', '/alfresco/webdav/Sites/_Extranet/', '/alfresco/webdav/Sites/_Groups/', '/alfresco/webdav/Sites/_Organisations/'];
                 var error_new_document_ztree = ['/alfresco/webdav/Sites/_Public', '/alfresco/webdav/Sites/_Extranet', '/alfresco/webdav/Sites/_Groups', '/alfresco/webdav/Sites/_Organisations'];
                 var folder_template_path = '/alfresco/webdav/Sites/FOLDERS TEMPLATES';
-                if (jQuery.inArray(path, error_new_document_browser) !== -1 || jQuery.inArray(path, error_new_document_ztree) !== -1 || Gofast._settings.gofast_ajax_file_browser.archived_spaces.indexOf(decodeURI(path).substring(0, decodeURI(path).length - 1)) !== -1 || Gofast._settings.gofast_ajax_file_browser.archived_spaces.indexOf(decodeURI(path).substring(0, decodeURI(path).length)) !== -1) {
-                  if(Gofast._settings.isEssential && !Gofast._settings.isMobileDevice){
-                    if(eventType != "expand"){
-                      $('#file_browser_tooolbar_new_item').prop('disabled', true);
-                    }
-                  } else {
+                // Disable 'New' toolbar button in root spaces
+                if (jQuery.inArray(path, error_new_document_browser) !== -1 || jQuery.inArray(path, error_new_document_ztree) !== -1) {
+                  if(eventType != "expand"){
                     $('#file_browser_tooolbar_new_item').prop('disabled', true);
                   }
                 } else {
@@ -507,7 +558,7 @@
                 }
                 Gofast.ITHit.progress.set(0.6);
 
-                var items = asyncResult.Result;
+                var items = Gofast.ITHit.filterTechnicalFiles(asyncResult.Result);
 
 
                 if (!onlyTree) {
@@ -538,17 +589,9 @@
                     Gofast.ITHit.selectItem(selectItem);
                   }
 
-                  //Disable copy and cut buttons
-                  $('#file_browser_tooolbar_copy').prop('disabled', true);
-                  $('#file_browser_tooolbar_cut').prop('disabled', true);
-                  $('#file_browser_tooolbar_cart_button').prop('disabled', true);
-                  //Disable manage button
-                  $('#file_browser_full_container #file_browser_tooolbar_manage').addClass("disabled").removeClass("btn-white").attr("data-toggle", "tooltip").tooltip();
-                  //Disable cart button
-                  $('#file_browser_tooolbar_cart_button').prop('disabled', true);
-                  //Disable contextual actions
-                  $('#file_browser_tooolbar_contextual_actions').prop('disabled', true);
+                  GFITHit._fileListSelectionUpdated();
                   Gofast.ITHit.refreshSpaceSideContent(path);
+
                   if ((!Gofast._settings.isEssential && $(".gofast-og-page").length)) {
                     //setting an interval to avoid multiple useless calls
                     Gofast.ITHit.refreshBreadcrumbTimeout = setTimeout(function () {
@@ -574,9 +617,9 @@
             if (gofastBrowserMagicCheckbox) {
               const toggleAllGofastCheckboxes = () => {
                 if(gofastBrowserMagicCheckbox.checked) {
-                  Gofast.ITHit.selectAll();
+                  Gofast.ITHit.selectAllShown();
                 } else {
-                  Gofast.ITHit.deselectAll();
+                  Gofast.ITHit.deselectAllShown();
                 }
               };
               // init magic checkbox initial state
@@ -719,9 +762,9 @@
           if(event.shiftKey) {
             // note: Chrome and firefox already bind a shortcut to CTRL+SHIFT+A without the possibility of rebinding it
             // making it unusable on these browsers, however other browsers may let user use this shortcut
-            Gofast.ITHit.deselectAll(); // CTRL+SHIFT+A pressed: deselect all
+            Gofast.ITHit.deselectAllShown(); // CTRL+SHIFT+A pressed: deselect all
           } else {
-            Gofast.ITHit.selectAll(); // CTRL+A pressed: select all
+            Gofast.ITHit.selectAllShown(); // CTRL+A pressed: select all
           }
 
           return false;
@@ -729,17 +772,74 @@
         .on('keydown', function (event) {
           if(event.code !== 'Escape') return;
 
+          if (document.activeElement.id === "rename-form") {
+            return false;
+          }
+
           // Escape pressed: deselect all
           Gofast.ITHit.deselectAll();
 
           return false;
         });
 
-      $("#file_browser_full_files_table").on('keyup', function (e) {
+      // Listen for F2 key to trigger rename when only one item is selected.
+      $("#file_browser_full_container").off('keyup.filebrowserRename').on('keyup.filebrowserRename', function (e) {
+        // Is F2 pressed alone? If not return early.
+        if (e.key !== 'F2' || e.ctrlKey || e.shiftKey || e.metaKey) {
+          return;
+        }
+        if ($(e.target).is('input, textarea, select')) return; // already inputing something
+        const $fileTable = $("#file_browser_full_files_table");
+        if (!$fileTable.length || !$fileTable.is(':visible')) return;
+
+        const selected = GFITHit.getFileBrowserSelectedItems();
+
+        // Is exactly one item selected?
+        if (selected.length !== 1) {
+          // Have we not selected any item?
+          if (selected.length === 0) {
+            Gofast.toast(
+              Drupal.t(
+                'Select an item to rename.',
+                {},
+                { context: 'gofast:ajax_file_browser' },
+              ),
+              'warning',
+            );
+          } else {
+            // More than one item selected.
+            Gofast.toast(
+              Drupal.t(
+                'You cannot rename multiple items at once. Select only one.',
+                {},
+                { context: 'gofast:ajax_file_browser' },
+              ),
+              'warning',
+            );
+          }
+          return;
+        }
+
+        const selectedItem = selected[0];
+        if ($(selectedItem._rowElement).find('#rename-form').exists()) {
+          // The renaming form already exists, ignore the input.
+          return;
+        }
+
+        e.preventDefault();
+
+        // Initialise rename input/form in explorer file list.
+        Gofast.ITHit.rename(selectedItem.path);
+      });
+
+      $("#file_browser_full_container").off('keyup.filebrowserShortcuts').on('keyup.filebrowserShortcuts', function (e) {
         if (e.keyCode == 46) { //Suppr pressed
           if ($("#rename-form").length !== 0 || $("#new-folder-form").length !== 0) {
             return;
           }
+          const $fileTable = $("#file_browser_full_files_table");
+          if (!$fileTable.length || !$fileTable.is(':visible')) return;
+
           //Retrieve all selected items
           var data = [];
           var selected = $('.gfb-cbx:checked').parents('.file_browser_full_files_element').find('.item-path');
@@ -802,16 +902,6 @@
         } if (e.keyCode == 67 && e.ctrlKey == true && document.activeElement.id !== "rename-form") { //CTRL+C pressed
           Gofast.ITHit.copySelected();
         } if (e.keyCode == 88 && e.ctrlKey == true & document.activeElement.id !== "rename-form") { //CTRL+X pressed
-          Gofast.ITHit.cutSelected();
-        } if (e.keyCode == 86 && e.ctrlKey == true && document.activeElement.id !== "rename-form") { //CTRL+V pressed
-          Gofast.ITHit.paste();
-        }
-      });
-
-      $("#file_browser_full_tree_container").on('keyup', function (e) {
-        if (e.keyCode == 67 && e.ctrlKey == true && document.activeElement.id !== "rename-form") { //CTRL+C pressed
-          Gofast.ITHit.copySelected();
-        } if (e.keyCode == 88 && e.ctrlKey == true && document.activeElement.id !== "rename-form") { //CTRL+X pressed
           Gofast.ITHit.cutSelected();
         } if (e.keyCode == 86 && e.ctrlKey == true && document.activeElement.id !== "rename-form") { //CTRL+V pressed
           Gofast.ITHit.paste();
@@ -1107,11 +1197,6 @@
      * Select all items
      */
     selectAll: function () {
-      const magicCheckbox = document.querySelector("#gofastBrowserMagicCheckbox");
-      if(null != magicCheckbox) {
-        magicCheckbox.checked = true;
-      }
-
       $('.file_browser_full_files_element')
         .not('#file_browser_back_button')
         .addClass('selected');
@@ -1121,18 +1206,13 @@
           $(this).prop('checked', true);
         });
 
-        Gofast.ITHit._enableToolbar(true);
+      GFITHit._fileListSelectionUpdated();
     },
 
     /*
      * Deselect all items
      */
     deselectAll: function () {
-      const magicCheckbox = document.querySelector("#gofastBrowserMagicCheckbox");
-      if(null != magicCheckbox) {
-        magicCheckbox.checked = false;
-      }
-
       $('.file_browser_full_files_element')
         .not('#file_browser_back_button')
         .removeClass('selected');
@@ -1142,33 +1222,164 @@
           $(this).prop('checked', false);
         });
 
-      Gofast.ITHit._enableToolbar(false);
+      GFITHit._fileListSelectionUpdated();
+    },
+
+    /**
+     * Select all currently shown items.
+     */
+    selectAllShown: function () {
+      const $elements = $('.file_browser_full_files_element').not('#file_browser_back_button');
+      const $shownElements = $elements.not('.search-hidden');
+
+      $shownElements.addClass('selected');
+      $shownElements.find("td>input[type=checkbox]").prop('checked', true);
+
+      GFITHit._fileListSelectionUpdated();
+    },
+
+    /**
+     * Deselect all currently shown items.
+     */
+    deselectAllShown: function () {
+      const $elements = $('.file_browser_full_files_element').not('#file_browser_back_button');
+      const $shownElements = $elements.not('.search-hidden');
+
+      $shownElements.removeClass('selected');
+      $shownElements.find("td>input[type=checkbox]").prop('checked', false);
+
+      GFITHit._fileListSelectionUpdated();
+    },
+
+    /**
+     * Selection status object
+     * @typedef {object} SelectionStatus
+     * @prop {JQuery} $selectedElements
+     *   JQuery list object of selected elements. This includes hidden elements.
+     * @prop {JQuery} $selectedShownElements
+     *   JQuery list object of selected and shown elements.
+     * @prop {bool} isAnySelected
+     *   Whether any element is selected at all currently.
+     * @prop {bool} areAllShownElementsSelected
+     *   Whether all shown elements are currently selected.
+     * @prop {bool} areOnlyContainersSelected
+     *   Whether all selected elements are container elements, e.g. spaces
+     *   or directories.
+     * @prop {bool} isShownFileListEmpty
+     *   Whether the shown file list is currently empty.
+     */
+    /**
+     * Computes a selection status object.
+     *
+     * The selection status object compiles information about the current
+     * selection state, such as the lists of selected elements, selected shown
+     * elements and conditions such as knowing if any element is selected or if
+     * all visible elements are selected.
+     *
+     * @returns {SelectionStatus} Selection status object.
+     */
+    _getSelectionStatus: function () {
+      const $elements = $('.file_browser_full_files_element').not('#file_browser_back_button');
+      const $shownElements = $elements.not('.search-hidden');
+      const $selectedShownElements = $shownElements.filter('.selected');
+      const $selectedElements = $elements.filter('.selected');
+
+      const isShownFileListEmpty = $shownElements.length === 0;
+      const areAllShownElementsSelected = $selectedShownElements.length === $shownElements.length;
+      const isAnySelected = $selectedElements.length > 0;
+
+      const areOnlyContainersSelected = $selectedElements
+        .get()
+        .every((el) => $(el).find(".item-real-type").text() === "Folder");
+
+      return {
+        $selectedElements,
+        $selectedShownElements,
+        isAnySelected,
+        areAllShownElementsSelected,
+        areOnlyContainersSelected,
+        isShownFileListEmpty,
+      };
+    },
+
+    /**
+     * Callback to run after file list display or items change.
+     *
+     * Applies common browser UI and state updates based on the new state of the
+     * file list.
+     */
+    _fileListShownElementsUpdated: function () {
+      const selectionStatus = GFITHit._getSelectionStatus();
+      GFITHit._updateMagicCheckbox(selectionStatus);
+    },
+
+    /**
+     * Callback to run after the current selection updated.
+     *
+     * Applies common browser UI and state updates based on the new state of the
+     * selection.
+     */
+    _fileListSelectionUpdated: function () {
+      const selectionStatus = GFITHit._getSelectionStatus();
+      GFITHit._updateMagicCheckbox(selectionStatus);
+      GFITHit._enableToolbar(selectionStatus);
+    },
+
+    /**
+     * Updates the "magic" all elements selection checkbox based on a given
+     * selection status.
+     *
+     * @param {SelectionStatus} selectionStatus
+     *   Current selection status that the checkbox state should reflect.
+     */
+    _updateMagicCheckbox: function ({ areAllShownElementsSelected, isAnySelected, isShownFileListEmpty }) {
+      const gofastBrowserMagicCheckbox = document.querySelector("#gofastBrowserMagicCheckbox");
+      const hasCheckbox = gofastBrowserMagicCheckbox != null
+        && (gofastBrowserMagicCheckbox instanceof HTMLInputElement);
+      if (!hasCheckbox) {
+        return;
+      }
+
+      if (!isShownFileListEmpty && areAllShownElementsSelected) {
+        gofastBrowserMagicCheckbox.checked = true;
+        gofastBrowserMagicCheckbox.indeterminate = false;
+      } else if (isAnySelected) {
+        gofastBrowserMagicCheckbox.checked = false;
+        gofastBrowserMagicCheckbox.indeterminate = true;
+      } else {
+        gofastBrowserMagicCheckbox.checked = false;
+        gofastBrowserMagicCheckbox.indeterminate = false;
+      }
     },
 
     /**
      * Enables or disables the toolbar
-     * @param {boolean} active - Whether the toolbar should be enabled or not
+     *
+     * @param {SelectionStatus} selectionStatus
+     *   The current selection status
      */
-    _enableToolbar: function(active) {
+    _enableToolbar: function({ isAnySelected: active, areOnlyContainersSelected }) {
       $('#file_browser_tooolbar_copy').prop('disabled', !active);
       $('#file_browser_tooolbar_cut').prop('disabled', !active);
-      $('#file_browser_tooolbar_cart_button').prop('disabled', !active);
+      // Cart button is only enabled while there is a selection that is not
+      // entirely made up of spaces or folders.
+      $('#file_browser_tooolbar_cart_button').prop('disabled', !active || areOnlyContainersSelected);
 
       const toolbar = $('#file_browser_full_container #file_browser_tooolbar_manage')
 
       if(active) {
         toolbar
           .removeClass("disabled")
-          .addClass("btn-white");
+          .addClass("btn-white")
+          .attr("data-toggle", "dropdown")
+          .tooltip("dispose");
       } else {
         toolbar
           .addClass("disabled")
-          .removeClass("btn-white");
+          .removeClass("btn-white")
+          .attr("data-toggle", "tooltip")
+          .tooltip();
       }
-
-      toolbar
-        .attr("data-toggle", "tooltip")
-        .tooltip();
 
       $('#file_browser_tooolbar_contextual_actions').prop('disabled', !active);
     },
@@ -1222,6 +1433,24 @@
       if (document.getElementById("file_browser_full_upload_label")) document.getElementById("file_browser_full_upload_label").remove();
       document.querySelector("#file_browser_full_upload_table_head + tr").insertAdjacentHTML("afterbegin", templatedItemLabel);
     },
+
+    /**
+     * Checks if a given path is a root space path
+     *
+     * The path may include the /alfresco/webdav prefix and start at /Sites/.
+     *
+     * @param {string} path Path to the space/folder.
+     * @returns {boolean} Whether the path is a path to a root space.
+     */
+    isRootSpacePath: function (path) {
+      const cleanPath = path
+        .replace(/^\/alfresco\/webdav/, '')
+        .replace(/^\/Sites\//, '');
+
+      const rootSpaceNames = ["_Groups", "_Extranet", "_Organisations", "_Public"];
+      return rootSpaceNames.includes(cleanPath);
+    },
+
     /**
      * Root spaces and non-updatable nodes should not have upload listeners
      * This must be triggered on navigation and handles two things: labels and
@@ -1233,7 +1462,12 @@
         return;
       }
       if (currentPath.length === 0) currentPath = Gofast.ITHit.getPathParam();
-      currentPath = currentPath.replace("/alfresco/webdav", "").replace("/Sites/", "").replaceAll("_", "");
+      currentPath = currentPath
+        .replace("/alfresco/webdav", "")
+        .replace("/Sites/", "")
+        // Remove underscores that are preceded by either a slash or the beginning of the string
+        .replace(/^_/, "")
+        .replaceAll("/_", "/");
 
       Gofast.ITHit.Uploader.Queue.RemoveListener('OnQueueChanged', '_UploadQueueChanged', this);
       const isWikiLocation = Gofast.ITHit.currentPath.includes("/Wikis");
@@ -1306,7 +1540,7 @@
 
           //Delete spaces at the beginning and end of the name
           new_name = new_name.trim();
-          if(!validateItemName(new_name, "folder")){
+          if(!validateItemName(new_name, "folder", true)){
             return;
           }
           //Trigger the animation
@@ -1322,7 +1556,7 @@
 
         //Delete spaces at the beginning and end of the name
         new_name = new_name.trim();
-        if(!validateItemName(new_name, "folder")){
+        if(!validateItemName(new_name, "folder", true)){
           return;
         }
         //Trigger the animation
@@ -1354,20 +1588,39 @@
           if (asyncFResult.IsSuccess) {
             //Reload and go to folder position
             Gofast.ITHit.navigate(path, null, null, null, asyncFResult.Result.Href);
-            Gofast.ITHit.navigate(asyncFResult.Result.Href);
-          } else if (asyncFResult.Error instanceof ITHit.WebDAV.Client.Exceptions.MethodNotAllowedException) {
+            // The returned Href does not resolve for accented names: build the path instead.
+            Gofast.ITHit.navigate(path.replace(/\/$/, "") + "/" + name);
+            return;
+          } 
+          if (asyncFResult.Error instanceof ITHit.WebDAV.Client.Exceptions.MethodNotAllowedException) {
             Gofast.toast(name + " " + Drupal.t("already exists in this folder", {}, { context: 'gofast:ajax_file_browser' }), "warning");
             element.remove();
             return;
-          } else {
-            Gofast.toast(
-              path.includes("TEMPLATES")
-                ? Drupal.t("You are not the administrator of this space and therefore cannot create a template inside.", {}, { context: 'gofast:ajax_file_browser' })
-                : Drupal.t("You are not the administrator of this space and therefore cannot create a folder inside.", {}, { context: 'gofast:ajax_file_browser' }), "warning"
-            );
-            element.remove();
-            return;
           }
+          // The MKCOL may succeed while re-reading the new folder fails, and Alfresco answers 500 to a
+          // case-only duplicate: look at what the parent now holds before reporting an error.
+          folder.GetChildrenAsync(false, null, function (childrenResult) {
+            const existing = childrenResult.IsSuccess
+              ? childrenResult.Result.find((child) => Gofast.ITHit.isSameItemName(child.DisplayName, name, true))
+              : null;
+            if (existing && Gofast.ITHit.isSameItemName(existing.DisplayName, name)) {
+              Gofast.ITHit.navigate(path, null, null, null, existing.Href);
+              Gofast.ITHit.navigate(path.replace(/\/$/, "") + "/" + existing.DisplayName);
+              return;
+            }
+            if (existing) {
+              Gofast.toast(name + " " + Drupal.t("already exists in this folder", {}, { context: 'gofast:ajax_file_browser' }), "warning");
+            } else if (asyncFResult.Error instanceof ITHit.WebDAV.Client.Exceptions.ForbiddenException) {
+              Gofast.toast(
+                path.includes("TEMPLATES")
+                  ? Drupal.t("You are not the administrator of this space and therefore cannot create a template inside.", {}, { context: 'gofast:ajax_file_browser' })
+                  : Drupal.t("You are not the administrator of this space and therefore cannot create a folder inside.", {}, { context: 'gofast:ajax_file_browser' }), "warning"
+              );
+            } else {
+              Gofast.toast(Drupal.t("Your folder cannot be created", {}, { context: 'gofast:ajax_file_browser' }), "warning");
+            }
+            element.remove();
+          });
         });
       });
     },
@@ -1412,6 +1665,8 @@
           }
         });
       }
+
+      GFITHit._fileListShownElementsUpdated();
     },
     /*
      * Copy selected content to ITHit variable
@@ -1575,13 +1830,25 @@
             }
           });
           if (item_delete === false) {
-            var path = item._UploadProvider.Url._BaseUrl;
+            var path = new URL(item._UploadProvider.Url._BaseUrl, location.origin).pathname;
             if (path.indexOf('/Wikis') !== -1) {
               Gofast.toast(Drupal.t("There can be only wiki articles in the Wikis folder", {}, { context: 'gofast:ajax_file_browser' }), "warning");
               item_delete = true;
             }
             if (path.indexOf('/alfresco/webdav/Sites/FOLDERS TEMPLATES') !== -1) {
               Gofast.toast(Drupal.t("You can't create documents in folders templates"), "warning");
+              item_delete = true;
+            }
+
+            if (Gofast.ITHit.isRootSpacePath(path)) {
+              Gofast.toast(
+                Drupal.t(
+                  "You can't upload documents to root spaces.",
+                  {},
+                  { context: "gofast:ajax_file_browser" },
+                ),
+                "error",
+              );
               item_delete = true;
             }
           }
@@ -1663,8 +1930,10 @@
           }
 
           //Add a flag to the queue and the BeforeUpload event
-          Gofast.ITHit.queue[index].toValidate = 1;
-          Gofast.ITHit.queue[index].beforeUploadEvent = oBeforeUploadStarted;
+          if(Gofast.ITHit.queue[index]) {
+            Gofast.ITHit.queue[index].toValidate = 1;
+            Gofast.ITHit.queue[index].beforeUploadEvent = oBeforeUploadStarted;
+          }
         }else{
           //The item doesn't exists
           oBeforeUploadStarted.Upload();
@@ -1674,7 +1943,7 @@
     /*
      * Upload item queue changed
      */
-    _UploadItemQueueChanged: function (change) {
+    _UploadItemQueueChanged: async function (change) {
       if ($("#file_browser_full_upload_label")) $("#file_browser_full_upload_label").remove();
       //Get queue item by path
       var index = Gofast.ITHit.queue.findIndex(function (e) {
@@ -1707,14 +1976,18 @@
       if (state <= 1) {
         $("#file_browser_full_upload_button").show();
       }
+      if (state == 1 && Drupal.settings.gofast_ajax_file_browser?.has_upload_modal == 1 && !Gofast.ITHit.hasMultiUploadModal) {
+        Gofast.ITHit._processMultiUploadGenerateHtml();
+      }
+
       if (state > 1 && Gofast.ITHit.queue.length <= 1) {
         $("#file_browser_full_upload_button").hide();
       }
       Gofast.ITHit.queue[index].status = state;
 
       //Update progression
-      if (typeof change.NewProgress !== "undefined" && typeof change.NewProgress.NewProgress !== "undefined" && state !== 4) {
-        Gofast.ITHit.queue[index].progression = change.NewProgress.NewProgress.Completed;
+      if (typeof change.NewProgress !== "undefined" && state !== 4) {
+        Gofast.ITHit.queue[index].progression = change.NewProgress.Completed;
       }
 
       //Update completed, clear the queue and process the item
@@ -1747,7 +2020,6 @@
             };
           } else {
             var type = "Resource";
-
             //Build a ressource item object
             var item = {
               DisplayName: file.name,
@@ -1757,6 +2029,7 @@
               LastModified: new Date()
             };
           }
+          Gofast.ITHit.awaitSetItemProperties(Gofast.ITHit.queue[index], file, fullPath);
 
           //Check if the item is already present in the file browser
           var browser_item = $('#file_browser_full_files_table').find('td:contains("' + item.DisplayName + '")');
@@ -1766,7 +2039,7 @@
               let item_path = item.Href.replaceAll("%5F", "_").replaceAll("%2D", "-");
               Gofast.ITHit.selectItem(item_path, true);
             }
-          } else {
+          } else if (!Gofast.ITHit.isTechnicalFile(item)) {
             //Format the new item
             var itemHTML = Gofast.ITHit._formatItem(item);
 
@@ -1829,7 +2102,60 @@
         }
       }
 
+      //Last item canceled or failed
+      if ((state == 5 || state == 3) && Gofast.ITHit.queue.length == 1) {
+        Gofast.ITHit.hasMultiUploadModal = false;
+      }
+
+      if (!Gofast.ITHit.queue.length) {
+        Gofast.ITHit.hasMultiUploadModal = false;
+      }
       Gofast.ITHit.handleDropZonePermission();
+    },
+    /**
+     * Wait for any confirmation modal to be closed before setting item properties.
+     * Handle uploading items and already uploaded items as well.
+     * @param {*} properties | the ITHit item
+     * @param {*} file | the ITHit file time
+     * @param {*} fullPath | the ITHit URL item
+     */
+    awaitSetItemProperties: async function(item, file, fullPath) {
+      var itemProperties = {};
+      if (Gofast.ITHit.promises.multiUploadModal.promise) {
+        itemProperties = await Gofast.ITHit.promises.multiUploadModal.promise;
+      } else if (item?.properties) {
+        itemProperties = item.properties;
+      }
+      Gofast.ITHit.setItemProperties(itemProperties, file, fullPath);
+    },
+    /**
+     * Using WebDAV requests, set properties of given item.
+     * @param {*} properties | the ITHit item properties
+     * @param {*} file | the ITHit file time
+     * @param {*} fullPath | the ITHit URL item
+     */
+    setItemProperties: function (properties, file, fullPath) {
+      if (!properties || !Object.keys(properties).length) {
+        return;
+      }
+      const deletableProperties = [];
+      const formattedProperties = Object.entries(properties).map(([key, value]) => {
+        if (value === "-1" || value === "0" || value === "") { // Unset
+          deletableProperties.push(new ITHit.WebDAV.Client.PropertyName("gofast:" + key, "gofast.model"));
+          return null;
+        }
+        return new ITHit.WebDAV.Client.Property("gofast:" + key, value, "gofast.model");
+      });
+
+      Gofast.ITHit.Session.OpenFileAsync(fullPath, [], function (oFile) {
+        oFile.Result.UpdatePropertiesAsync(formattedProperties.filter(el => el != null), deletableProperties, "", function (oResult) {
+            if (oResult.IsSuccess) {
+                console.log('Properties successfully set for:', file.name);
+            } else {
+                console.error('Failed to set properties:', oResult.Error);
+            }
+        });
+      });
     },
     /*
      *
@@ -1850,6 +2176,9 @@
           }
         }
       });
+      if (!Gofast.ITHit.queue.filter(item => item != null).length) {
+        Gofast.ITHit.hasMultiUploadModal = false;
+      }
     },
     /*
      *
@@ -2003,9 +2332,8 @@
      * Add drag & drop events to ztree nodes
      */
     _processZTreeDropZones: function(path, eventType) {
-      // Check if we are not in a "Wikis" folder or if it's been expanded
       // If we are in a "Wikis" folder, we don't want to allow drag&drop items to other locations
-      const  makeDroppable = !path.includes("/Wikis") || eventType == "expand";
+      const  makeDroppable = !Gofast.ITHit.currentPath.includes("/Wikis");
 
       var nodes = $("#file_browser_full_tree").find("a");
       var nodeDragEvents = makeDroppable ? {over: "Gofast.ITHit.moveDragOver(event)", leave: "Gofast.ITHit.moveDragLeave(event)"} :  {over: "", leave: ""};
@@ -2028,17 +2356,136 @@
 
       //Set drag and drop zone for upload
       nodes.each(function (k, elem) {
+        // Remove drop event if the element should not be droppable anymore
+        elem.removeEventListener("drop", Gofast.ITHit.moveDrop);
         if(makeDroppable){
           elem.addEventListener("drop", Gofast.ITHit.moveDrop)
-          // Clear existing drop event to put them back on new tree elements
-          Gofast.ITHit.Uploader.DropZones.RemoveById(elem.id);
-          Gofast.ITHit.Uploader.DropZones.AddById(elem.id)
+          // Set dropzone on element if not already set
+          if(!Gofast.ITHit.Uploader.DropZones.GetById(elem.id)) {
+            Gofast.ITHit.Uploader.DropZones.AddById(elem.id)
+          }
         } else {
           $(elem).off("drop");
           Gofast.ITHit.Uploader.DropZones.RemoveById(elem.id);
         }
       });
     },
+
+    /**
+     * Async generator of item batches of given maximum size (default: 400)
+     *
+     * NOTE: Although this function uses Alfresco's CMIS API, the retrieved objects
+     * are mapped to seamlessly integrate with the WebDAV code.
+     * @param {string} path The path of the folder to get the children of in batches
+     * @param {object} [options] Options on how to get the batches, supports the following options:
+     * @param {number} [options.maxBatchItems] maximum number of item per batch (default: 400)
+     */
+    _getChildrenBatches: async function* (path, options = {}) {
+      // normalize path (remove webdav part)
+      path = path.replace(/^\/alfresco\/webdav/, "");
+
+      /** utility to join path segments together somewhat safely */
+      const urlPathJoin = (segments) =>
+        segments
+          .map((segment, i) => {
+            // trim leading slash of every segment except the first
+            if (i !== 0) segment = segment.replace(/^\//, "");
+            // trim trailing slash of every segment except the last
+            if (i !== segments.length - 1) segment = segment.replace(/\/$/, "");
+            return segment;
+          })
+          .join("/"); // join each segment with slashes
+
+      /**
+       * function to wrap a cmis response object by creating a new object with
+       * properties satisfying the used properties of the WebDAV object they are replacing
+       */
+      const wrapCmisResponseObject = (obj) => {
+        const cmisProperties = obj.succinctProperties;
+
+        return {
+          _CMISObject: obj,
+          DisplayName: cmisProperties["cmis:name"],
+          ResourceType:
+            cmisProperties["cmis:objectTypeId"] === "cmis:folder" ? "Folder" : "Resource",
+          Href: urlPathJoin(["/alfresco/webdav", path, cmisProperties["cmis:name"]]),
+        };
+      };
+
+      // build URL to CMIS API (points at item using its path)
+      const cmisUrl = new URL(
+        urlPathJoin(["/alfresco/api/-default-/public/cmis/versions/1.1/browser/root", path]),
+        location.origin,
+      );
+
+      // Add configuration through parameters
+      cmisUrl.searchParams.set("cmisselector", "children");
+      cmisUrl.searchParams.set("succinct", "true");
+      cmisUrl.searchParams.set("orderBy", "cmis:name");
+      // cmis:objectTypeId is always returned
+      cmisUrl.searchParams.set("filter", "cmis:name");
+
+      const headers = {
+        Authorization: "Basic " + btoa(Drupal.settings.ticket),
+      };
+
+      // initialize pagination variables
+      const maxItems = options.maxBatchItems ?? 400;
+      let skipCount = 0;
+
+      /** Execute a request to get the children using the current pagination values */
+      const doRequest = async () => {
+        cmisUrl.searchParams.set("maxItems", String(maxItems));
+        cmisUrl.searchParams.set("skipCount", String(skipCount));
+
+        return await $.get({
+          url: cmisUrl,
+          headers,
+        }).promise();
+      };
+
+      // Each request is done eagerly, started right after the last one gets a
+      // response as long as there are items.
+      let body;
+      let request = doRequest();
+      try {
+        do {
+          body = await request;
+
+          if (body.hasMoreItems) {
+            // go to next page/batch and start next request
+            skipCount += maxItems;
+            request = doRequest();
+          }
+
+          const childrenBatch = body.objects.map((o) => wrapCmisResponseObject(o.object));
+          yield({ IsSuccess: true, Result: childrenBatch });
+        } while (body.hasMoreItems);
+      } catch {
+        // we do not fill in the `Error` property because it is not used where this function is used.
+        yield({ IsSuccess: false, Result: null });
+      }
+    },
+
+    /**
+     * Callback-based alternative to {@linkcode _getChildrenBatches}.
+     * @param {string} path The path of the folder to get children of
+     * @param {object} options The options for the operations. Supports all
+     *  options of {@linkcode _getChildrenBatches}, and adds the following:
+     * @param {(batch: {IsSuccess:boolean,Result:any[]}) => void} options.forEachBatch A callback executed for each batch of items.
+     * @param {() => void} [options.onDone] A callback executed at the end after all batches were processed.
+     * @param {number} [options.maxBatchItems] maximum number of item per batch (default: 400)
+     */
+    _getChildrenBatchesCallback: async function (path, options) {
+      const { forEachBatch, onDone, ...otherOptions } = options;
+
+      // async iteration on children batches
+      for await (const batch of Gofast.ITHit._getChildrenBatches(path, otherOptions)) {
+        forEachBatch(batch);
+      }
+      onDone?.();
+    },
+
     /*
      * Called in zTree processing for each opened folder
      */
@@ -2047,142 +2494,141 @@
         function (asyncResult) {
 
           if (!asyncResult.IsSuccess) {
-            console.log("Error ITHit async");
+            console.log("Error ITHit async (can't open folder)");
             return;
           }
 
-          var folder = asyncResult.Result;
-          folder.GetChildrenAsync(false, null,
-            function (asyncResult) {
+          Gofast.ITHit._getChildrenBatchesCallback(path, {
+            forEachBatch,
+            onDone,
+          });
 
-              if (!asyncResult.IsSuccess) {
-                console.log("Error ITHit async");
-                return;
-              }
+          function forEachBatch(asyncResult) {
 
-              var items = asyncResult.Result;
-              var nodes_to_add = []
+            if (!asyncResult.IsSuccess) {
+              console.log("Error CMIS async (can't get children)");
+              return;
+            }
 
-              //Order nodes before processing them, regarding their names
-              items.sort(function (a, b) {
-                var comp_a = eval('a.DisplayName.toLowerCase()');
-                var comp_b = eval('b.DisplayName.toLowerCase()');
-                return (comp_a > comp_b) ? 1 : ((comp_b > comp_a) ? -1 : 0);
-              });
+            var items = Gofast.ITHit.filterTechnicalFiles(asyncResult.Result);
+            var nodes_to_add = []
 
-              //Handle history for GoFAST Essential
-              if(Gofast._settings.isEssential){
-                Gofast.ITHit._handleEssentialHistory(path, split, eventType, items);
-                if(location.hash == "#oghome"){
-                  Gofast.sideFileBrowser.selectCurrentItem("book-browser");
+            //Order nodes before processing them, regarding their names
+            items.sort(function (a, b) {
+              var comp_a = eval('a.DisplayName.toLowerCase()');
+              var comp_b = eval('b.DisplayName.toLowerCase()');
+              return (comp_a > comp_b) ? 1 : ((comp_b > comp_a) ? -1 : 0);
+            });
+
+            //Handle history for GoFAST Essential
+            if (Gofast._settings.isEssential) {
+              Gofast.ITHit._handleEssentialHistory(path, split, eventType, items);
+            }
+            //Unhide any hidden fileBrowser elements if they exist.
+            if (Gofast._settings.isEssential && eventType === "click") {
+              Gofast.Essential.unHideFileBrowserLayerChildren()
+            }
+            //Decode HTML entities
+            path = decodeURIComponent(path);
+
+            //Search where to put the elements in zTree
+            var node_parent = Gofast.ITHit.tree ? Gofast.ITHit.tree.getNodeByParam("path", path) : null;
+
+            //Prevent space to expand on click on Essential version
+            if(!(split.length == 0 && eventType != "expand") || !Gofast._settings.isEssential){
+              //Process items in zTree
+              for (var i = 0; i < items.length; i++) {
+                var item = items[i];
+                //If it's not a folder, continue
+                if (item.ResourceType !== "Folder") {
+                  continue;
                 }
-              }
-              //Unhide any hidden fileBrowser elements if they exist.
-              if(Gofast._settings.isEssential && eventType === "click"){
-                Gofast.Essential.unHideFileBrowserLayerChildren()
-              }
-              //Decode HTML entities
-              path = decodeURIComponent(path);
 
-              //Search where to put the elements in zTree
-              var node_parent = Gofast.ITHit.tree ? Gofast.ITHit.tree.getNodeByParam("path", path) : null;
+                //Decode HTML entities
+                item.Href = decodeURIComponent(item.Href);
+                //Remove slash at the end if needed
+                if (item.Href.substr(-1, 1) === "/") {
+                  item.Href = item.Href.substring(0, item.Href.length - 1);
+                }
 
+                //Search if our wanted node exists
+                if (Gofast.ITHit.tree && Gofast.ITHit.tree.getNodeByParam("path", item.Href) === null) {
+                  //Need to add the node to the tree
+                  var name = item.Href.split('/');
+                  name = name.pop();
 
-              //Prevent space to expand on click on Essential version
-              if(!(split.length == 0 && eventType != "expand") || !Gofast._settings.isEssential){
-                //Process items in zTree
-                for (var i = 0; i < items.length; i++) {
-                  var item = items[i];
-                  //If it's not a folder, continue
-                  if (item.ResourceType !== "Folder") {
-                    continue;
-                  }
+                var icon = ""
+                //Get icon path
+                if(Gofast._settings.isEssential){
+                  icon = "ztreeEssential fas ztreeFa "
+                } else {
+                  icon = "fas ztreeFa "
+                }
+                if(name == "TEMPLATES"){
+                  icon += "fa-folder templates"
+                } else if (name == "Wikis") {
+                  icon += "fa-folder wikis"
+                } else if (name == "WEBFORM") {
+                  icon += "fa-folder webform"
+                } else if (name === BROADCAST_INBOX_FOLDER_NAME) {
+                  icon += "fa-folder broadcast"
+                } else {
+                  icon += Gofast.ITHit._getIconPath(name, item.Href, "fa");
+                }
+                icon += " "
 
-                  //Decode HTML entities
-                  item.Href = decodeURIComponent(item.Href);
-                  //Remove slash at the end if needed
-                  if (item.Href.substr(-1, 1) === "/") {
-                    item.Href = item.Href.substring(0, item.Href.length - 1);
-                  }
-
-                  //Search if our wanted node exists
-                  if (Gofast.ITHit.tree && Gofast.ITHit.tree.getNodeByParam("path", item.Href) === null) {
-                    //Need to add the node to the tree
-                    var name = item.Href.split('/');
-                    name = name.pop();
-
-                  var icon = ""
-                  //Get icon path
-                  if(Gofast._settings.isEssential){
-                    icon = "ztreeEssential fas ztreeFa "
+                  //Set open status to open or close, regarding the full path and the actual item path
+                  if (path.indexOf(item.Href) !== -1) {
+                    var open = true;
                   } else {
-                    icon = "fas ztreeFa "
-                  }
-                  if(name == "TEMPLATES"){
-                    icon += "fa-folder templates"
-                  } else if (name == "Wikis") {
-                    icon += "fa-folder wikis"
-                  } else if (name == "WEBFORM") {
-                    icon += "fa-folder webform"
-                  } else {
-                    icon += Gofast.ITHit._getIconPath(name, item.Href, "fa");
-                  }
-                  icon += " "
-                  for (var j = 0; j < Gofast._settings.gofast_ajax_file_browser.archived_spaces.length; j++) {
-                    if (
-                      decodeURIComponent(item.Href) ==
-                      Gofast._settings.gofast_ajax_file_browser.archived_spaces[j]
-                    ) {
-                        icon = "fas ztreeFa fa-archive "
-                    }
+                    var open = false;
                   }
 
-                    //Set open status to open or close, regarding the full path and the actual item path
-                    if (path.indexOf(item.Href) !== -1) {
-                      var open = true;
-                    } else {
-                      var open = false;
-                    }
+                  var type = item.ResourceType;
 
-                    var type = item.ResourceType;
-
-                    if (node_parent) {
-                      //Push the node to the array
-                      nodes_to_add.push({ id: Math.floor(Math.random() * 999999), pId: node_parent.id, name: name, open: open, path: item.Href, icon: "", iconSkin: icon, isParent: true, type: type });
-                    }
+                  if (node_parent) {
+                    //Push the node to the array
+                    nodes_to_add.push({ id: Math.floor(Math.random() * 999999), pId: node_parent.id, name: name, open: open, path: item.Href, icon: "", iconSkin: icon, isParent: true, type: type });
                   }
                 }
               }
-              //Add nodes to the tree if needed
-              if (nodes_to_add.length > 0 && node_parent) {
-                Gofast.ITHit.tree.addNodes(node_parent, nodes_to_add)
-                // Add drop events to new nodes
-                Gofast.ITHit._processZTreeDropZones(path, eventType);
-              }
-              //Iterate again if needed
-              if (split.length > 0) {
-                Gofast.ITHit._processTreePart(path + "/" + split.shift(), split, eventType);
-              } else {
 
-                //get all displayed nodes and init tooltip on spaces
-                const treeNodeToTooltip = Gofast.ITHit.tree.getNodesByFilter(()=>true);
-                Gofast.ITHit.initTreeTooltip(treeNodeToTooltip);
+              // set current items to be processed for further tree changes (e.g.: folder icon change due to mirroring)
+              Gofast.ITHit._processTreeItems(items);
+            }
+            //Add nodes to the tree if needed
+            if (nodes_to_add.length > 0 && node_parent) {
+              Gofast.ITHit.tree.addNodes(node_parent, nodes_to_add)
+              // Add drop events to new nodes
+              Gofast.ITHit._processZTreeDropZones(path, eventType);
+            }
+          }
 
-                //All is done, we can select the item in the zTree if needed
-                const currentPath = decodeURIComponent(Gofast.ITHit.currentPath);
-                if (typeof Gofast.ITHit.tree.getSelectedNodes()[0] !== "object" || Gofast.ITHit.tree.getSelectedNodes()[0].path !== currentPath) {
-                  Gofast.ITHit.tree.selectNode(Gofast.ITHit.tree.getNodeByParam("path", currentPath));
-                  if(Gofast._settings.isEssential){
-                    $("#gofast_over_content").scrollTop(0)
-                    $("#file_browser_full_tree_element").scrollLeft(0)
-                  }
+          function onDone() {
+            //Iterate again if needed
+            if (split.length > 0) {
+              Gofast.ITHit._processTreePart(path + "/" + split.shift(), split, eventType);
+            } else {
+
+              //get all displayed nodes and init tooltip on spaces
+              const treeNodeToTooltip = Gofast.ITHit.tree.getNodesByFilter(() => true);
+              Gofast.ITHit.initTreeTooltip(treeNodeToTooltip);
+
+              //All is done, we can select the item in the zTree if needed
+              const currentPath = decodeURIComponent(Gofast.ITHit.currentPath);
+              if (typeof Gofast.ITHit.tree.getSelectedNodes()[0] !== "object" || Gofast.ITHit.tree.getSelectedNodes()[0].path !== currentPath) {
+                Gofast.ITHit.tree.selectNode(Gofast.ITHit.tree.getNodeByParam("path", currentPath));
+                if (Gofast._settings.isEssential) {
+                  $("#gofast_over_content").scrollTop(0)
+                  $("#file_browser_full_tree_element").scrollLeft(0)
                 }
               }
             }
-          );
+          }
         }
       );
     },
+
     /*
      * Check the path and the name passed in params and return the corresponding icon path
      */
@@ -2234,6 +2680,26 @@
         }
       }
       return icon;
+    },
+    /**
+     * Tells if an item is a technical file or folder created by Office or the OS, which Drupal never replicates
+     * @param {ITHit.WebDAV.Client.HierarchyItem} item The item to check
+     * @returns {boolean} TRUE when the item must stay out of the file browser
+     */
+    isTechnicalFile: function (item) {
+      return TECHNICAL_FILE_PATTERNS.some(function (pattern) {
+        return pattern.test(item.DisplayName);
+      });
+    },
+    /**
+     * Removes the technical files from a WebDAV item list
+     * @param {ITHit.WebDAV.Client.HierarchyItem[]} items The items returned by GetChildrenAsync
+     * @returns {ITHit.WebDAV.Client.HierarchyItem[]} The items that can be displayed
+     */
+    filterTechnicalFiles: function (items) {
+      return items.filter(function (item) {
+        return !Gofast.ITHit.isTechnicalFile(item);
+      });
     },
     /*
      * Process items into the file browser when it's loaded
@@ -2289,20 +2755,8 @@
       Gofast.ITHit.currentResources = resources;
 
       if (resources.length < 300 && folders.length < 300) {
-        //Get the documents paths
-        var Hrefs_files = resources.map(function (item) { return item.Href.replace("/alfresco/webdav/", ""); });
-        var Hrefs_folders = folders.map(function (item) { return item.Href.replace("/alfresco/webdav/", ""); });
-
-        //Send a request to Alfresco to map versionning dates
-        $.ajax({
-          url: location.origin + '/alfresco/service/post/file_browser_extra_informations?alf_ticket=' + Drupal.settings.ticket,
-          type: "POST",
-          timeout: 3000,
-          data: { files: JSON.stringify(Hrefs_files), folders: JSON.stringify(Hrefs_folders), current_folder: fullPath.replace("/alfresco/webdav/", "") },
-          contentType: "application/json; charset=utf-8",
-          dataType: "json",
-          indexValue: { folders: folders, resources: resources }
-        }).always(function (response) {
+        Gofast.ITHit._fetchFileBrowserExtraData(folders, resources, fullPath)
+        .always(function (response) {
           Gofast.ITHit._processItemsAfterAsync(this.indexValue.folders, this.indexValue.resources, response);
           Gofast.ITHit.processingItems = false;
         });
@@ -2311,13 +2765,64 @@
         Gofast.ITHit.processingItems = false;
       }
     },
+    /**
+     * Fetches the necessary extra data needed by the file browser from Alfresco
+     * @param {ITHit.WebDAV.Client.HierarchyItem[]} folders The folder ITHit WebDAV items
+     * @param {ITHit.WebDAV.Client.HierarchyItem[]} resources The resource (files) ITHit WebDAV items
+     * @param {string} fullPath The current full path
+     * @returns A jQuery ajax request object
+     */
+    _fetchFileBrowserExtraData: function(folders, resources, fullPath = '/') {
+      //Get the documents paths
+      const Hrefs_files = resources.map(function (item) {
+        return item.Href.replace("/alfresco/webdav/", "");
+      });
+      const Hrefs_folders = folders.map(function (item) {
+        return item.Href.replace("/alfresco/webdav/", "");
+      });
+
+      //Send a request to Alfresco to map versionning dates
+      return $.ajax({
+        url:
+          location.origin +
+          "/alfresco/service/post/file_browser_extra_informations?alf_ticket=" +
+          Drupal.settings.ticket,
+        type: "POST",
+        timeout: 3000,
+        data: {
+          files: JSON.stringify(Hrefs_files),
+          folders: JSON.stringify(Hrefs_folders),
+          current_folder: fullPath.replace("/alfresco/webdav/", ""),
+        },
+        contentType: "application/json; charset=utf-8",
+        dataType: "json",
+        indexValue: { folders: folders, resources: resources },
+      });
+    },
+    /**
+     * Resets Gofast.ITHit.mirrorFolders to its original value of an empty array.
+     *
+     * This function does not mutate the array instance of mirrorFolders,
+     * which means that the value of mirrorFolders after calling this function is a new empty array.
+     */
+    _resetMirrorFolders: function() {
+      Gofast.ITHit.mirrorFolders = [];
+    },
+    /**
+     * Resets Gofast.ITHit.archiveFolders to its original value of an empty array.
+     *
+     * This function does not mutate the array instance of archiveFolders,
+     * which means that the value of archiveFolders after calling this function is a new empty array.
+     */
+    _resetArchiveFolders: function() {
+      Gofast.ITHit.archiveFolders = [];
+    },
     /*
      * Process items into the file browser when it's loaded
      * Called when navigation occures
      */
     _processItemsAfterAsync: function (folders, resources, response) {
       Gofast.ITHit.progress.set(0.9);
-      Gofast.ITHit.mirrorFolders = [];
       if (response !== null && typeof response !== "undefined" && typeof response.status === "undefined") {
 
         if (response.files && response.files.dates && response.files.dates.length > 0) {
@@ -2368,7 +2873,7 @@
           }
         }
 
-        if (response.folders && response.folders.visibility.length > 0) {
+        if (response.folders && response.folders?.visibility?.length) {
           for (var j = 0; j < folders.length; j++) {
             if (response.folders.props.folderRefs[j]) {
               folders[j].NodeRef =  'workspace://SpacesStore/'+response.folders.props.folderRefs[j];
@@ -2376,15 +2881,23 @@
           }
         }
 
-        if (response.folders && response.folders.visibility && response.folders.visibility.length > 0) {
+        if (response.folders && response.folders?.visibility?.length) {
           for (var j = 0; j < folders.length; j++) {
-            if (response.folders.visibility[j]) {
-              folders[j].Visibility = response.folders.visibility[j];
+            if (response.folders?.visibility[j]) {
+              folders[j].Visibility = response.folders?.visibility[j];
             }
             // Keep mirror folders paths
-            if(response.folders.visibility[j] && response.folders.visibility[j].length > 1){
+            if(response.folders?.visibility[j] && response.folders?.visibility[j].length > 1){
               Gofast.ITHit.mirrorFolders =  Gofast.ITHit.mirrorFolders.concat(decodeURI(folders[j].Href));
             }
+          }
+        }
+
+        if (response.folders && response.folders.properties) {
+          for (var j = 0; j < folders.length; j++) {
+            if(response.folders.properties[j]["gofast:isarchived"] == true) {
+              Gofast.ITHit.archiveFolders = Gofast.ITHit.archiveFolders.concat(decodeURI(folders[j].Href));
+            } 
           }
         }
       } else {
@@ -2419,16 +2932,22 @@
         Gofast.ITHit._attachEvents(item, processedItem);
 
         //Configure custom scrollbar to replace the legacy
-        $("#file_browser_full_files_table").mCustomScrollbar({
-          axis: "y",
-          theme: "dark-thin",
-          callbacks: {
-            onInit: function () {
-              //Trigger the auto sizing of columns
-              Gofast.ITHit.reset_full_browser_size();
-            }
-          },
-        });
+        var waitForTableInterval = setInterval(async () => {
+          if (!$("#file_browser_full_files_table").length) {
+            return;
+          }
+          clearInterval(waitForTableInterval);
+          $("#file_browser_full_files_table").mCustomScrollbar({
+            axis: "y",
+            theme: "dark-thin",
+            callbacks: {
+              onInit: function () {
+                //Trigger the auto sizing of columns
+                Gofast.ITHit.reset_full_browser_size();
+              }
+            },
+          });
+        }, 10);
       }
 
       //Trigger the auto sizing of columns
@@ -2445,6 +2964,144 @@
       Gofast.ITHit.progress.done();
       this.fullReady = true;
     },
+
+    /**
+     * Updates Icons in the tree view of folders that are mirrored/have multiple locations
+     */
+    _updateTreeMirrorIcons: function() {
+      // mirror folders have not been loaded yet
+      if(Gofast.ITHit.mirrorFolders == null) {
+        return;
+      }
+
+      for (const folderPath of Gofast.ITHit.mirrorFolders) {
+        const treeNode = Gofast.ITHit.tree.getNodeByParam(
+          "path",
+          // nodes in the zTree object do not have the trailing slash in their path,
+          // remove it if present
+          folderPath.replace(/\/$/, ""),
+        );
+
+        // node for mirrored folder did not load yet, ignore it.
+        if (treeNode == null) continue;
+
+        treeNode.iconSkin = treeNode.iconSkin.replace(/\bfa-folder\b/, "fa-folders");
+
+        Gofast.ITHit.tree.updateNode(treeNode, false);
+      }
+    },
+
+    /**
+     * Updates Icons in the tree view of folders that are archived/have multiple locations
+     */
+    _updateTreeArchiveIcons: function() {
+      // archive folders have not been loaded yet
+      if(Gofast.ITHit.archiveFolders == null) {
+        return;
+      }
+
+      for (const folderPath of Gofast.ITHit.archiveFolders) {
+        const treeNode = Gofast.ITHit.tree.getNodeByParam(
+          "path",
+          // nodes in the zTree object do not have the trailing slash in their path,
+          // remove it if present
+          folderPath.replace(/\/$/, ""),
+        );
+
+        // node for archived folder did not load yet, ignore it.
+        if (treeNode == null) continue;
+
+        treeNode.iconSkin = treeNode.iconSkin.replace(/fa-[a-z0-9]+/, "fa-archive");
+
+        Gofast.ITHit.tree.updateNode(treeNode, false);
+      }
+    },
+
+    /**
+     * Function to process WebDAV items that may need to change the tree view when loaded
+     * @param {ITHit.WebDAV.Client.HierarchyItem[]} items The ITHit WebDAV items to process
+     */
+    _processTreeItems: (() => {
+      // initial debounce state
+      /**
+       * @type {ITHit.WebDAV.Client.HierarchyItem[]} A WebDAV item queue. Calls to _processTreeItems in
+       * quick succession add their items to this queue. This queue is emptied
+       * (replaced by a new array) when the debounced implementation is called
+       */
+      let queue = [];
+
+      /**
+       * @type {number|null} The timeout ID of the planned task executing the
+       * debounced implementation. This is set to null when no task has been
+       * queued. This is used to cancel a previously queued task when
+       * _processTreeItems is called again before the task executed.
+       */
+      let timeoutId = null;
+
+      return function (items) {
+        // how long to wait without being called to execute the implementation code
+        const debounceDuration = 200; /*ms*/
+
+        // Add all given items to queue of items to process
+        queue = [...queue, ...items];
+
+        // if was called less than debounceDuration milliseconds ago, cancel planned execution
+        if (timeoutId != null) {
+          clearTimeout(timeoutId);
+        }
+
+        // plan execution in debounceDuration milliseconds
+        timeoutId = setTimeout(() => {
+          // reset function bounce state
+          timeoutId = null;
+          const items = queue;
+          queue = [];
+          // call implementation
+          Gofast.ITHit._processTreeItemsDebounced(items);
+        }, debounceDuration);
+      };
+    })(),
+
+    /**
+     * Implementation of logic for _processTreeItems
+     *
+     * This function is called in a debounced way by _processTreeItems to reduce
+     * the number of requests to Alfresco's API.
+     * @param {ITHit.WebDAV.Client.HierarchyItem[]} items The ITHit WebDAV items to process
+     */
+    _processTreeItemsDebounced: function(items) {
+      // group items by resource type
+      const folders = [];
+      const resources = [];
+
+      for (const i of items) {
+        if (i.ResourceType === "Folder") {
+          folders.push(i);
+        } else {
+          resources.push(i);
+        }
+      }
+
+      Gofast.ITHit._fetchFileBrowserExtraData(folders, resources, GFITHit.currentPath).always(function (
+        response,
+      ) {
+        this.indexValue.folders.forEach((folder, i) => {
+          // is folder mirrored ? add to mirrored folders list
+          if (response.folders && response.folders?.visibility[i]?.length > 1) {
+            Gofast.ITHit.mirrorFolders.push(decodeURI(folder.Href));
+          }
+          // is folder archived ? add to archived folders list
+          if (response.folders && response.folders?.properties[i]["gofast:isarchived"] == true) {
+            Gofast.ITHit.archiveFolders.push(decodeURI(folder.Href));
+          }
+        });
+
+        Gofast.ITHit._updateTreeMirrorIcons();
+        Gofast.ITHit._updateTreeArchiveIcons();
+        GFITHit._handleArchiveSpaceUpdatesOnNavigation(response.current_folder);
+      });
+    },
+
     /*
      *
      * Handle the history select2 component when navigating in GoFAST Essential
@@ -2665,13 +3322,6 @@
           //Remove and add a new click event to update the nid
             navTab.off("click")
             navTab.on("click", this, clickEvent);
-
-            if(navTab.attr("id") === "ogtab_home"){
-              navTab.on("click", () => {
-                $("#nav_mobile_file_browser_wiki_container").click()
-                Gofast.sideFileBrowser.selectCurrentItem("book-browser");
-              })
-            }
           })
         }
 
@@ -3053,11 +3703,6 @@
       itemHTML += "<td title='" + item.DisplayName + "' style='width:" + tdIconSize + "; height:75px;' class='item-icon'>";
       if (item.ResourceType == "Folder") { //It's a folder
         var icon = Gofast.ITHit._getIconPath(item.DisplayName, item.Href, "fa");
-        for (var i = 0; i < Gofast._settings.gofast_ajax_file_browser.archived_spaces.length; i++) {
-          if (decodeURIComponent(item.Href) == Gofast._settings.gofast_ajax_file_browser.archived_spaces[i] + '/') {
-            icon = 'fa-archive';
-          }
-        }
         var color = "#3498db";
         if (icon === "TEMPLATE") {
           icon = "fa-folder";
@@ -3066,6 +3711,8 @@
           color = "#20c997";
         } else if(item.DisplayName === "WEBFORM") {
           color = "brown";
+        } else if (item.DisplayName === BROADCAST_INBOX_FOLDER_NAME) {
+          color = "var(--gf-folder-broadcast-color)";
         }
         itemHTML += "<span class='n-color fas " + icon + "' style='color:" + color + "'></span>";
         //Get extension
@@ -3127,13 +3774,34 @@
       itemHTML += item.ResourceType;
       itemHTML += "</td>";
 
-      //Modification date
+      //Modification date 
       itemHTML += "<td class='item-date' style='width:15%;'>";
       if (typeof item.LastModified !== "undefined") {
-        var date = item.LastModified;
-        //Display date, regarding the user language
+        var date = new Date(item.LastModified);
+        var timeZone = Gofast.get('user').timezone;
+        // Set the default platform timezone if the user do not have one.
+        if (!timeZone) {
+          timeZone = Drupal.settings.timezone;
+        }
+
+        // Format date in ISO format with the correct timezone
+        var formatter = new Intl.DateTimeFormat('en-CA', { 
+          timeZone: timeZone,
+          year: 'numeric',
+          month: '2-digit', 
+          day: '2-digit',
+          hour: '2-digit',
+          minute: '2-digit',
+          second: '2-digit',
+          hour12: false
+        });
+
+        // Get ISO formatted date string
+        var isoDate = formatter.format(date); // Returns YYYY-MM-DD HH:mm:ss
+
+        // Format with moment using the known ISO format
         const format = GofastConvertDrupalDatePattern("moment", Drupal.settings.date_format_short, false);
-        const displayedDate = moment(date).format(format);
+        const displayedDate = moment(isoDate, "YYYY-MM-DD HH:mm:ss").format(format);
         itemHTML += displayedDate;
       }
       itemHTML += "</td>";
@@ -3143,9 +3811,15 @@
       if (!item.Timeout) {
         itemHTML += Gofast.ITHit._formatInfo(item.Permission, item.Visibility, item.ResourceType);
         // Change mirroring icon
-        if(Gofast.ITHit.mirrorFolders.indexOf(decodeURI(item.Href)) != -1 ){
+        if(Gofast.ITHit._isPathMirrored(decodeURI(item.Href))){
           // Replace old icon by the new one
           itemHTML = itemHTML.replace(icon, "fa-folders");
+        }
+        if(Gofast.ITHit._isPathArchived(decodeURI(item.Href))){
+          // Replace old icon by the new one
+          itemHTML = itemHTML.replace(icon, "fa-archive");
+          // Make icon display with gray color
+          itemHTML = itemHTML.replace("n-color", "");
         }
 
       } else {
@@ -3155,7 +3829,7 @@
       itemHTML += "</td>";
 
       //Stock the path to the item
-      itemHTML += "<td class='item-path' style='display:none;'>";
+      itemHTML += "<td class='item-path' data-path='" + item.Href.toLowerCase() + "' style='display:none;'>";
       itemHTML += item.Href;
       itemHTML += "</td>";
 
@@ -3174,6 +3848,31 @@
       itemHTML += "</tr>";
       return itemHTML;
     },
+
+    /**
+     * Checks if a single path is a mirrored folder path.
+     * @param {string} path - href of the item to check if it is mirrored
+     * @returns {boolean} true if path is a mirrored folder, false otherwise.
+     *  Will also return false when the mirroredFolders property has not been loaded yet
+     */
+    _isPathMirrored: (path) => {
+      /** @type {number|null} */
+      const pathIndex = Gofast.ITHit.mirrorFolders?.indexOf(path);
+      return null != pathIndex && pathIndex != -1;
+    },
+
+    /**
+     * Checks if a single path is a archived folder path.
+     * @param {string} path - href of the item to check if it is archived
+     * @returns {boolean} true if path is a archived folder, false otherwise.
+     *  Will also return false when the archiveFolders property has not been loaded yet
+     */
+    _isPathArchived: (path) => {
+      /** @type {number|null} */
+      const pathIndex = Gofast.ITHit.archiveFolders?.indexOf(path);
+      return null != pathIndex && pathIndex != -1;
+    },
+
     /*
      *
      * @param {string} Access permission
@@ -3435,7 +4134,6 @@
               //add class disabled on copy and cut options
               $('#file_browser_tooolbar_copy').prop('disabled', true);
               $('#file_browser_tooolbar_cut').prop('disabled', true);
-              $('#file_browser_tooolbar_cart_button').prop('disabled', true);
               //disable manage button
               $('#file_browser_full_container #file_browser_tooolbar_manage').addClass("disabled").removeClass("btn-white").attr("data-toggle", "tooltip").tooltip();
               //disable contextual actions
@@ -3447,7 +4145,6 @@
             //Remove class disabled on copy and cut options
             $('#file_browser_tooolbar_copy').prop('disabled', false);
             $('#file_browser_tooolbar_cut').prop('disabled', false);
-            $('#file_browser_tooolbar_cart_button').prop('disabled', false);
             //Enable contextual actions
             $('#file_browser_tooolbar_contextual_actions').prop('disabled', false);
           }
@@ -3457,13 +4154,7 @@
           }
         });
         processedItem.find("td>input[type=checkbox]").on('mouseup touchend', function (e) {
-          //Uncheck magic checkbox if all items are not checked
-          const gofastMagicCheckbox = document.querySelector("#gofastBrowserMagicCheckbox");
-          if ($('.file_browser_full_files_element.selected').length  === $('.file_browser_full_files_element:not(#file_browser_back_button)').length) {
-            if (gofastMagicCheckbox) gofastMagicCheckbox.checked = true;
-          } else {
-            if (gofastMagicCheckbox) gofastMagicCheckbox.checked = false;
-          }
+          GFITHit._fileListSelectionUpdated();
         });
         // checkboxes are actually checked _after_ the mousedown event so we need a differentiated event for this
         processedItem.find("td>input[type=checkbox]").on("change", function() {
@@ -3472,37 +4163,14 @@
           // var type = $(processedItem[0]).find('td.item-type').text();
 
           if (path === '/alfresco/webdav/Sites/_Groups/' || path === '/alfresco/webdav/Sites/_Extranet/' || path === '/alfresco/webdav/Sites/_Organisations/' || path === '/alfresco/webdav/Sites/_Public/'
-            || Gofast._settings.gofast_ajax_file_browser.archived_spaces.indexOf(path.substring(0, path.length - 1)) !== -1) {
+            || GFITHit._isPathArchived(path)) {
             $('#file_browser_full_container #file_browser_tooolbar_manage').addClass("disabled").removeClass("btn-white").attr("data-toggle", "tooltip").tooltip();
-          } else {
-            if ($('.gfb-cbx:checked').length > 0) {
-              $('.gfb-cbx:checked').each(function () {
-                if ($(this).parents('.file_browser_full_files_element').find('.item-real-type').text() === "Group" || $(this).parents('.file_browser_full_files_element').find('.item-real-type').text() === "Organisations"||  $(this).parents('.file_browser_full_files_element').find('.item-real-type').text() === "Templates folder" || $(this).parents('.file_browser_full_files_element').find('.item-name').text() === "TEMPLATES" || $(this).parents('.file_browser_full_files_element').find('.item-name').text() === 'WIKIS' || $(this).parents('.file_browser_full_files_element').find('.item-real-type').text() === "Extranet" || $(this).parents('.file_browser_full_files_element').find('.item-real-type').text() === "Public space") { $('#file_browser_full_container #file_browser_tooolbar_manage').addClass("disabled").removeClass("btn-white").attr("data-toggle", "tooltip").tooltip();
-                  return false;
-                } else {
-                  $('#file_browser_full_container #file_browser_tooolbar_manage').removeClass("disabled").addClass("btn-white").attr("data-toggle", "dropdown").tooltip("dispose");
-                }
-                if($(this).parents('.file_browser_full_files_element').find('.item-real-type').text() === "Folder" ){
-                  $('#taxonomy_open_span').parent().attr('style', 'display:none');
-                  $('#publications_open_span').parent().attr('style', 'display:none');
-                  $('#linksharing_open_span').parent().attr('style', 'display:none');
-                }else{
-                  $('#compress_files').parent().attr('style', 'display:none');
-                  $('#taxonomy_open_span').parent().attr('style', 'display:block');
-                  $('#linksharing_open_span').parent().attr('style', 'display:block');
-                  $('#publications_open_span').parent().attr('style', 'display:block');
-                }
-              });
-            } else {
-            $('#file_browser_full_container #file_browser_tooolbar_manage').addClass("disabled").removeClass("btn-white").attr("data-toggle", "dropdown").tooltip("dispose");
-            }
           }
         });
         function processedItemCallback(e) {
           //Remove class disabled on copy and cut options
           $('#file_browser_tooolbar_copy').prop('disabled', false);
           $('#file_browser_tooolbar_cut').prop('disabled', false);
-          $('#file_browser_tooolbar_cart_button').prop('disabled', false);
           //Enable contextual actions
           $('#file_browser_tooolbar_contextual_actions').prop('disabled', false);
           let selectedItems = $("#file_browser_full_files .selected").not('.search-hidden');
@@ -3521,16 +4189,16 @@
                     closestItemFromTop = item
                   }
                 })
-                closestItemFromTop.nextUntil(processedItem, "tr").find("td>input[type=checkbox]").prop('checked', true);
-                closestItemFromTop.nextUntil(processedItem, "tr").addClass('selected');
+                closestItemFromTop.nextUntil(processedItem, "tr").not('.search-hidden').find("td>input[type=checkbox]").prop('checked', true);
+                closestItemFromTop.nextUntil(processedItem, "tr").not('.search-hidden').addClass('selected');
               // If the processedItem is on top of selectedItems then select all items from processItem to the first selected item
               } else if (selectedItems.first().position().top > processedItem.position().top) {
                 processedItem.nextUntil($("#file_browser_full_files .selected").first(), "tr").not('.search-hidden').find("td>input[type=checkbox]").prop('checked', true);
                 processedItem.nextUntil($("#file_browser_full_files .selected").first(), "tr").not('.search-hidden').addClass('selected');
               // If the processedItem is under the last selected item then select all items from last selected item to processedItem
               } else {
-                selectedItems.last().nextUntil(processedItem, "tr").find("td>input[type=checkbox]").prop('checked', true);
-                selectedItems.last().nextUntil(processedItem, "tr").addClass('selected');
+                selectedItems.last().nextUntil(processedItem, "tr").not('.search-hidden').find("td>input[type=checkbox]").prop('checked', true);
+                selectedItems.last().nextUntil(processedItem, "tr").not('.search-hidden').addClass('selected');
               }
               processedItem.addClass('selected');
               processedItem.find("td>input[type=checkbox]").prop('checked', true);
@@ -3555,12 +4223,8 @@
             }
           }
           processedItem.find("td>input[type=checkbox]").trigger('change'); // will enable the manage button by triggering the "change" event
-          //Enable cart button if no folder are selected, else disable it
-          if ($('#file_browser_full_files .selected').filter(function (k, i) { return $(i).find('.item-real-type').text() === "Folder"; }).length === 0) {
-            $('#file_browser_tooolbar_cart_button').prop('disabled', false);
-          } else {
-            $('#file_browser_tooolbar_cart_button').prop('disabled', true);
-          }
+
+          GFITHit._fileListSelectionUpdated();
         }
         let processedItemTimeout;
         let originalItemTouchX;
@@ -3598,19 +4262,7 @@
             processedItem.find("td>input[type=checkbox]").prop('checked', true);
           }
 
-          //Enable cart button if no folder are selected, else disable it
-          if ($('#file_browser_full_files .selected').filter(function (k, i) { return $(i).find('.item-real-type').text() === "Folder"; }).length === 0) {
-            $('#file_browser_tooolbar_cart_button').prop('disabled', false);
-          } else {
-            $('#file_browser_tooolbar_cart_button').prop('disabled', true);
-          }
-          //Uncheck magic checkbox if all items are not checked
-          const gofastMagicCheckbox = document.querySelector("#gofastBrowserMagicCheckbox");
-          if ($('.gfb-cbx:checked').length === $('.file_browser_full_files_element:not(#file_browser_back_button)').length) {
-            if (gofastMagicCheckbox) gofastMagicCheckbox.checked = true;
-          } else {
-            if (gofastMagicCheckbox) gofastMagicCheckbox.checked = false;
-          }
+          GFITHit._fileListSelectionUpdated();
         });
 
         //Display menu at right click event, select the item if it's not already selected
@@ -3682,9 +4334,13 @@
       if (typeof item !== "undefined" && item !== null) {
       }
     },
-    /*
-     * Triggered by right clicking an item
-     * Display the corresponding menu
+    /**
+     * Triggered by right clicking an item.
+     * Display the corresponding menu.
+     *
+     * NOTE: This handler can be called from multiple contexts such as:
+     * - as handler of `contextualmenu` events
+     * - as callback for ztree right click events
      */
     _contextMenuHandler: function (e, tId, node) {
       //Prevent any default browser action, we are going to manage all actions
@@ -3695,107 +4351,242 @@
         return;
       }
 
-      var menuParent = ""
-      if(Gofast._settings.isEssential){
-        menuParent = $("#gofast_file_browser_side_content")
+      let menuParent = "";
+      if (Gofast._settings.isEssential) {
+        menuParent = $("#gofast_file_browser_side_content");
       } else {
-        menuParent = $("#gofastBrowserContentPanel")
-      }
-      //If another menu is open, destroy it
-      if (menuParent.find('.gofast-node-actions').is('.open') !== false) {
-        menuParent.find('.gofast-node-actions').remove();
+        menuParent = $("#gofastBrowserContentPanel");
       }
 
-      //Display the loader, waiting the ajax request to get the menu and positioning
-      //dynamically the menu
-      var menu = $('<div class="gofast-node-actions"><div class="dropdown-menu dropdown-menu-md py-5" aria-labelledby="dropdown-"><ul class="navi navi-hover navi-link-rounded-lg px-1"><li><div class="loader-activity-menu-active"></div></li></ul></div></div>').appendTo(menuParent);
-
-      //Show the menu and position it
-      menu.addClass('open');
-      menu.css('position', 'fixed');
-      if (typeof e.clientX == "undefined" && typeof e.clientY == "undefined") {
-        e.clientX = $("#file_browser_tooolbar_contextual_actions").offset().left;
-        e.clientY = $("#file_browser_tooolbar_contextual_actions").offset().top - window.scrollY;
-      }
-
-      // Set the position of the menu
-      menu.css('left', e.clientX);
-      menu.css('top', e.clientY);
-
-      var menuElement = menuParent.find("> div.gofast-node-actions.open > div");
-      Gofast.ITHit.handleOverflowPosition(menuElement);
-
-      //Add event to destroy the menu when clicking outside
-      $('body').click(function (e) {
-        if ($(e.target).hasClass("fa-bars") || $(e.target).attr('id') === "file_browser_tooolbar_contextual_actions") {
-          return;
-        }
-        //Destroy the listner for performances
-        $(this).off(e);
-
-        //Remove the item
-        menu.remove();
-        $(".tooltip").remove()
-      });
-
-      //Get the selected elements
-      var data = [];
-      var fromTree = 0;
-      if (typeof node === "undefined") { //From files
-
-        // Get elements with the checkbox checked
-        var selected = $('.gfb-cbx:checked').parents('.file_browser_full_files_element');
-        $.each(selected, function (k, elem) {
-          let elementPath = $(elem).find(".item-path").html();
-          let elementType = $(elem).find(".item-real-type").html();
-          let elementData = {path: elementPath, type: elementType};
-          data.push(elementData);
-        });
+      // Get the selected elements
+      let data = [];
+      let fromTree = 0;
+      if (node === undefined) { //From files
+        data = Gofast.ITHit.getFileBrowserSelectedItems();
       } else { //From tree
-        let elementPath = node.path;
-        let elementType = node.type;
-        let elementData = {path: elementPath, type: elementType};
-        data.push(elementData);
+        data = [
+          {
+            // Encode each path part individually to prevent encoding '/'
+            path: node.path.split('/').map(pathPart => encodeURIComponent(pathPart)).join('/'),
+            type: node.type,
+          },
+        ];
         fromTree = 1;
       }
-      // GOFAST-12514 - Temporary fix, disable showing contextual menu if more than 30 items are selected
-      if(data.length > 30){
-        Gofast.toast(Drupal.t("You have selected more than 30 items, please try again with fewer items."), "warning");
-        menu.remove();
-        return;
+
+      // Find the position at which to show the menu, either at the click
+      // position or next to a reference element.
+      const position = {
+        x: e.clientX ?? $("#file_browser_tooolbar_contextual_actions").offset().left,
+        y: e.clientY ?? $("#file_browser_tooolbar_contextual_actions").offset().top - window.scrollY,
+      };
+
+      Gofast.ITHit.showFloatingContextualMenu({
+        position,
+        parent: menuParent,
+        selectedItems: data,
+        menuRequestOptions: { fromTree },
+      });
+    },
+    /**
+     * Show a contextual menu for the given selection at the given position on
+     * the screen.
+     *
+     * The operation may fail early, indicated by a `success` property set to
+     * `false` on the returned result object. Failure can be expected when:
+     * - Too many items have been selected
+     * - No items have been selected
+     *
+     * The `FOLDERS TEMPLATES` special folder (or any folder with that name) is
+     * ignored if part of the selection, which may result in failure due to no
+     * items being selected.
+     *
+     * @param {object} options Menu options.
+     * @param {object[]} options.selectedItems List of selected item objects as
+     *  required by the `gofast/node-actions/filebrowser` endpoint.
+     * @param {string|HTMLElement|JQuery} options.parent Parent element to which
+     *  the menu will be appended.
+     * @param {object} [options.position] The position on screen of the menu.
+     * @param {number} [options.position.x] The x position of the menu in pixels.
+     * @param {number} [options.position.y] The y position of the menu in pixels.
+     * @param {object} [options.menuRequestOptions] Options passed to call to
+     *  get the contextual menu.
+     * @param {0|1} [options.menuRequestOptions.fromTree] Indicates whether the
+     *  action came from the tree view or not.
+     * @returns {{success: false} | {success: true, promise: Promise<JQuery>}}
+     *  Immediate result of the operation, as an object with a `success` property
+     *  set either to `true` or to `false`. A failure (`success` set to `false`)
+     *  means the operation failed before any asynchronous operation (fetching
+     *  the menu). In case the code fails after an asynchronous operation, the
+     *  returned promise may reject.
+     */
+    showFloatingContextualMenu: function (options) {
+      const { selectedItems, parent, menuRequestOptions: { fromTree = 0 } = {} } = options;
+      let { position = {} } = options;
+      // Apply defaults
+      position = { x: 0, y: 0, ...position };
+
+      const $menuParent = $(parent);
+
+      // If another menu is open, destroy it
+      $menuParent.find(".gofast-node-actions.open").remove();
+
+      // Instanciate and insert menu element in the DOM
+      // The "open" CSS class on the root wrapper element shows the menu
+      const $menuWrapper = $(
+        '<div class="gofast-node-actions open"><div class="dropdown-menu dropdown-menu-md py-5" aria-labelledby="dropdown-"></div></div>',
+      );
+      const $menuElement = $menuWrapper.find(".dropdown-menu");
+
+      const menuCreationResult = Gofast.ITHit.populateElementWithContextualMenu({
+        root: $menuElement,
+        selectedItems,
+        menuRequestOptions: { fromTree },
+        onEmptyMenu() {
+          $menuWrapper.remove();
+        },
+      });
+      if (!menuCreationResult.success) {
+        return { success: false };
       }
 
-      // Prevent getting contextual menu for FOLDERS TEMPLATES (GOFAST-12198)
-      data = data.filter(o => o.path.split('/').at(-1) !== 'FOLDERS TEMPLATES');
+      $menuWrapper.appendTo($menuParent);
 
-      // If no item to get the contextual menu for after filtering:
-      // revert menu creation and return.
-      if (data.length === 0) {
-        menu.remove();
-        return;
-      }
+      // Set the position of the menu
+      $menuWrapper.css({
+        position: "fixed",
+        left: position.x,
+        top: position.y,
+      });
 
-      //AJAX request to get the menu
-      $.post(location.origin + "/gofast/node-actions/filebrowser", { selected: JSON.stringify(data), fromTree: fromTree, fromBrowser: 1 }, function (data) {
-        if ($(data).find('ul').length == 0) { //Empty menu
-          menu.remove();
+      Gofast.ITHit.handleOverflowPosition($menuElement);
+
+      //Add event to destroy the menu when clicking outside
+      $("body").click(function (e) {
+        if (
+          $(e.target).hasClass("fa-bars") ||
+          $(e.target).attr("id") === "file_browser_tooolbar_contextual_actions"
+        ) {
           return;
         }
+        // Destroy the listener for performance
+        $(this).off(e);
 
-        $(menu).find("ul").html($(data).find('ul').html());
-        Drupal.attachBehaviors();
+        // Remove the menu
+        $menuWrapper.remove();
+        $(".tooltip").remove();
+      });
 
+      const promise = menuCreationResult.promise.then(function ($menuContents) {
         // Submenu is always out of the window, then reposition it
-        var submenu = menu.children().children('.dropdown-submenu').children('.dropdown-menu');
-        $(submenu).css('bottom', '0');
+        const $submenu = $menuContents.children(".dropdown-submenu").children(".dropdown-menu");
+        $submenu.css("bottom", "0");
 
         //Check if the menu is out of the window, reposition it if needed
-        var bottom = menu[0].getBoundingClientRect().top + menu[0].scrollHeight;
+        const bottom = $menuWrapper[0].getBoundingClientRect().top + $menuWrapper[0].scrollHeight;
         if (window.innerHeight < bottom) {
-          var diff = bottom - window.innerHeight;
-          $(menu).css('top', parseInt($(menu).css("top")) - diff);
+          const diff = bottom - window.innerHeight;
+          $menuWrapper.css("top", parseInt($menuWrapper.css("top")) - diff);
         }
+        return $menuContents;
       });
+
+      return { success: true, promise };
+    },
+    /**
+     * Populate a given menu dropdown element with the contextual menu for a
+     * selection of items.
+     *
+     * The operation may fail early, indicated by a `success` property set to
+     * `false` on the returned result object. Failure can be expected when:
+     * - Too many items have been selected
+     * - No items have been selected
+     *
+     * The `FOLDERS TEMPLATES` special folder (or any folder with that name) is
+     * ignored if part of the selection, which may result in failure due to no
+     * items being selected.
+     *
+     * @param {object} options Options object for populating the menu.
+     * @param {string|HTMLElement|JQuery} options.root Root element in which the
+     *  menu will **REPLACE** the contents.
+     * @param {object[]} options.selectedItems List of selected item objects as
+     *  required by the `gofast/node-actions/filebrowser` endpoint.
+     * @param {() => void} [options.onEmptyMenu] callback which *may* be called
+     *  if the received menu is empty (has no items).
+     * @param {object} [options.menuRequestOptions] Options passed to call to
+     *  get the contextual menu.
+     * @param {0|1} [options.menuRequestOptions.fromTree] Indicates whether the
+     *  action came from the tree view or not.
+     * @returns {{success: false} | {success: true, promise: Promise<JQuery>}}
+     *  Immediate result of the operation, as an object with a `success` property
+     *  set either to `true` or to `false`. A failure (`success` set to `false`)
+     *  means the operation failed before any asynchronous operation (fetching
+     *  the menu). In case the code fails after an asynchronous operation, the
+     *  returned promise may reject, or provided common error handling callbacks
+     *  may be called (like `onEmptyMenu`).
+     */
+    populateElementWithContextualMenu: function (options) {
+      const { root, menuRequestOptions: { fromTree = 0 } = {} } = options;
+      let { selectedItems } = options;
+
+      // Prevent getting contextual menu for FOLDERS TEMPLATES (GOFAST-12198)
+      selectedItems = selectedItems.filter((o) => o.path.split("/").at(-1) !== "FOLDERS TEMPLATES");
+
+      // If no item to get the contextual menu for after filtering:
+      // abort menu creation.
+      if (selectedItems.length === 0) {
+        return { success: false };
+      }
+
+      const $root = $(root);
+
+      // Initialise menu dropdown content with initial loading spinner
+      const $contents = $(
+        // Strings formatted in a way to make it like a readable html snippet
+        // prettier-ignore
+        '<ul class="navi navi-hover navi-link-rounded-lg px-1">' +
+          '<li>' +
+            '<div class="loader-activity-menu-active"></div>' +
+          '</li>' +
+        '</ul>',
+      );
+      $root.empty().append($contents);
+
+      // Add default if empty menu callback is not set, removes the list contents.
+      const onEmptyMenu = options.onEmptyMenu ?? (() => $contents.remove());
+
+      // AJAX request to get the menu
+      const promise = $.post(location.origin + "/gofast/node-actions/filebrowser", {
+        selected: JSON.stringify(selectedItems),
+        fromTree: fromTree,
+        fromBrowser: 1,
+      }).then(function (data) {
+        try {
+          data = JSON.parse(data);
+        } catch (_e) {
+          data = data;
+        }
+
+        if (data.message) {
+          Gofast.toast(data.message, "error")
+        }
+        const $data = $(data);
+        if (data.message || $data.find("ul").length == 0) {
+          //Empty menu
+          onEmptyMenu(); // FIXME: use rejected promise instead?
+          return $contents;
+        }
+
+        // Append the topmost list of options, all other list (e.g.: submenus)
+        // should be inside and therefore after in the JQuery collection.
+        // We need this step since the gofast/node-actions endpoint returns a
+        // full set of buttons we do not want in addition to our menu content.
+        $contents.empty().append($data.find("ul").first());
+        Drupal.attachBehaviors(); // FIXME add context to optimize execution?
+        return $contents;
+      });
+
+      return { success: true, promise };
     },
     /*
      * Correct the elements that overlap into the edge of the window.
@@ -3811,14 +4602,169 @@
             menuElement.offset({ left: newRightPosition });
         }
     },
+    /**
+     * Find the selected items in the files part of the browser.
+     * @returns {{path:string, type: string, _rowElement: HTMLElement}[]} A list of currently selected
+     *  items, represented by their path and type. A reference to the DOM row
+     *  element is included as well but its usage is discouraged unless you know
+     *  what you are doing, absolutely need it or it drastically improves the
+     *  calling code.
+     */
+    getFileBrowserSelectedItems: function () {
+      // Get elements with the checkbox checked
+      const $selectedElements = $('.gfb-cbx:checked').parents('.file_browser_full_files_element');
+      const selectedItems = [];
+      $.each($selectedElements, function (k, elem) {
+        const path = $(elem).find(".item-path").html();
+        const type = $(elem).find(".item-real-type").html();
+        selectedItems.push({
+          path,
+          type,
+          _rowElement: elem,
+        });
+      });
+      return selectedItems;
+    },
+    /**
+     * Handles side effects of navigation related to archived spaces.
+     *
+     * Side effects include:
+     * - Adding and removing the archived space warning alert.
+     *
+     * @param {object} spaceItem The spaceItem we are navigating to.
+     * @param {object[]} spaceItem.properties The spaceItem properties
+     * @param {[string]} spaceItem.permissions The spaceItem permission
+     */
+    _handleArchiveSpaceUpdatesOnNavigation: function (spaceItem) {
+      if (!spaceItem) {
+        return;
+      }
+      // Handle archived space alert update.
+      const isSpaceArchived = spaceItem.properties['gofast:isarchived'] == true;
+
+      const $archiveAlertWrapper = $('.archived-space-warning-alert')
+      const $archiveAlert = $archiveAlertWrapper.find('> .alert');
+      const archiveAlertExists = $archiveAlert.length > 0;
+
+      // Handle navigating to and from archived spaces:
+      // NOTE: we add and remove the alert from the DOM instead of
+      // showing/hiding it since the dismiss button removes it (bootstrap
+      // behavior).
+      if (isSpaceArchived && !archiveAlertExists) {
+        // Make sure the alert shows up when navigating to an archived space.
+        const archivedAlert = $('template#archived-space-warning-alert-template')[0].content.cloneNode(true);
+        $archiveAlertWrapper.append(archivedAlert);
+      } else if (!isSpaceArchived && archiveAlertExists) {
+        // Remove the alert when navigating out of an archived space.
+        $archiveAlert.remove();
+      }
+
+      if (isSpaceArchived) {
+        $('#file_browser_tooolbar_new_item').prop('disabled', true);
+      }
+    },
+
+    /**
+     * Validates that renaming an element from the file browser is possible given its path.
+     *
+     * The validation should be DOM independent.
+     *
+     * @param {string} itemPath Path to the item to rename.
+     *  Should not include `/Sites`.
+     *  Should not include the webdav url path ('/alfresco/webdav').
+     *  The path is assumed to have its segments URI encoded.
+     * @returns {{ok: true, error?: undefined} | {ok: false, error: {type: 'technical_folder', folderName: string} | {type: 'space_not_renamable', spaceName: string}}}
+     *  Renamability check result. In the case that the item is renamable, the
+     *  return object only has an `ok` property set to true. Otherwise, the `ok`
+     *  property is set to `false` and an `error` property contains an object
+     *  detailing the error.
+     */
+    isRenamableFromFileBrowser: function (itemPath) {
+      // Parse item path.
+      const pathSegments = itemPath.split('/')
+        .filter(s => s.length !== 0)
+        .map(x => decodeURIComponent(x));
+      const [parentName, itemName] = pathSegments.slice(-2);
+
+      // Cannot rename spaces.
+      const isSpace = itemName.startsWith('_');
+      if (isSpace) {
+        return {
+          ok: false,
+          error: {
+            type:'space_not_renamable',
+            spaceName: itemName,
+          },
+        }
+      }
+
+      const isUnderSpace = parentName.startsWith('_');
+
+      // Check if we are trying to rename a technical folder.
+      const technicalFolderNames = [
+        WIKI_FOLDER_NAME,
+        WEBFORM_FOLDER_NAME,
+        BROADCAST_INBOX_FOLDER_NAME,
+        TEMPLATES_FOLDER_NAME,
+      ];
+      if (isUnderSpace && technicalFolderNames.includes(itemName)) {
+        return {
+          ok: false,
+          error: {
+            type: 'technical_folder',
+            folderName: itemName,
+          },
+        };
+      };
+
+      // All checks passed, we can rename the item.
+      return { ok: true };
+    },
+
     /*
      * Implements an little input form to rename the document/folder
      */
     rename: function (href, item_type = "folder") {
-      //Search and get the line we are editing
+      // Strip href of non-path segments and constant segment.
+      const itemPath = href.replace(/^(\/alfresco\/webdav)?(\/Sites)?/, '');
+      // Validate rename action from item path.
+      const renamable = GFITHit.isRenamableFromFileBrowser(itemPath, item_type);
 
-      var element = $('#file_browser_full_files_table').find('td:contains("' + href + '")');
+      if (!renamable.ok) {
+        switch (renamable.error.type) {
+          case 'technical_folder':
+            Gofast.toast(
+              Drupal.t(
+                'You cannot rename this technical folder: @folder_name.',
+                { '@folder_name': renamable.error.folderName },
+                { context: 'gofast:ajax_file_browser' },
+              ),
+              'warning',
+            );
+            break;
+            case "space_not_renamable":
+            Gofast.toast(
+              Drupal.t(
+                'You cannot rename spaces from the file browser. You tried to rename "@space_name".',
+                { '@space_name': renamable.error.spaceName },
+                { context: 'gofast:ajax_file_browser' },
+              ),
+              'warning',
+            );
+          break;
+        }
+        return;
+      }
+
+      //Search and get the line we are editing
+      href = href !== decodeURIComponent(href) ? href : encodeURI(href).replaceAll("'", "%27").replaceAll(",", "%2c").replaceAll("+", "%2b"); // encode the path if not already (the path is URL-encoded and lower-cased in the DOM)
+      var element = $('#file_browser_full_files_table').find('td[data-path="' + href.toLowerCase() + '"]');
       var name_element = element.parent().find('.item-name');
+
+      if (name_element.find('#rename-form').exists()) {
+        // The rename form is already initialised for this item, do nothing.
+        return;
+      }
 
       //Check if we got an element
       if (name_element.length == 0) {
@@ -3840,6 +4786,11 @@
           input_group.find('input:text').select();
         }
 
+        const cancelRename = () => {
+          name_element.text(old_name);
+          $('.file_browser_full_files_element').attr('draggable', 'true'); //sets the attribute to true
+        }
+
         //Bind the enter event to the input
         name_element.find('input').on('keyup', function (e) {
           if (e.keyCode == 13) { //Enter pressed
@@ -3853,6 +4804,13 @@
 
             //Process rename
             Gofast.ITHit._processRename(href, old_name, new_name, name_element, "ressource");
+          }
+          if (e.key === 'Escape') {
+            e.preventDefault();
+            cancelRename();
+            // Restore focus to file list.
+            $("#file_browser_full_files_table [tabindex]").first().focus();
+            return;
           }
         });
         //Bind the validate button event
@@ -3875,8 +4833,7 @@
         });
         //Bind the cancel button event
         name_element.find('.badge-danger').on('click', function (e) {
-          name_element.text(old_name);
-          $('.file_browser_full_files_element').attr('draggable', 'true'); //sets the attribute to true
+          cancelRename();
         });
       }
     },
@@ -4176,7 +5133,7 @@
           items: items
         }, function(res) {
           html = res;
-          data = data.replace(/"/g, '&quot;');
+          data = data.replace(/'/g, "\\'").replace(/"/g, '&quot;');
           html += '<button id="deleteButton" class="btn btn-danger btn-sm icon-before" onClick="Gofast.ITHit.delete(\'' + data + '\', true, event)"><span class="icon glyphicon glyphicon-trash"></span>' + ' ' + Drupal.t('Delete') + '</button>';
           Gofast.modal(html, title);
           Gofast.removeLoading();
@@ -4199,37 +5156,126 @@
       e.preventDefault();
       e.stopPropagation();
     },
+
+    /**
+     * Parses a path into a directory path, a file name and an extension.
+     *
+     * The extension is defined as the last part after the last dot that is not
+     * directly following a slash, the filename is what comes before the dot
+     * preceding the extension and is after the final slash. Everything before
+     * and including the final slash is the directory.
+     *
+     * The baseName property is both the file name and extension
+     * joined.
+     *
+     * The returned object verifies
+     * `((directory ?? "") + (filename ?? "") + (extension == null ? "" : "." + extension)) === filePath`
+     * @param {string} filePath The file path to split into a file name and extension
+     * @typedef {{
+     *  directory: string|null,
+     *  name: string|null,
+     *  extension: string|null,
+     *  baseName: string|null,
+     * }} PathParseResult
+     * @return {PathParseResult} An object with the path parsing data
+     */
+    parseFilePath: function (filePath) {
+      // split path into segments and get file base name
+      const segments = filePath.split("/");
+      const fullFileName = segments.pop();
+
+      // Compute directory path
+      const directoryPath = segments.length > 0 ? segments.join("/") + "/" : null;
+      // path ended in / or is empty, extension can only come after the last /,
+      // so there is no extension
+      if (fullFileName === "") {
+        return {
+          directory: directoryPath,
+          name: null,
+          extension: null,
+          baseName: null,
+        };
+      }
+
+      // Match on leading file base name dots, they are accounted for in the file name
+      const leadingDotsMatch = fullFileName.match(/^(\.*)(.*)$/);
+      const leadingDots = leadingDotsMatch[1];
+      const fileNameWithoutLeadingDots = leadingDotsMatch[2];
+
+      // split on dots in rest of file name
+      const splitName = fileNameWithoutLeadingDots.split(".");
+      // if file has no extension in last segment
+      if (splitName.length <= 1) {
+        return {
+          directory: directoryPath,
+          name: fullFileName,
+          extension: null,
+          baseName: fullFileName,
+        };
+      }
+      // cannot be undefined since length is always positive or 0 and we
+      // already returned for lengths 0,1, and maybe 2 when dotfile.
+      const extension = splitName.pop();
+
+      // reconstruct the file name using the data we accumulated omitting the
+      // extension and separator dot
+      const fileName = leadingDots + splitName.join(".");
+
+      return {
+        directory: directoryPath,
+        name: fileName,
+        extension,
+        baseName: fullFileName,
+      };
+    },
+
+    /**
+     * Duplicate the selected item
+     */
+    duplicateSelected() {
+      const $selected = $('#file_browser_full_files_table')
+        .find('.selected');
+
+      if (!$selected.exists()) {
+        return;
+      }
+
+      const path = decodeURIComponent(
+        $selected.find('.item-path')
+          .text()
+          .replace('/alfresco/webdav/Sites/', '')
+      );
+      Gofast.ITHit.duplicate(path);
+    },
     /*
     * Duplicate item
     */
-    duplicate: function (node_id) {
+    duplicate: function (path, options = {}) {
+      path = path.replace("/alfresco/webdav/Sites/", "");
+      const parsedPath = Gofast.ITHit.parseFilePath(path);
+      if (parsedPath.name == null) {
+        console.error("[GoFAST] Cannot duplicate a directory:", {
+          path,
+          parsedPath,
+        });
+        return;
+      }
 
-      //Get selected item
-      var selected = $('#file_browser_full_files_table').find('.selected');
-
-      if (selected.length) { //if selector exists (that mean we are on space pages)
       //Push to queue
-      var path = $(selected).find('.item-path').text();
-      var fileName = $(selected).find('.item-name').text();
       Gofast.ITHit.queue.push({
         uuid: Gofast.ITHit.generate_uuid(),
         path: path,
-        destination: Gofast.ITHit.currentPath,
-        displayNamePath: fileName + ' (' + decodeURIComponent(path.replace('/alfresco/webdav/Sites/', '')) + ')',
-        fileName: fileName,
+        duplicateArgs: {
+          parsedPath: parsedPath,
+          options: options,
+        },
+        destination: parsedPath.directory,
+        displayNamePath: parsedPath.baseName + ' (' + path + ')',
+        fileName: parsedPath.baseName,
         operation: 'duplicate',
         displayOperation: Drupal.t('duplicate', {}, { context: 'gofast:ajax_file_browser' }),
         progression: 0,
         status: 0
-      });
-      }
-
-      //Display toast
-      Gofast.toast(Drupal.t("File duplicated", {}, { context: 'gofast:ajax_file_browser' }), "info");
-
-      // Duplicate function for only one file
-      $.post(location.origin + "/cmis/duplicate", { node_id: node_id, destination: Gofast.ITHit.currentPath}, function (data) {
-        console.log('Duplicate file successfull');
       });
     },
     /*
@@ -4330,7 +5376,7 @@
       if (process) {
 
         let targetFolderName = $("#unzip-target-folder-input").val();
-        if(!validateItemName(targetFolderName, "folder")){
+        if(!validateItemName(targetFolderName, "folder", true)){
           return;
         }
         Gofast.closeModal();
@@ -4497,6 +5543,20 @@
         path = path.substring(0, path.length - 1);
       }
 
+      // Prevent deleting space's home page wiki
+      if (Gofast.ITHit.isHomePageWiki(path)) {
+        Gofast.toast(
+          Drupal.t(
+            "You cannot delete a space's home page wiki article (%fileName).",
+            { "%fileName": fileName },
+            { context: "gofast:ajax_file_browser" },
+          ),
+          "error",
+        );
+        Gofast.ITHit.unsetQueueItem(index);
+        return;
+      }
+
       //First, we try to open the item
       Gofast.ITHit.Session.OpenItemAsync(path, null, function (asyncResult) {
         if (!asyncResult.IsSuccess) {
@@ -4518,20 +5578,20 @@
                 //positives
                 Gofast.ITHit.queue[index] = null;
 
-                //Remove line in file browser
-                var element = $('td:contains("' + path + '")');
-                if (element.length !== 0) {
-                  element.parent().remove();
-                }
-                const ztreeElement = Gofast.ITHit.tree.getNodeByParam("path", decodeURIComponent(path));
                 // Remove item from ztree
+                const decodedPath = decodeURIComponent(path);
+                const ztreeElement = Gofast.ITHit.tree.getNodeByParam("path", decodedPath);
                 if(ztreeElement){
                   Gofast.ITHit.tree.removeNode(ztreeElement);
                 }
-                // If we are in the deleted folder, navigate to it's parent
-                if(Gofast.ITHit.currentPath == decodeURIComponent(path)){
-                  const parentPath = path.split("/").slice(0, -1).join("/")
+                // Refresh: navigate to parent if we were inside the deleted
+                // folder, otherwise re-navigate current folder to update the
+                // file list on the right side.
+                if(Gofast.ITHit.currentPath == decodedPath){
+                  const parentPath = decodedPath.split("/").slice(0, -1).join("/")
                   Gofast.ITHit.navigate(parentPath)
+                } else {
+                  Gofast.ITHit.navigate(Gofast.ITHit.currentPath)
                 }
               } else {
                 Gofast.toast("<u>" + fileName + "</u><br /><br />" + Drupal.t("Please verify that you are allowed to do that.  If you think this is an error, please contact your administrator.", {}, { context: 'gofast:ajax_file_browser' }), "warning", Drupal.t("This element cannot be deleted", {}, { context: 'gofast:ajax_file_browser' }));
@@ -4563,6 +5623,20 @@
       if (fileName.substr(0, 1) === "_") {
         Gofast.toast(Drupal.t("You can only move a space from it's page.", {}, { context: 'gofast:ajax_file_browser' }), "warning");
         Gofast.ITHit.queue[index] = null;
+        return;
+      }
+
+      // Prevent moving a space's home page article
+      if (Gofast.ITHit.isHomePageWiki(path)) {
+        Gofast.toast(
+          Drupal.t(
+            "You cannot move a space's home page wiki article (%fileName).",
+            { "%fileName": fileName },
+            { context: "gofast:ajax_file_browser" },
+          ),
+          "error",
+        );
+        Gofast.ITHit.unsetQueueItem(index);
         return;
       }
 
@@ -4799,6 +5873,24 @@
       }else{
         Gofast.ITHit.cancelUpload(uuid);
       }
+    },
+    _processMultiUploadGenerateHtml: async function() {
+      Gofast.ITHit.hasMultiUploadModal = true;
+      Gofast.ITHit.promises.multiUploadModal.promise = new Promise((resolve, reject) => {
+        Gofast.ITHit.promises.multiUploadModal.resolve = resolve;
+        Gofast.ITHit.promises.multiUploadModal.reject = reject;
+        Drupal.CTools.Modal.showCtoolsModal($('.bulk_taxonomy').attr("href") + "?upload=" + $(".GofastNodeOg").attr("data-nid"));
+        const closeEvent = $(".modal button.close").on("click", () => {
+          resolve({});
+          $(".modal button.close").off("click", closeEvent);
+        });
+      });
+      await Gofast.ITHit.promises.multiUploadModal.promise;
+      Gofast.ITHit.promises.multiUploadModal = {};
+    },
+    _processMultiUploadSubmit: function(formValues) {
+      Gofast.ITHit.queue.forEach(item => item.properties = formValues); // for uploading items
+      Gofast.ITHit.promises.multiUploadModal.resolve(formValues); // for already uploaded items
     },
     /*
      * Process a download operation on a item in the queue
@@ -5040,14 +6132,133 @@
     /*
     * Process a duplicate operation on an item in the queue
     */
-    _processDuplicate: function (index) {
+    _processDuplicate: async function (index) {
+      // utils
 
-      setTimeout(function () {
-        Gofast.ITHit.queue[index].progression = 75;
+      // equivalent to Promise.withResolvers
+      // but since that is very new and unsupported by some LTS/ESR
+      // browser versions it's safer to have this here.
+      const promiseResolvers = () => {
+        let resolve, reject;
+        const promise = new Promise((res, rej) => {
+          resolve = res;
+          reject = rej;
+        });
+        return { promise, resolve, reject };
+      };
+
+      const promiseWrap = (callback) => {
+        const { promise, resolve, reject } = promiseResolvers();
+        const handler = function (ITHitResult) {
+          if (!ITHitResult.IsSuccess) {
+            reject(ITHitResult);
+          } else {
+            resolve(ITHitResult);
+          }
+        };
+        callback(handler);
+        return promise;
+      };
+
+      const setProgress = (value) => (Gofast.ITHit.queue[index].progression = value);
+      const replanExecution = () => {
+        setProgress(0);
+        Gofast.ITHit.queue[index].status = 0;
+      };
+
+      /**
+       * Extract arguments from queue
+       * @type {{
+       * path: string,
+       *  duplicateArgs: {
+       *    options: {noToast?:boolean},
+       *    parsedPath: PathParseResult
+       *  },
+       * destination: string
+       * }}
+       */
+      const {
+        path,
+        duplicateArgs: { options, parsedPath },
+        destination,
+      } = Gofast.ITHit.queue[index];
+
+      if (Gofast.ITHit.pathsBeingDuplicated.has(path)) {
+        replanExecution();
+        return;
+      }
+      Gofast.ITHit.pathsBeingDuplicated.add(path);
+      try {
+        // open folder
+        const destinationFolder = (
+          await promiseWrap((h) =>
+            Gofast.ITHit.Session.OpenFolderAsync(
+              location.origin + "/alfresco/webdav/Sites/" + destination,
+              null,
+              h,
+            ),
+          )
+        ).Result;
+        setProgress(10);
+
+        // open original item to copy
+        const originalItem = (
+          await promiseWrap((h) =>
+            Gofast.ITHit.Session.OpenItemAsync(
+              location.origin + "/alfresco/webdav/Sites/" + path,
+              null,
+              h,
+            ),
+          )
+        ).Result;
+        setProgress(20);
+
+        // try names until one does not exist
+        let progress = 20;
+        let duplicateFileName;
+        const extString = parsedPath.extension == null ? "" : "." + parsedPath.extension;
+        for (let i = 1, itemExists = true; itemExists; ++i) {
+          duplicateFileName = parsedPath.name + "(" + String(i) + ")" + extString;
+
+          itemExists = (
+            await promiseWrap((h) => destinationFolder.ItemExistsAsync(duplicateFileName, h))
+          ).Result;
+          // update progress after each try getting closer and closer to 55%
+          // whilst not really getting there (unless a large amount of tries
+          // happen)
+          progress += (55 - progress) / 4;
+          setProgress(Math.round(progress));
+        }
+        setProgress(60);
+
+        // copy item
+        await promiseWrap((h) =>
+          originalItem.CopyToAsync(destinationFolder, duplicateFileName, true, false, null, h),
+        );
+        setProgress(100);
+
+        if (!options.noToast) {
+          //Display toast
+          Gofast.toast(
+            Drupal.t("File duplicated", {}, { context: "gofast:ajax_file_browser" }),
+            "info",
+          );
+        }
         Gofast.ITHit.reload();
+      } catch (e) {
+        if (!options.noToast) {
+          Gofast.toast(
+            Drupal.t("File duplication failed", {}, { context: "gofast:ajax_file_browser" }),
+            "error",
+          );
+        }
+        // rethrow, we didn't really handle the error itself.
+        throw e;
+      } finally {
+        Gofast.ITHit.pathsBeingDuplicated.delete(path);
+        // unset queue Item
         Gofast.ITHit.queue[index] = null;
-      }, (2000));
-      Gofast.ITHit.queue[index].progression = 50;
+      }
     },
     /*
      * Ask Drupal for an Alfresco reference
@@ -5269,13 +6480,15 @@
      * This function is not part of graphic implementation, it will process the
      * queued items in background
      */
-    processQueue: function () {
+    processQueue: async function () {
       Gofast.ITHit.processingQueue = true;
+      let queueHasUpload = false;
       var items = Gofast.ITHit.queue.filter(function (e) {
 
         //!! debug TC !!
         if (e !== null) {
           if (e.operation == "upload") {
+            queueHasUpload = true;
             Gofast.additionalGFBNodes.forEach(function (item, index) {
               if (e.path.includes(item)) {
                 console.log("cancel upload " + e.uuid);
@@ -5832,6 +7045,33 @@
     },
 
     /**
+     * Check if a path matches a home page wiki article
+     * @param {string} path A file path
+     * @returns true if the path is that of a Space's home page
+     */
+    isHomePageWiki: function(path) {
+      const [fileFolderParentName, fileFolderName, fileName] = path
+        .split("/")
+        .slice(-3)
+        .map((segment) => decodeURIComponent(segment));
+
+      if (fileFolderName !== "Wikis") return false;
+      return (
+        fileName.endsWith(".html") &&
+        fileFolderParentName.startsWith("_") &&
+        fileName.replace(/\.html$/, "") === fileFolderParentName.replace(/^_/, "")
+      );
+    },
+
+    /**
+     * Removes an item from the queue.
+     * @param {number} index The index in the queue of the item to remove
+     */
+    unsetQueueItem: function(index) {
+      Gofast.ITHit.queue[index] = null;
+    },
+
+    /**
      * Wrapper namespace around NProgress allowing safe use within the file
      * browser context.
      */
@@ -5877,6 +7117,9 @@
       return NProgressWrapper;
     })(),
   };
+
+  Gofast.ITHit = GFITHit;
+
   $(document).ready(function () {
     //Init File Browser
     Gofast.ITHit.init();
@@ -5891,9 +7134,9 @@
     Gofast.copyToClipboard(Gofast.get('baseUrl') + "/gofast/browser?path=" + encodeURI(href));
   }
 
-  function validateItemName(itemName, itemType = "folder"){
+  function validateItemName(itemName, itemType = "folder", isNew = false){
     let isValid = true;
-    const regexPattern = /[\\/:*?"<>|]/;
+    const isSameName = (otherName) => Gofast.ITHit.isSameItemName(otherName, itemName, isNew);
 
     if(itemType === "folder"){
       //Prevent users to create folders starting with '_'
@@ -5905,6 +7148,10 @@
         Gofast.toast(Drupal.t("\"Wikis\" is a reserved folder name"), "warning");
         isValid = false
       }
+      if (itemName === "TEMPLATES") {
+        Gofast.toast(Drupal.t("\"TEMPLATES\" is a reserved folder name"), "warning");
+        isValid = false
+      }
       if(itemName.endsWith(".")) {
         Gofast.toast(Drupal.t("You can't create a folder with a name ending with '.'"), "warning");
         isValid = false
@@ -5912,7 +7159,7 @@
       let allFoldersInSpace = $(".file_browser_full_files_element:not(#file_browser_back_button) > td.item-real-type:contains('Folder')");
       allFoldersInSpace = allFoldersInSpace.toArray();
       let alreadyExist = allFoldersInSpace.some((folderItem) => {
-        return $(folderItem).siblings(".item-name").text() == itemName;
+        return isSameName($(folderItem).siblings(".item-name").text());
       })
       if(alreadyExist){
         Gofast.toast(Drupal.t("Folder @itemName already exists in this location.", {"@itemName": itemName}, { context: 'gofast:gofast_ajax_file_browser' }), "warning");
@@ -5935,9 +7182,17 @@
       }
     }
 
-    if(regexPattern.test(itemName)) {
+    const isPathSegment = ["folder", "group", "organisation", "extranet", "public", "private_space"].includes(itemType);
+    if((isPathSegment ? Gofast.ITHit.forbiddenPathCharactersPattern : Gofast.ITHit.forbiddenCharactersPattern).test(itemName)) {
       const itemTypeName = Drupal.t(itemType, {}, {context: "gofast:gofast_ajax_file_browser"});
-      Gofast.toast(Drupal.t("You can't create a @itemType with one of these characters @characters", {"@itemType": itemTypeName, "@characters": "(\\ / : * ? \" < > |)"}, {context: "gofast:gofast_ajax_file_browser"}), "warning");
+      Gofast.toast(Drupal.t("You can't create a @itemType with one of these characters @characters", {"@itemType": itemTypeName, "@characters": isPathSegment ? "(\\ / : * ? \" < > | %)" : "(\\ / : * ? \" < > |)"}, {context: "gofast:gofast_ajax_file_browser"}), "warning");
+      isValid = false
+    }
+
+    // Space titles hit the Alfresco/CMIS limit before the 255 characters of a name.
+    const maxLength = isPathSegment && itemType !== "folder" ? (Drupal.settings.maxSpaceNameLength || 255) : 255;
+    if(itemName.length > maxLength) {
+      Gofast.toast(Drupal.t("The name cannot be longer than @max characters.", {"@max": maxLength}, {context: "gofast:gofast_ajax_file_browser"}), "warning");
       isValid = false
     }
 
@@ -6016,4 +7271,44 @@
     //Implements translations
     Drupal.t("Unable to find this space's folder", {}, { context: 'gofast:ajax_file_browser' });
   });
+
+  // Behavior to setup the manage button drop down menu to use the same
+  // contextual menu options as the right click menu.
+  Drupal.behaviors.attachFileBrowserManageButtonEvents = {
+    attach(context) {
+      $(context)
+        .find("#file_browser_tooolbar_manage")
+        .parent()
+        .once("manage-button-dropdown", function () {
+          const $dropdownWrapper = $(this);
+          const $dropdownMenu = $dropdownWrapper.find(".dropdown-menu").first();
+          const closeMenu = () => $dropdownWrapper.filter('.open').dropdown('toggle');
+
+          $dropdownWrapper.on("show.bs.dropdown", function (_e) {
+            const result = Gofast.ITHit.populateElementWithContextualMenu({
+              root: $dropdownMenu,
+              selectedItems: Gofast.ITHit.getFileBrowserSelectedItems(),
+              onEmptyMenu() {
+                closeMenu();
+              }
+            });
+            if (!result.success) {
+              closeMenu();
+              return;
+            }
+            // Since manage button is at the top of the area, align submenu top position to main menu top position
+            result.promise.then(function ($menuContents) {
+              const menuHeight = $menuContents.height();
+              const $submenu = $menuContents.find(".dropdown-submenu").find(".dropdown-menu");
+              $submenu.css("cssText", "top : -" + menuHeight + "px !important;");
+            });
+
+          });
+
+          $dropdownWrapper.on("hide.bs.dropdown", function (e) {
+            $dropdownMenu.empty();
+          });
+        });
+    },
+  };
 })(jQuery, Gofast, Drupal);

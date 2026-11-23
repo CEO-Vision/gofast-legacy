@@ -619,6 +619,12 @@ class DrupalSolrNodeTestCase extends DrupalWebTestCase {
 }
 
 class DrupalSolrOfflineUnitTestCase extends DrupalUnitTestCase {
+
+  protected $script_content;
+  protected $embed_content;
+  protected $iframe_content;
+  protected $comment_content;
+
   public static function getInfo() {
     return array(
       'name' => 'Solr Base Framework Tests Unit Test',

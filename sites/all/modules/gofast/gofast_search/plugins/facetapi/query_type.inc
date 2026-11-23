@@ -200,9 +200,11 @@ class GofastFacetapiDate extends FacetapiQueryTypeDate implements FacetapiQueryT
       }
 
       // Gets the default gap.
-      $gap = FACETAPI_DATE_YEAR;
       if ($minimum && $maximum) {
-        $gap = facetapi_get_timestamp_gap($minimum, $maximum);
+        // always default to a gap of a year, prevent facet from being ignored or incorrectly formatted
+        // because minimum and maximum are identical or too close
+        // NOTE: This behavior differs from the 'dates' range query type provided by the facetapi module
+        $gap = FACETAPI_DATE_YEAR;
         $minimum = facetapi_isodate($minimum, $gap);
         $maximum = facetapi_isodate($maximum, $gap);
         $return = array(

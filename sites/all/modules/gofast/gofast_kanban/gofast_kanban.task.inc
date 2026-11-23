@@ -200,8 +200,8 @@ function gofast_kanban_form_validate_title(&$form, &$form_state) {
 
   // All content types are subject to the same validator.
   if (!gofast_kanban_validate_title($title)) {
-    form_set_error('title', t('Title contains illegals characters or an invalid name.', array(), array('context' => 'gofast')));
-    drupal_set_message(t('Title contains illegals characters or an invalid name.', array(), array('context' => 'gofast')), 'error');
+    form_set_error('title', t('Title contains illegal characters or an invalid name.', array(), array('context' => 'gofast')));
+    drupal_set_message(t('Title contains illegal characters or an invalid name.', array(), array('context' => 'gofast')), 'error');
   }
 
 }
@@ -978,7 +978,7 @@ function gofast_kanban_task_add_comment($nid) {
 //  $decodeData = json_decode(filter_xss($post_variable['comment_body'])); 
   $decodeData = json_decode($post_variable['comment_body']); 
   $comment->comment_body[$comment->language][0]['value'] = str_replace(array("\r\n", "\n", "\t"), "", $decodeData);
-  $comment->comment_body[$comment->language][0]['format'] = 'full_html';
+  $comment->comment_body[$comment->language][0]['format'] = 'filtered_html';
 
   comment_submit($comment); // saving a comment
   comment_save($comment);
@@ -1201,7 +1201,10 @@ function gofast_kanban_task_update_todo_status($ciid, $status) {
   $timer_start = microtime(true);
 //watchdog('gofast_kanban', '%name() START args=[%args]', array('%name' => __FUNCTION__, '%args' => implode(', ', func_get_args())), WATCHDOG_DEBUG);
 
-  $attrs = array('status' => $status);
+  $attrs = array('status' => $status, 'finished' => NULL);
+  if ($status == 1) {
+    $attrs["finished"] = time();
+  }
   gofast_kanban_checklistItem_update($ciid, $attrs);
 
   $timer_stop = microtime(true);
@@ -1296,7 +1299,7 @@ function gofast_kanban_task_copy($nid){
   $node->type = 'task';
   module_load_include('inc', 'node', 'node.pages');
   node_object_prepare($node);
-  $node->title = $copy_task->title . ' -'.t('Copy', array(), array('context' => 'gofast_kanban'));
+  $node->title = $copy_task->title . ' - '.t('Copy', array(), array('context' => 'gofast_kanban'));
   $node->language=$copy_task->language;
   $node->field_board['und'][0]['target_id'] = $kanban->nid;
   $node->field_task_column['und'][0]['tid'] = $column_id;
@@ -1306,7 +1309,7 @@ function gofast_kanban_task_copy($nid){
   // Copy fields from the original task
   $fields_to_copy = array(
     'body', 'field_date', 'field_person_in_charge',
-    'field_state', 'field_target_link', 'field_task_color', 'field_tags'
+    'field_state', 'field_target_link', 'field_task_color', 'field_tags', 'field_logo_uri', 'field_members'
   );
 
   foreach ($fields_to_copy as $field) {
@@ -1325,6 +1328,7 @@ function gofast_kanban_task_copy($nid){
       $attrs = array(
         "uid" => isset($item->uid) ? $item->uid : "",
         "deadline" => isset($item->deadline) ? $item->deadline : "",
+        "status" => isset($item->status) ? $item->status : 0,
       );
       gofast_kanban_checklistItem_create($cid, $item->label, $attrs);
     }

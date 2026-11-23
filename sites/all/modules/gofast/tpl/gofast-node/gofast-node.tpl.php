@@ -6,7 +6,7 @@
     }
   }
 ?>
-<div id="nodeContainer" <?= "data-nid='{$node->nid}'" ?> class="gofast-content__node GofastNode <?= (isset($node) && $node->type == 'article') && gofast_essential_is_essential() ? 'articleContent' : '' ?> <?= gofast_essential_is_essential() && !gofast_mobile_is_phone() ? 'gofast-content__node__essential essential' : '' ?>" <?= gofast_essential_is_essential() ? 'data-isfullpage="'. $isFull .'"' : '' ?>>
+<div id="nodeContainer" <?= "data-nid='{$node->nid}'" ?> class="gofast-content__node GofastNode  <?= isset($node) && gofast_essential_is_essential() ? lcfirst(str_replace(" ", "", ucwords(str_replace("_", " ", $node->type)))) . "Content" : "" ?> <?= gofast_essential_is_essential() && !gofast_mobile_is_phone() ? 'gofast-content__node__essential essential' : '' ?>" <?= gofast_essential_is_essential() ? 'data-isfullpage="'. $isFull .'"' : '' ?>>
     <?php if($user->field_atatus_tracking[LANGUAGE_NONE]['0']['value'] == 2) : ?>
         <script type="text/javascript">atatus.setTags(['content']);</script>
     <?php endif; ?>

@@ -16,25 +16,3 @@
     </div>
   </div>
 </div>
-
-<div class="panel panel-default">
-  <div class="panel-heading"><?php echo t('Configurations', array(), array('context' => 'gofast:dashboard')); ?></div>
-  <div class="panel-body">
-    <div id='gofast_dashboard_config_container' >
-      <div class="panel panel-default">
-        <div class="panel-heading">my.cnf</div>
-        <div class="panel-body">
-          <div id='gofast_dashboard_config_mycnf_container' >
-            <?php 
-              if(file_exists("/var/www/d7/sites/default/files/my.cnf")){
-                print t("Applying configuration...") . " <div class='loader-actions'></div>";
-              }else{
-                print drupal_render(drupal_get_form("gofast_configure_mycnf_form"));
-              }
-            ?>
-          </div>
-        </div>
-      </div>
-    </div>
-  </div>
-</div>

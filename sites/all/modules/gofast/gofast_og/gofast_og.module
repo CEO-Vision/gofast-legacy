@@ -21,6 +21,12 @@ define('GOFAST_OG_CONTENT_MEMBERSHIP_FIELD', 'og_group_content_ref');
 define('GOFAST_OG_USER_MEMBERSHIP_FIELD', 'og_user_node');
 
 /**
+ * Name of the entity field containing the previous status used when restoring
+ * the entity (e.g.: when restoring a space)
+ */
+define('GOFAST_OG_ORIGINAL_STATUS_FIELD', 'field_original_status');
+
+/**
  * Define field name for og content access policy (whether a content is public
  * or private).
  */
@@ -149,6 +155,29 @@ function gofast_og_init(){
    global $must_propagate;
    $must_propagate = true;
    module_load_include('inc', 'gofast_og', 'gofast_og_excel');
+}
+
+function gofast_og_cronapi($op, $job = null) {
+  $items = [];
+
+  $space_bundle_cron_rules = [
+    'group' => '0 1 * * *', // runs everyday at 01:00
+    'organisation' => '30 1 * * *', // runs everyday at 01:30
+    'extranet' => '0 2 * * *', // runs everyday at 02:00
+    'public' => '30 2 * * *', // runs everyday at 02:30
+    'private_space' => '0 3 * * *', // runs everyday at 03:00
+  ];
+
+  foreach($space_bundle_cron_rules as $bundle => $rule){
+    $items["gofast_og_resynchro_space_bundle_ldap_memberships__$bundle"] = array(
+      'description' => "Rebuild $bundle spaces ldap memberships",
+      'rule' => $rule,
+      'callback' => 'gofast_og_resynchro_space_bundle_ldap_memberships',
+      'arguments' => array($bundle),
+    );
+  }
+
+  return $items;
 }
 
 /**
@@ -307,6 +336,12 @@ function gofast_og_node_access($node, $op, $account) {
         $partitioning = variable_get('gofast_og_partitioning', GOFAST_OG_PARTITIONING_DEFAULT);
         // Admin ON : allow to see spaces for admin's
         $admin_visibility = variable_get('gofast_admin_visibility', GOFAST_ADMIN_VISIBILITY_DEFAULT);
+
+        // Confidential partitioning: non-member user cannot view confidential spaces.
+        if (gofast_group_is_confidential($node) && !in_array($node->nid, $user_spaces)) {
+          return NODE_ACCESS_DENY;
+        }
+
         if (gofast_user_is_business_admin($account) || $partitioning == GOFAST_OG_PARTITIONING_OFF || (!gofast_user_is_extranet($account) && $partitioning == GOFAST_OG_PARTITIONING_ON_ONLY_EXTRANET) || ($admin_visibility == GOFAST_ADMIN_VISIBILITY_ON && gofast_user_is_adm($account))) {
             return NODE_ACCESS_ALLOW;
         }
@@ -327,13 +362,20 @@ function gofast_og_node_access($node, $op, $account) {
       return NODE_ACCESS_IGNORE;
     break;
     case $is_space_content:
-      if($op == 'update' && $node->field_is_homepage[LANGUAGE_NONE][0]['value']){
+      $is_homepage = $node->field_is_homepage[LANGUAGE_NONE][0]['value'];
+      if($op == 'update' && $is_homepage){
         //Check if I'm admin of this document's space
         $gid = $node->og_group_content_ref[LANGUAGE_NONE][0]['target_id'];
         if(!node_access("update", node_load($gid))){
           return NODE_ACCESS_DENY;
         }
       }
+
+      // Prevent deleting a space's homepage
+      if($op === 'delete' && $is_homepage) {
+        return NODE_ACCESS_DENY;
+      }
+
       // OG access policy is correctly implemented via admin settings. However,
       // view operation access check needs to be overriden as OG always returns
       // NODE_ACCESS_IGNORE in this case.
@@ -692,21 +734,30 @@ function gofast_og_has_space_child($node) {
 
 /**
  * Returns all children spaces (OG nodes) of a given OG node (Gofast OG bundle).
- * @param mixed $gid
+ *
+ * FIXME: This function is starting to have too many parameters, refactor into
+ * single options array/object parameter?
+ *
+ * @param numeric $gid
  *  The gid of the parent OG node.
- * @param boolean $recursive [optional]
+ * @param bool $recursive [optional]
  *  Whether to retrieve direct children (one level down) or all descendants.
  *  Defaults to FALSE.
- * @param boolean $full [optional]
+ * @param bool $full [optional]
  *  If TRUE, loads OG node object. Defaults to FALSE.
- * @param boolean $flat [optional]
+ * @param bool $flat [optional]
  *  If TRUE, does not preserve node hierarchy. Defaults to FALSE.
+ * @param bool $get_parents_instead [optional]
+ *  Gets the space parents instead of its children. Defaults to FALSE
+ *  FIXME/NOTE: Maybe this should not be a parameter but a different function altogether?
+ * @param bool $include_soft_deleted [optional]
+ *  Include soft-deleted children spaces. Defaults to FALSE.
  * @return
  *  An array keyed by children gid's, the structure depends on the parameters.
  *  If $recursive and $full are TRUE and $flat is FALSE, array values are arrays
  *  keyed with 'node' and 'children'.
  */
-function gofast_og_get_children($gid, $recursive = FALSE, $full = FALSE, $flat = FALSE, $get_parents_instead = FALSE) {
+function gofast_og_get_children($gid, $recursive = FALSE, $full = FALSE, $flat = FALSE, $get_parents_instead = FALSE, $include_soft_deleted = FALSE) {
   $sub_gids = array();
 
   $query = db_select('og_membership', 'o');
@@ -714,10 +765,23 @@ function gofast_og_get_children($gid, $recursive = FALSE, $full = FALSE, $flat =
     $query->fields('o', array('gid'))
     ->condition('o.etid', $gid, '=')
     ->condition('o.field_name', GOFAST_OG_PARENT_GROUP_FIELD, '=');
+    // Join to parent node table as n if it shouldn't be included if soft-deleted.
+    if (!$include_soft_deleted) {
+      $query->join('node', 'n', "n.nid = o.gid AND o.entity_type = 'node'");
+    }
   } else {
     $query->fields('o', array('etid'))
     ->condition('o.gid', $gid, '=')
     ->condition('o.field_name', GOFAST_OG_PARENT_GROUP_FIELD, '=');
+    // Join to child node table as n if it shouldn't be included if soft-deleted.
+    if (!$include_soft_deleted) {
+      $query->join('node', 'n', "n.nid = o.etid AND o.entity_type = 'node'");
+    }
+  }
+
+  // Filter by node status when not retrieving deleted nodes.
+  if (!$include_soft_deleted) {
+    $query->condition('n.status', NODE_PUBLISHED, '=');
   }
 
   $results = $query->execute()->fetchCol();
@@ -731,20 +795,41 @@ function gofast_og_get_children($gid, $recursive = FALSE, $full = FALSE, $flat =
       foreach ($sub_gids as $gid) {
         // Never recursively load children entities, they will be loaded all at
         // once if it is needed.
-        $sub_gids += gofast_og_get_children($gid, $recursive, FALSE, $flat);
+        $sub_gids += gofast_og_get_children(
+          $gid,
+          $recursive,
+          FALSE,
+          $flat,
+          $get_parents_instead,
+          $include_soft_deleted,
+        );
       }
     }
     elseif ($full === TRUE) {
       foreach ($sub_gids as $gid) {
         $sub_gids[$gid] = array(
           'node' => node_load($gid),
-          'children' => gofast_og_get_children($gid, $recursive, $full, $flat)
+          'children' => gofast_og_get_children(
+            $gid,
+            $recursive,
+            $full,
+            $flat,
+            $get_parents_instead,
+            $include_soft_deleted,
+            )
         );
       }
     }
     else {
       foreach ($sub_gids as $gid) {
-        $sub_gids[$gid] = gofast_og_get_children($gid, $recursive, $full, $flat);
+        $sub_gids[$gid] = gofast_og_get_children(
+          $gid,
+          $recursive,
+          $full,
+          $flat,
+          $get_parents_instead,
+          $include_soft_deleted,
+        );
       }
     }
   }
@@ -859,6 +944,9 @@ function gofast_og_get_spaces_by_bundle($bundles = array(), $entity_type = 'node
  * Get the spaces a user is an approved member of. This is a wrapper function
  * that assumes the entity type of the spaces to fetch is always 'node'.
  *
+ * FIXME: Refactor this function to use an array of options instead of the many
+ *  optional parameters.
+ *
  * @param $account [optional]
  *  The user object to fetch space memberships for. Defaults to current user.
  * @param boolean $include_public [optional]
@@ -869,10 +957,12 @@ function gofast_og_get_spaces_by_bundle($bundles = array(), $entity_type = 'node
  *  Whether to return full node objects or not. Defaults to FALSE.
  * @param boolean fromAPI [optional]
  * @param boolean include_from_userlist [optional] included spaces coming from userlist membership
+ * @param bool $include_deleted [optional] Include deleted spaces the user was a
+ *  part of. Defaults to false.
  * @return
  *  An array keyed by OG node IDs or an empty array.
  */
-function gofast_og_get_spaces_by_user($account = NULL, $include_public = TRUE, $full = FALSE, $fromApi = FALSE, $include_from_userlist = TRUE) {
+function gofast_og_get_spaces_by_user($account = NULL, $include_public = TRUE, $full = FALSE, $fromApi = FALSE, $include_from_userlist = TRUE, $include_deleted = FALSE) {
   if(is_numeric($account)){
     $account = user_load($account);
   }
@@ -892,17 +982,21 @@ function gofast_og_get_spaces_by_user($account = NULL, $include_public = TRUE, $
     return array();
   }
 
-  if (!$include_public) {
-    $public_gids = gofast_og_get_spaces_by_bundle('public');
-    $user_gids = array_diff_key($user_gids, $public_gids);
+  if ($include_public && !gofast_user_is_extranet($account)) {
+    $public_gids = array_map(fn($space) => $space->nid, gofast_og_get_spaces_by_bundle('public'));
+    $user_gids = $user_gids + $public_gids;
   }
 
   //Exclude userlist node (as og_get_group only filter by bundle)
   $spaces_type = gofast_og_node_types();
   $node_types = gofast_get_node_type_multiple($user_gids);
+  $node_status = gofast_get_node_status_multiple($user_gids);
 
   foreach($user_gids as $key => $gid){
     if(!in_array($node_types[$gid], $spaces_type)){
+      unset($user_gids[$key]);
+    }
+    if (!$include_deleted && $node_status[$gid] == 0) {
       unset($user_gids[$key]);
     }
   }
@@ -940,15 +1034,18 @@ function gofast_og_get_spaces_by_user($account = NULL, $include_public = TRUE, $
  * @param type $full
  *    Whether to return full node objects or not. Defaults to FALSE.
  *
- * @return
- *    An array keyed by OG node IDs or an empty array.
- */
-function gofast_og_get_space_children_by_user($parent_nid, $account = NULL, $full = FALSE) {
+ * @param bool $recursive
+ *    Return all spaces and subspaces if set to true. Default to FALSE.
+ * 
+ * @return 
+ *    An array keyed by OG node IDs or an empty array. 
+ */ 
+function gofast_og_get_space_children_by_user($parent_nid, $account = NULL, $full = FALSE, $recursive = FALSE) {
 
   $subspaces_for_user = array();
 
   $spaces_for_user = gofast_og_get_spaces_by_user($account);
-  $sub_spaces = gofast_og_get_children($parent_nid);
+  $sub_spaces = gofast_og_get_children($parent_nid, $recursive, false, true);
 
   $subspaces_for_user = array_intersect($sub_spaces, $spaces_for_user);
 
@@ -1034,8 +1131,10 @@ function gofast_og_get_managed_spaces($account = NULL, $full = FALSE) {
 
     if ( $user_roles_for_space == 'administrator member' && og_user_access('node', $gid, 'administer group', $account)) {
       $managed_spaces[$gid] = $og;
-    }else if($spaces_defaults['create_sub_space'] && in_array($gid, $first_level_spaces)){ //Override 1st level permission in GOFAST-5605
+    } else if ($spaces_defaults['create_sub_space'] && in_array($gid, $first_level_spaces)){ //Override 1st level permission in GOFAST-5605
        $managed_spaces[$gid] = $og;
+    } else if (node_load($gid)->type == "public" && in_array($account->uid, gofast_og_get_public_spaces_admin_uids())){
+      $managed_spaces[$gid] = $og;
     }
   }
 
@@ -1459,13 +1558,14 @@ function gofast_og_og_membership_delete( OgMembership $og_membership ) {
       //gofast_chat_remove_user_from_room($og_membership->etid, $og_membership->gid);
   }
 
- // the user has just been removed from a group. We must check if he is member of children. if yes, we have to remove him from it
-  $children = gofast_og_get_children($og_membership->gid, true, false, true);
+  // Remove the user from each direct children of the space we are removing them from currently.
+  // Since removing the user deletes the membership, this hook callback is called
+  // recursively for all sub-spaces the user was a part of.
+  // We also remove the memberships of the user in soft-deleted sub-spaces to
+  // prevent restored spaces having a member that is not a member of its parent space.
+  $children = gofast_og_get_children($og_membership->gid, false, false, true, false, true);
   if(count($children) > 0){
       foreach ($children as $key => $nid) {
-            // Check if user is owner of sub_space and set admin as new owner
-            gofast_og_set_admin_as_owner($nid, $og_membership->etid);
-
             $membership = og_get_membership('node', $nid, 'user', $og_membership->etid);
             if($membership !== FALSE){
                 og_membership_delete($membership->id);
@@ -1670,11 +1770,11 @@ function gofast_og_field_access($op, $field, $entity_type, $entity, $account) {
   // also deny access if the user has no administer permissions in any other
   // referenceable spaces.
   if ($field['field_name'] === GOFAST_OG_PARENT_GROUP_FIELD && $entity_type === 'node') {
-        $referenceable = gofast_og_get_referenceable_spaces($entity, $account);
-        if (empty($referenceable)) {
-          return FALSE;
-        }
+    $referenceable = gofast_og_get_referenceable_spaces($entity, $account);
+    if (empty($referenceable)) {
+      return FALSE;
     }
+  }
 
   if ($field['field_name'] === GOFAST_OG_CONTENT_VISIBILITY) {
     list ($id, $vid, $bundle_name) = entity_extract_ids($entity_type, $entity);
@@ -1749,6 +1849,20 @@ function gofast_og_form_node_form_alter(&$form, &$form_state, $form_id) {
         '#value' => TRUE
       );
 
+      // If this OG node type has the field person_in_charge, prefill it as the node creator
+      if ($form["field_person_in_charge"]) {
+        $form['field_person_in_charge'][LANGUAGE_NONE][0] = [
+          'target_id' => [
+            '#type' => 'textfield',
+            '#default_value' => $user->uid,
+          ],
+          'entity' => [
+            '#type' => 'hidden',
+            '#value' => $user,
+          ],
+        ];
+      }
+
       $form['space_logo'] = array(
         '#type' => 'file',
         '#title' => t('Import a custom space logo', array(), array('context' => 'gofast:gofast_og')),
@@ -1763,17 +1877,22 @@ function gofast_og_form_node_form_alter(&$form, &$form_state, $form_id) {
         'data-user' => '', // show ac users
          //'data-node' => '', // show ac node
         'data-userlist' => '', // show ac userlist
-        'data-exclude-current-user' => '' // remove current user from ac
+        'data-exclude-current-user' => '', // remove current user from ac
+        // Do not suggest extranet users if space cannot accept them.
+        'extranet-users-form' => '',
+        'data-space-type' => $space_type,
       ];
-    
-      // ac- field other admin uid for select secondary admin
-      $form['field_other_admin_uid'] = array(
-        '#title' => t("Secondary Administrator" . " *", array(), array('context' => 'gofast:gofast_og')),
-        '#type' => 'textfield',
-        '#name' => 'ac-list-tags-administrator',
+
+      if($space_type != "public"){ // Public spaces don't need secondary administrator because they are managed in Public userlist 
+        // ac- field other admin uid for select secondary admin
+        $form['field_other_admin_uid'] = array(
+            '#title' => t("Secondary Administrator" . " *", array(), array('context' => 'gofast:gofast_og')),
+            '#type' => 'textfield',
+            '#name' => 'ac-list-tags-administrator',
             '#description' => "<p class='text-muted'>" . t("Start typing the username or list") . "<p class='text-muted'>" . t("It is necessary to define a second backup administrator."),
             '#attributes' => $attributes,
-      );
+        );
+      }
 
       // Metadata form container
       $form["space_metadata"] = array(
@@ -1785,10 +1904,32 @@ function gofast_og_form_node_form_alter(&$form, &$form_state, $form_id) {
         "#suffix" => "</div>",
       );
 
-      // Field criticity
-      
+      // Field classification
       $classification_field_array = ["_none" => t("- None -")];
-      foreach (taxonomy_term_load_multiple(FALSE, array('vid' => taxonomy_vocabulary_get_names()['classification']->vid)) as $term) {
+      $classification_options_properties = [];
+      $default_classification_value = gofast_admin_get_space_defaults()["field_classification"];
+
+      $can_user_set_space_as_confidential = gofast_user_can_user_change_content_confidentiality();
+
+      $is_default_classification_confidential = !in_array($default_classification_value, [NULL, '_none'], TRUE) ?
+        gofast_taxonomy_is_term_confidential($default_classification_value)
+        : FALSE;
+      if (!$can_user_set_space_as_confidential && $is_default_classification_confidential) {
+        // User cannot apply confidential default, change default to None.
+        $default_classification_value = '_none';
+      }
+
+      $classification_terms = taxonomy_term_load_multiple(
+        FALSE,
+        array('vid' => taxonomy_vocabulary_get_names()['classification']->vid),
+      );
+      // Terms are not loaded in the order of their weight by default. Sort
+      // them to ensure the right order during display.
+      uasort($classification_terms, fn($a, $b) => $a->weight <=> $b->weight);
+      foreach ($classification_terms as $term) {
+        if (!gofast_taxonomy_classification_allowed($term, ['content_type' => 'space'])) {
+          continue;
+        }
         $type_tid = $term->field_classification_type[LANGUAGE_NONE][0]['tid'];
         $type_term = taxonomy_term_load($type_tid);
         $localized_term = i18n_taxonomy_localize_terms($term);
@@ -1796,41 +1937,75 @@ function gofast_og_form_node_form_alter(&$form, &$form_state, $form_id) {
         if(!isset($classification_field_array[$localized_type_term->name])){
           $classification_field_array[$localized_type_term->name] = [];
         }
-        $classification_field_array[$localized_type_term->name][$term->tid] = $localized_term->name;
+        $type_name = $localized_type_term->name;
+        $term_id = $term->tid;
+
+        $classification_field_array[$type_name][$term_id] = $localized_term->name;
+        $is_classification_option_disabled = !$can_user_set_space_as_confidential
+          && gofast_taxonomy_is_term_confidential($term);
+        if ($is_classification_option_disabled) {
+          $classification_options_properties[$type_name]['#children'][$term_id]['#attributes']['disabled'] = TRUE;
+        }
       }
 
       $form["field_classification"]["#prefix"] = '<div class="col-4">';
       $form["field_classification"]["#suffix"] = '</div>';
-      $form["field_classification"][LANGUAGE_NONE]["#title"] = t($form["field_classification"][LANGUAGE_NONE]["#title"], array(), array("context" => "gofast"));
+      $form["field_classification"][LANGUAGE_NONE]["#title"] = GOFAST_METADATA_CLASSIFICATION_LABEL;
       $form["field_classification"][LANGUAGE_NONE]["#options"] = $classification_field_array;
-      $form["field_classification"][LANGUAGE_NONE]["#default_value"] = gofast_admin_get_space_defaults()["field_classification"];
+      $form["field_classification"][LANGUAGE_NONE]["#options_properties"] = $classification_options_properties;
+      $form["field_classification"][LANGUAGE_NONE]["#default_value"] = $default_classification_value;
+      $form["field_classification"][LANGUAGE_NONE]["#attributes"] = array("data-default-value" => $default_classification_value ?? "_none");
 
       // Field document reference
       $form["field_document_reference"]["#prefix"] = '<div class="col-4">';
       $form["field_document_reference"]["#suffix"] = '</div>';
-      $form["field_document_reference"][LANGUAGE_NONE][0]["value"]["#title"] = t($form["field_document_reference"][LANGUAGE_NONE][0]["value"]["#title"], array(), array("context" => "gofast"));
+      $form["field_document_reference"][LANGUAGE_NONE][0]["value"]["#title"] = GOFAST_METADATA_DOCUMENT_REFERENCE_LABEL;
 
-      // Field custom date
-      $form["field_custom_date"]["#prefix"] = '<div class="col-4">';
-      $form["field_custom_date"]["#suffix"] = '</div>';
-      $form["field_custom_date"]["#suffix"] = '</div>';
+      if(isset($_GET["parent"])){
+        $parent_space = node_load($_GET["parent"]);
+        $form["field_classification"][LANGUAGE_NONE]["#default_value"] = $parent_space->field_classification[LANGUAGE_NONE][0]["tid"];
+        $form["field_document_reference"][LANGUAGE_NONE][0]["value"]["#default_value"] = $parent_space->field_document_reference[LANGUAGE_NONE][0]["value"];
+      }
+
+      // Field date
+      foreach(["field_date", "field_custom_date"] as $date_field) {
+        $form[$date_field]["#prefix"] = '<div class="col-4">';
+        $form[$date_field]["#suffix"] = '</div>';
+        $form[$date_field][LANGUAGE_NONE][0]["#attributes"] = array(
+          'class' => array('gofastDatepicker'),
+          'data-toggle' => array('datepicker')
+        );
+        unset($form[$date_field][LANGUAGE_NONE][0]["#theme_wrappers"]);
+        $form[$date_field][LANGUAGE_NONE][0]["#type"] = "textfield";
+        $form[$date_field][LANGUAGE_NONE][0]["#default_value"] = "";
+        if(isset($_GET["parent"])){
+          $date = new DateTime($parent_space->$date_field[LANGUAGE_NONE][0]["value"]);
+          $form[$date_field][LANGUAGE_NONE][0]["#default_value"] = $date->format(system_date_format_locale($user->language, "short_without_hours"));
+        }
+      }
+      $form["field_date"][LANGUAGE_NONE][0]["#title"] = t('Deadline', [], ['context' => 'gofast']);
       $form["field_custom_date"][LANGUAGE_NONE][0]["#title"] = GOFAST_METADATA_CUSTOM_DATE_LABEL;
-      $form["field_custom_date"][LANGUAGE_NONE][0]["#attributes"] = array(
-        'class' => array('gofastDatepicker'),
-        'data-toggle' => array('datepicker')
-      );
-      unset($form["field_custom_date"][LANGUAGE_NONE][0]["#theme_wrappers"]);
-      $form["field_custom_date"][LANGUAGE_NONE][0]["#type"] = "textfield";
-      $form["field_custom_date"][LANGUAGE_NONE][0]["#default_value"] = "";
+      $form["field_custom_date"]["#suffix"] = '</div>';
 
       // Put metadata forms inside a container
       $form["space_metadata"]["field_classification"] = $form["field_classification"];
       $form["space_metadata"]["field_document_reference"] = $form["field_document_reference"];
+      $form["space_metadata"]["field_document_reference"]['#weight'] = 1;
+      $form["space_metadata"]["field_date"] = $form["field_date"];
+      $form["space_metadata"]["field_date"]['#weight'] = 2;
       $form["space_metadata"]["field_custom_date"] = $form["field_custom_date"];
+      $form["space_metadata"]["field_custom_date"]['#weight'] = 3;
+      if (!strlen(trim(GOFAST_METADATA_CUSTOM_DATE_LABEL))) {
+        unset($form["space_metadata"]["field_custom_date"]);
+      }
+      if (!strlen(trim(GOFAST_METADATA_DOCUMENT_REFERENCE_LABEL))) {
+        unset($form["space_metadata"]["field_document_reference"]);
+      }
 
       // Remove default drupal metadata form items
       unset($form["field_classification"]);
       unset($form["field_document_reference"]);
+      unset($form["field_date"]);
       unset($form["field_custom_date"]);
 
       //add translation function
@@ -1889,13 +2064,13 @@ function gofast_og_form_node_form_alter(&$form, &$form_state, $form_id) {
               $og_field[LANGUAGE_NONE][0]['default']['#default_value'] = array($default);
             }
           } else {
+            if ($node->og_group_ref[LANGUAGE_NONE][0]["target_id"]) {
+              $root_node = node_load($node->og_group_ref[LANGUAGE_NONE][0]["target_id"]);
+              $og_field[LANGUAGE_NONE][0]['default']["#default_value"] = $root_node->nid;
+            }
             if (isset($_POST['allow_display_locations'])) {
               $og_field['#description'] = t('Note: Some nodes are hidden because you cannot set the parent of this group to be the group itself or one of its children.'
                   , array(), array('context' => 'gofast:gofast_og'));
-              if ($node->og_group_ref[LANGUAGE_NONE][0]["target_id"]) {
-                $root_node = node_load($node->og_group_ref[LANGUAGE_NONE][0]["target_id"]);
-                $og_field[LANGUAGE_NONE][0]['default']["#default_value"] = $root_node->nid;
-              }
             } else {
               $og_field['#attributes']['class'][] = "gofast_display_none";
             }
@@ -2059,16 +2234,49 @@ function gofast_og_form_node_form_validate(&$form, &$form_state)
   // Validate field_custom_date only on space forms
   if(gofast_og_is_space($form_state["node"], false)){
     // Format custom date field before creating node
-    if(isset($form_state["input"]["field_custom_date"]) && $form_state["input"]["field_custom_date"][LANGUAGE_NONE][0]){
-      global $user;
-      $value = $form_state["input"]["field_custom_date"][LANGUAGE_NONE][0];
+    global $user;
+    foreach(["field_date", "field_custom_date"] as $date_field) {
+      if(!isset($form_state["input"][$date_field]) || !$form_state["input"][$date_field][LANGUAGE_NONE][0]) {
+        continue;
+      }
+      $value = $form_state["input"][$date_field][LANGUAGE_NONE][0];
       $_fdate = new DateTime();
       $format = system_date_format_locale($user->language, "short_without_hours");
       $_fdate = $value ? DateTime::createFromFormat($format, $value) : NULL;
-      $form_state["values"]["field_custom_date"][LANGUAGE_NONE][0]["value"] = $_fdate->format("Y-m-d");
+      $form_state["values"][$date_field][LANGUAGE_NONE][0]["value"] = $_fdate->format("Y-m-d");
+    }
+
+    // Validate classification and confidentiality.
+    $can_user_set_space_as_confidential = gofast_user_can_user_change_content_confidentiality();
+    $classification_value = $form_state['values']['field_classification'][LANGUAGE_NONE][0]['tid'] ?: NULL;
+    $is_classification_confidential = $classification_value !== NULL ?
+      gofast_taxonomy_is_term_confidential($classification_value)
+      : FALSE;
+    if (!$can_user_set_space_as_confidential && $is_classification_confidential) {
+      form_set_error('field_classification]['.LANGUAGE_NONE.'][0][value', t(
+        "You do not have permission to change the confidentiality of contents.",
+        [],
+        ['context' => 'gofast'],
+      ));
+    }
+
+    // Validate when creating non-confidential space that the space's parent is
+    // also not confidential.
+    $parent_nid = $form_state["input"]["og_group_ref"][LANGUAGE_NONE][0]["default"];
+    $parent_node = node_load($parent_nid);
+    if ($parent_node && gofast_group_is_confidential($parent_node) && !$is_classification_confidential) {
+      form_set_error("confidentiality", t("You can't create a non confidential subspace in a confidential space", array(), array("context" => "gofast")));
+    }
+
+    // Check for duplicate space name under the same parent (only when creating a new space).
+    if (!isset($form_state['node']->nid) && $parent_nid) {
+      $title = $form_state['values']['title'];
+      $error = gofast_og_check_duplicate_space_title($parent_nid, $title);
+      if ($error !== NULL) {
+        form_set_error('title', $error);
+      }
     }
   }
-
     // Check for errors in the form.
     $errors = form_get_errors();
 
@@ -2087,6 +2295,34 @@ function gofast_og_form_node_form_validate(&$form, &$form_state)
     }
 }
 
+
+/**
+ * Check that no published child space of $pgid already has the given title.
+ *
+ * @param int    $pgid   Parent space NID.
+ * @param string $title  Title of the space to create.
+ *
+ * @return string|NULL  Translated error message, or NULL if no conflict.
+ */
+function gofast_og_check_duplicate_space_title($pgid, $title) {
+  $exists = db_select('og_membership', 'o')
+    ->fields('o', array('etid'))
+    ->condition('o.gid', $pgid)
+    ->condition('o.field_name', GOFAST_OG_PARENT_GROUP_FIELD)
+    ->condition('o.entity_type', 'node')
+    ->condition('n.status', NODE_PUBLISHED)
+    ->where('LOWER(n.title) = LOWER(:title)', array(':title' => $title))
+    ->range(0, 1);
+  $exists->join('node', 'n', 'n.nid = o.etid');
+  if ($exists->execute()->fetchField()) {
+    return t(
+      'A space named "@title" already exists in this location. Please choose a different name.',
+      ['@title' => $title],
+      ['context' => 'gofast']
+    );
+  }
+  return NULL;
+}
 
 /**
  *
@@ -2128,7 +2364,7 @@ function gofast_og_get_ancestors_path($node) {
  */
 function gofast_og_add_article_homepage($node){
 
-    $article_content = isset($node->body[LANGUAGE_NONE][0]['value']) ? $node->body[LANGUAGE_NONE][0]['value'] : "<html></html>";
+    $article_content = !empty($node->body[LANGUAGE_NONE][0]['value']) ? $node->body[LANGUAGE_NONE][0]['value'] : "<html></html>";
     $article_title =  $node->title.".html" ;
     $mimetype = "text/html";
     $path = gofast_og_get_ancestors_path($node) . '/Wikis';
@@ -2200,6 +2436,22 @@ function gofast_og_move_space_form($form, &$form_state){
   );
 
   return $form;
+}
+
+function gofast_og_move_space_form_validate($form, &$form_state){
+  $parent_nid = $form_state["input"]["og_group_ref"][LANGUAGE_NONE][0]["default"];
+  $parent_node = node_load($parent_nid);
+
+  /** @var EntityDrupalWrapper */
+  $node = entity_metadata_wrapper('node', $form_state['node']);
+
+  if ($parent_node && gofast_group_is_confidential($parent_node) && !gofast_group_is_confidential($node)) {
+    form_set_error("confidentiality", t(
+      "You can't move a non-confidential subspace in a confidential space",
+      array(),
+      array("context" => "gofast"),
+    ));
+  }
 }
 
 function gofast_og_move_space_form_submit($form, &$form_state){
@@ -2409,6 +2661,23 @@ function gofast_og_form_validate_membership(&$form, &$form_state)
         // This prevents OgBehaviorHandler from raising an error.
         $og_field['field_mode'] = 'admin';
     }
+
+    // Determine classification value's confidentiality.
+    $classification_value = $form_state['values']['field_classification'][LANGUAGE_NONE][0]['tid'] ?: NULL;
+    $is_classification_confidential = $classification_value !== NULL ?
+      gofast_taxonomy_is_term_confidential($classification_value)
+      : FALSE;
+
+    // Validate that creator (first admin) has confidential clearance if classification is confidential.
+    if ($is_classification_confidential && !gofast_user_can_user_access_confidential_content()) {
+      global $user;
+      form_set_error('not_allowed', t(
+        'User without confidential clearance @username cannot be added to confidential space',
+        ['@username' => $user->name],
+        ['context' => 'gofast'],
+      ));
+      unset($user);
+    }
     
     if (!empty($admin_field_value)) {
         $admin_data = json_decode($admin_field_value, true);
@@ -2416,6 +2685,25 @@ function gofast_og_form_validate_membership(&$form, &$form_state)
         if ($user->uid == $admin_data[0]["value"]) {
           form_set_error("gofast_og", t("You can't be the creator and the secondary administrator of a space in the same time.", [], ["context" => "gofast:gofast_og"]));
           return;
+        }
+
+        // Secondary admin validations in confidential spaces:
+        if ($is_classification_confidential) {
+          // Secondary admin must not be a user list (no user lists in confidential spaces).
+          if ($admin_data[0]['type'] === 'userlist') {
+            form_set_error('ac-list-tags-administrator', t(
+              'User lists cannot be added to confidential spaces',
+              [],
+              ['context' => 'gofast'],
+            ));
+            // Secondary admin must have clearance to access confidential spaces.
+          } elseif (!gofast_user_can_user_access_confidential_content($admin_data[0]['value'])) {
+            form_set_error('ac-list-tags-administrator', t(
+              'User without confidential clearance @username cannot be added to confidential space',
+              ['@username' => $admin_data[0]['name']],
+              ['context' => 'gofast'],
+            ));
+          }
         }
         
         // Initialize field_other_admin_uid as an empty array if it doesn't exist.
@@ -2806,11 +3094,26 @@ function gofast_og_menu() {
     'access arguments' => array(NULL, 4),
   );
 
+  $items['modal/%ctools_js/gofast_og/restore_space/%'] = array(
+    'page callback' => 'gofast_og_restore_space_modal',
+    'page arguments' => array(4),
+    'access callback' => 'gofast_og_can_restore_space',
+    'access arguments' => array(NULL, 4),
+  );
+
   $items['gofast_og/delete_space/%/%'] = array(
     // 'title' => t("Delete this space"),
     'page callback' => 'gofast_og_delete_space_process',
     'page arguments' => array(2,3),
     'access callback' => 'gofast_og_can_delete_space',
+    'access arguments' => array(NULL, 2),
+    'type' => MENU_CALLBACK,
+  );
+
+  $items['gofast_og/restore_space/%/%'] = array(
+    'page callback' => 'gofast_og_restore_space_callback',
+    'page arguments' => array(2,3),
+    'access callback' => 'gofast_og_can_restore_space',
     'access arguments' => array(NULL, 2),
     'type' => MENU_CALLBACK,
   );
@@ -2846,8 +3149,8 @@ function gofast_og_menu() {
     'page callback' => 'gofast_og_space_members_async',
     'type' => MENU_CALLBACK,
     'page arguments' => array(2),
-    'access callback' => 'user_access',
-    'access arguments' => array('access content'),
+    'access callback' => 'gofast_node_view_access',
+    'access arguments' => array(2),
   );
 
    $items['gofast_og/home_async/%'] = array(
@@ -2877,7 +3180,7 @@ function gofast_og_menu() {
   );
 
   $items['gofast_og/%/get_parents'] = array(
-    'page callback' => 'gofast_og_get_parents_gids',
+    'page callback' => 'gofast_og_api_get_parents_gids',
     'page arguments' => array(1),
     'access callback' => 'user_access',
     'access arguments' => array('access content'),
@@ -3066,6 +3369,9 @@ function gofast_og_theme(){
     ),
     'gofast_og_delete_space' => array(
       'template' => 'tpl/gofast_og-delete-space',
+    ),
+    'gofast_og_restore_space' => array(
+      'template' => 'tpl/gofast_og-restore-space',
     ),
     'gofast_og_mail_add_user_space' => array(
       'template' => 'tpl/gofast_og_add_user_space-mail',
@@ -3840,6 +4146,17 @@ function gofast_og_create($title, $bundle, $options = array()) {
   //Set parent space
   $node->og_group_ref[LANGUAGE_NONE] = $options['parent'];
 
+  //Set space body
+  $node->body = array(
+    LANGUAGE_NONE => array(
+      0 => array(
+        'summary' => '',
+        'value' => $options['body'],
+        'format' => 'full_html'
+      )
+    )
+  );
+  
   //Trigger integrity check on save
   $node->integrity_check = "create space";
 
@@ -3875,9 +4192,15 @@ function gofast_og_create($title, $bundle, $options = array()) {
  * Hook node_insert
  */
 function gofast_og_node_insert($node){
+  if(!gofast_og_is_space($node)){
+    return;
+  }
 
-  //If the new node is a public space, we queue a membership rebuild for the next cron.
-  if(( gofast_og_is_root_space($node) && !gofast_og_is_user_private_space($node) ) || $node->type == 'public'){
+  if(gofast_og_is_user_private_space($node)){
+    return;
+  }
+
+  if(gofast_og_is_root_space($node)) {
     drupal_set_message(t("The configuration of this space is still in progress, it will be completed in a few minutes.", array(), array('context' => 'gofast:og')), 'status');
 
     //Acquire membership_waiting_build lock
@@ -3902,11 +4225,32 @@ function gofast_og_node_insert($node){
     //Release membership_waiting_build lock
     lock_release("membership_waiting_build");
   }
-  if(gofast_og_is_space($node) && !gofast_og_is_user_private_space($node)) {
-      gofast_cmis_item_folder_insert("Wikis", gofast_cmis_get_raw_item_id($node->{GOFAST_CMIS_FOLDER_REFERENCE_FIELD}[LANGUAGE_NONE][0]['value']));
-      gofast_og_add_article_homepage($node);
+
+  gofast_cmis_item_folder_insert("Wikis", gofast_cmis_get_raw_item_id($node->{GOFAST_CMIS_FOLDER_REFERENCE_FIELD}[LANGUAGE_NONE][0]['value']));
+  gofast_og_add_article_homepage($node);
+
+  if(!gofast_og_is_root_space($node)) {
+    // Set default "In progress" state for new space nodes 
+    $term = taxonomy_get_term_by_name("In progress", 'state');
+    reset($term);
+    $term_id = key($term);
+    $node->field_state[LANGUAGE_NONE][0]['tid'] = $term_id;
+
+    // Save new data into node
+    gofast_update_field_database($node, "field_state");
   }
 
+  if($node->type == 'public') {
+    $pnid = variable_get("public_userlist", NULL);
+    if($pnid){
+      $userlist = node_load($pnid);
+      
+      $admin_rid = gofast_get_rid_from_role_name_and_bundle('administrator member', $node->type);
+      $ulid = $userlist->field_userlist_ulid[LANGUAGE_NONE][0]['value'];
+
+      gofast_userlist_og_add_membership($node->nid, $ulid, $admin_rid);
+    }
+  }
 }
 
 /**
@@ -4179,8 +4523,21 @@ function gofast_og_get_user_default_role($my_user = null){
  */
 function gofast_og_get_user_roles($gid, $uid = NULL, $check_active = TRUE) {
   $group_node = node_load($gid);
+
+  $account = $uid ? user_load($uid) : null;
+  // Check role of user in public space, (administrator if member of the Public UL and read only if internal)
+  if($group_node->type == "public" && $account->is_extranet[LANGUAGE_NONE][0]["value"] != 1){
+    $roles = array_flip(og_roles("node", "public"));
+    if(in_array($uid, gofast_og_get_public_spaces_admin_uids())){
+      $role = array($roles[GOFAST_OG_ROLE_ADMIN] => GOFAST_OG_ROLE_ADMIN);
+      } else {
+      $role = array($roles[GOFAST_OG_ROLE_READ_ONLY] => GOFAST_OG_ROLE_READ_ONLY);
+    }
+    return $role;
+  }
+  
   if(isset($group_node->nid)){
-        return og_get_user_roles('node', $gid, $uid, FALSE, $check_active);
+    return og_get_user_roles('node', $gid, $uid, FALSE, $check_active);
   }
 }
 
@@ -4641,8 +4998,9 @@ function gofast_og_user_rebuild_base_memberships($account, $force = false){
     $node = node_load($nid);
     $bundle = $node->type;
 
-    if($bundle == 'public'){ //We save the public node to use it later.
-      $public = $node;
+    // Don't rebuild memberships on public spaces
+    if($bundle == 'public'){
+      continue;
     }
 
     $roles_query = og_roles('node', $bundle, $nid, FALSE, FALSE);
@@ -4674,120 +5032,6 @@ function gofast_og_user_rebuild_base_memberships($account, $force = false){
     }
   }
 
-  //If user isn't an extranet user, we grant him access to public spaces, according to the current public config
-  if(!gofast_user_is_extranet($account)){
-     if(!$public->nid){
-     $root_spaces = gofast_og_get_root_spaces(FALSE, TRUE);
-      foreach($root_spaces as $nid){ //We fetch into the root spaces (excluding private spaces)
-        $node = node_load($nid);
-        $bundle = $node->type;
-        if($bundle == 'public'){
-          $public = $node;
-        }
-      }
-    }
-
-    //Retrieve saved spaces configuration
-    $space_defaults = gofast_admin_get_space_defaults();
-
-    $public_contributions = $space_defaults['public_contrib'];
-    $public_ids = gofast_og_get_children($public->nid, TRUE, FALSE, TRUE);
-
-    foreach($public_ids as $nid){ //Fetching into all public subspaces
-
-      $roles_query = og_roles('node', 'public', $nid, FALSE, FALSE);
-      foreach($roles_query as $rkey => $roles){ //We get the role IDs associated to the space
-        if($roles == GOFAST_OG_ROLE_ADMIN){
-          $admin_rid = $rkey;
-        }
-        if($roles == GOFAST_OG_ROLE_READ_ONLY){
-          $readonly_rid = $rkey;
-        }
-        if($roles == GOFAST_OG_ROLE_STANDARD){
-          $contributor_rid = $rkey;
-        }
-      }
-
-      //The user is subscribed without any role
-      gofast_og_subscribe_user($nid, $uid);
-      og_role_revoke('node', $nid, $uid, $readonly_rid);
-      og_role_revoke('node', $nid, $uid, $contributor_rid);
-      og_role_revoke('node', $nid, $uid, $admin_rid);
-
-      if($public_contributions){
-        //We grant the user contributor role in the space
-        og_role_grant('node', $nid, $uid, $contributor_rid);
-      }
-      else{
-        //Either, we grant him RO role
-        og_role_grant('node', $nid, $uid, $readonly_rid);
-      }
-    }
-  }
-  else{
-    //We unsubscribe the user from public spaces
-    if(!$public->nid){
-     $root_spaces = gofast_og_get_root_spaces(FALSE, TRUE);
-      foreach($root_spaces as $nid){ //We fetch into the root spaces (excluding private spaces)
-        $node = node_load($nid);
-        $bundle = $node->type;
-        if($bundle == 'public'){
-          $public = $node;
-        }
-      }
-    }
-
-    og_role_revoke('node', $public->nid, $uid, $readonly_rid);
-    og_role_revoke('node', $public->nid, $uid, $contributor_rid);
-    og_role_revoke('node', $public->nid, $uid, $admin_rid);
-    gofast_og_unsubscribe_user($public->nid, $uid);
-
-    $public_ids = gofast_og_get_children($public->nid, TRUE, FALSE, TRUE);
-    $readonly_rid = "";
-    $contributor_rid = "";
-    $admin_rid  = "";
-    foreach($public_ids as $nid){ //Fetching into all public subspaces
-
-      $roles_query = og_roles('node', 'public', $nid, FALSE, FALSE);
-      foreach($roles_query as $rkey => $roles){ //We get the role IDs associated to the space
-        if($roles == GOFAST_OG_ROLE_ADMIN){
-          $admin_rid = $rkey;
-        }
-        if($roles == GOFAST_OG_ROLE_READ_ONLY){
-          $readonly_rid = $rkey;
-        }
-        if($roles == GOFAST_OG_ROLE_STANDARD){
-          $contributor_rid = $rkey;
-        }
-      }
-      og_role_revoke('node', $nid, $uid, $readonly_rid);
-      og_role_revoke('node', $nid, $uid, $contributor_rid);
-      og_role_revoke('node', $nid, $uid, $admin_rid);
-      gofast_og_unsubscribe_user($nid, $uid);
-    }
-
-    //remove user from public userlist if any
-     $pnid = variable_get("public_userlist", NULL);
-      if($pnid){
-            $userlist = node_load($pnid);
-            $ulid = $userlist->field_userlist_ulid[LANGUAGE_NONE][0]['value'];
-            gofast_og_unsubscribe_user($pnid, $uid);
-            og_role_revoke('node', $pnid, $uid, $admin_rid);
-
-            $userlist_entity = entity_load_single('userlist', $ulid);
-            $members = $userlist_entity->field_userlist_members[LANGUAGE_NONE];
-
-            foreach($members as $key=>$member){
-               if($member["value"] == $uid){
-                   unset($members[$key]);
-                   $userlist_entity->field_userlist_members[LANGUAGE_NONE] = $members;
-                   entity_save('userlist', $userlist_entity);
-              }
-            }
-
-
-      }
-  }
   variable_set('reset_membership_processing', '0');
 }
 
@@ -4879,7 +5123,13 @@ function gofast_og_preprocess_node(&$variables) {
     $can_access = gofast_og_node_access($node, 'view', $user);
 
     $membership = og_get_membership('node', $node->nid, 'user', $user->uid);
-    $isMember = ($membership != FALSE && $membership->state != OG_STATE_PENDING);
+    // Allow all internal user to see public spaces
+    if($node->type == "public"){
+      $account = user_load($user->uid);
+      $isMember = $account->is_extranet[LANGUAGE_NONE][0]["value"] != 1;
+    } else {
+      $isMember = ($membership != FALSE && $membership->state != OG_STATE_PENDING);
+    }
 
     //check membership from userlist
     if( ! $isMember){
@@ -5356,6 +5606,10 @@ function gofast_og_get_all_uids_user_can_access($account = null){
         //remove root spaces
         $root = gofast_og_get_root_spaces(FALSE, TRUE);
         $all_gids = array_diff_key($all_gids, $root);
+        // No space at all: the user only sees himself (FALSE would lift the restriction).
+        if (empty($all_gids)) {
+          return array($account->uid => (int) $account->uid);
+        }
 
 
         //$all_gids contain all gids the current user can access directly or not ( userlist )
@@ -5806,8 +6060,23 @@ function gofast_og_spaces_request_action($gid, $action, $request_entity_id = nul
     case 'join':
       gofast_user_request_groups(array($gid), $request_user->uid);
 
+      $clean_message = htmlspecialchars($message);
+
+      if (!empty($message)) {
+        // Save request message on membership
+        // Membership should already exist, so no risk of getting false.
+        /** @var EntityDrupalWrapper */
+        $membership = entity_metadata_wrapper(
+          'og_membership',
+          og_get_membership('node', $gid, $request_entity_type, $request_entity_id),
+        );
+        $membership->og_membership_request = $message;
+        $membership->save();
+      }
+
       //Prepare a mail for the space admins
       $userbdd = entity_load_single($request_entity_type ,$request_entity_id);
+      $userbdd->entity_type = $request_entity_type;
       $business_admin_name = gofast_user_display_name($userbdd);
       $admins = get_all_admin_group($gid);
       $space = node_load($gid);
@@ -5815,7 +6084,7 @@ function gofast_og_spaces_request_action($gid, $action, $request_entity_id = nul
       $siteName = variable_get('site_name');
 
       $link = $base_url . "/node/" . $space->nid;
-      $asking_user = '<img src="' . gofast_get_url_picture_by_id($userbdd->uid). '" alt="Information Icon" width="14" /> <a href="' . $base_url . '/user/' . $userbdd->uid .'" style="color: #337ab7; text-decoration: none;">' . gofast_user_display_name($userbdd) . '</a>';
+      $asking_user = '<img src="' . gofast_get_url_picture_by_id($userbdd->picture->fid). '" alt="User Picture" width="14" /> <a href="' . $base_url . '/user/' . $userbdd->uid .'" style="color: #337ab7; text-decoration: none;">' . gofast_user_display_name($userbdd) . '</a>';
       $space_link = '<a href="' . $link . '" style="color: #337ab7; text-decoration: none;">'. $space_title . '</a>';
 
       foreach($admins as $uid){
@@ -5845,10 +6114,11 @@ function gofast_og_spaces_request_action($gid, $action, $request_entity_id = nul
           'node_link' => $link,
           'subheader_message' => $subheader_message,
           'subheader_message_tags' => [$asking_user, $space_link],
-          'users' => [$userbdd],
+          'request_entities' => [$userbdd],
           'action_message' => $action_message,
           'action_message_tags' => [$members_tab_link],
           'manage_members_tab_link' => $manage_members_tab_link,
+          'message' => $clean_message,
         ));
 
         $mail = array(
@@ -5883,6 +6153,8 @@ function gofast_og_spaces_request_action($gid, $action, $request_entity_id = nul
         'subheader_message' => $subheader_message,
         'subheader_message_tags' => [$space_link],
         'skip_body' => TRUE,
+        'business_admin_name' => $business_admin_name,
+        'message' => $clean_message,
       ));
 
       $mail = array(
@@ -6736,6 +7008,10 @@ function gofast_og_sendmail_user_added_group($og_membership){
 function get_all_admin_group($gid) {
   $uids = array();
   $role_admin = array(GOFAST_OG_ROLE_ADMIN);
+  
+  if(gofast_get_node_type($gid, true) == "public"){
+    return gofast_og_get_public_spaces_admin_uids();
+  }
 
   $query = db_select('og_users_roles', 'ogur');
   $query->innerJoin('og_role', 'ogr', 'ogur.rid = ogr.rid');
@@ -6870,44 +7146,6 @@ function gofast_og_cron(){
       }
   }
   variable_del("gofast_users_to_promote_manager");
-
-  //background spaces integrity check
-  //at 01:00AM => Organisations
-  //at 01:30AM => Groups
-  //at 02:00AM => Extranet
-  //at 02:30AM => Public
-   $hour = date("G");
-   $minute = date("i");
-   if($hour == 01 || $hour == 02){
-       if($minute == 00 || $minute == 30){
-            if($hour == 01 && $minute == 00){
-                $bundle = "organisation";
-            }elseif($hour == 01 && $minute == 30){
-                 $bundle = "group";
-            }elseif($hour == 02 && $minute == 00){
-                $bundle = "extranet";
-            }else{
-                $bundle = "public";
-            }
-            $start_timer = time();
-            $query = new EntityFieldQuery();
-              $result = $query->entityCondition('entity_type', 'node')
-                ->entityCondition('bundle', $bundle)
-                ->execute();
-              $nodes = node_load_multiple(array_keys($result['node']));
-
-            foreach($nodes as $node){
-               gofast_resynchro_ldap_membership_one_space($node);
-            }
-
-            $end_timer = time()-$start_timer;
-            watchdog("GoFAST DEBUG", 'END: synchronize '.count($nodes).' '.$bundle.' : '.$end_timer.' sec was needed.');
-
-            gofast_cmis_webservice_force_alfresco_ldap_synch(true);
-       }
-   }
-
-
 }
 
 /*
@@ -6950,6 +7188,9 @@ function gofast_og_reset_membership($node = NULL){
     if($roles == GOFAST_OG_ROLE_STANDARD){
       $contributor_rid = $rkey;
     }
+    if($roles == GOFAST_OG_ROLE_MANAGER){
+      $group_manager_rid = $rkey;
+    }
   }
 
   //Retrieve saved spaces configuration
@@ -6965,6 +7206,7 @@ function gofast_og_reset_membership($node = NULL){
         og_role_revoke('node', $nid, $uid, $readonly_rid);
         og_role_revoke('node', $nid, $uid, $contributor_rid);
         og_role_revoke('node', $nid, $uid, $admin_rid);
+        og_role_revoke('node', $nid, $uid, $group_manager_rid);
         if($public_contributions && !gofast_og_is_root_space($node)){
           og_role_grant('node', $nid, $uid, $contributor_rid);
         }
@@ -6981,6 +7223,7 @@ function gofast_og_reset_membership($node = NULL){
               og_role_revoke('node', $nid, $uid, $readonly_rid);
               og_role_revoke('node', $nid, $uid, $contributor_rid);
               og_role_revoke('node', $nid, $uid, $admin_rid);
+              og_role_revoke('node', $nid, $uid, $group_manager_rid);
               og_role_grant('node', $nid, $uid, $admin_rid);
             }
     }
@@ -6990,6 +7233,7 @@ function gofast_og_reset_membership($node = NULL){
     og_role_revoke('node', $nid, $creator, $readonly_rid);
     og_role_revoke('node', $nid, $creator, $contributor_rid);
     og_role_revoke('node', $nid, $creator, $admin_rid);
+    og_role_revoke('node', $nid, $creator, $group_manager_rid);
     og_role_grant('node', $nid, $creator, $admin_rid);
   }
 
@@ -7322,6 +7566,60 @@ function gofast_og_delete_space($gid){
   exit;
 }
 
+/**
+ * Menu callback for space restoration modal.
+ *
+ * @param numeric $gid ID of the space node to restore.
+ * @return never
+ */
+function gofast_og_restore_space_modal($gid) {
+  $commands = [];
+  $render = "";
+
+  ctools_include('modal');
+  ctools_include('ajax');
+
+  $render .= theme("gofast_og_restore_space", array('gid' => $gid));
+
+  $commands[] = ctools_modal_command_display(t("Restore this space"), $render);
+
+  print ajax_render($commands);
+  exit;
+}
+
+/**
+ * Execute a space deletion processing step.
+ *
+ * Fully deleting a space involves calling this function multiple times, a
+ * varying amount for each step, before it is all done.
+ *
+ * Beware that multiple calls may not happen within the processing of a single
+ * HTTP request, therefore not necessarily by the same PHP process. This means
+ * some things may not be usable, e.g.: DB transactions, caching with `static`
+ * or `drupal_static`, etc.
+ *
+ * This function is a menu callback as well.
+ *
+ * FIXME? refactor in two functions: one business logic function that always
+ * returns its results and one menu callback that explicitly prints and exits
+ * the business function's result.
+ *
+ * @param numeric $gid Node ID of the space being deleted.
+ * @param 'unmultifile_documents'
+ *  | 'delete_documents'
+ *  | 'delete_folder'
+ *  | 'delete_drupal'
+ *  | 'delete_drupal_progression' $action The current step to execute.
+ * @param bool $api Whether the call is from the Gofast REST API, Makes the
+ *  function return its results instead of printing and exiting.
+ * @return string|int|null Returns either a non-zero integer of items remaining to
+ *  be processed or a string. When the string is 'OK' the processing is done.
+ *  If the string is 'PROGRESS', the step needs more time to process.
+ *  Otherwise, the string is an error message.
+ *  A NULL return value indicates the passed arguments are invalid.
+ *  The function does not return when $api is FALSE unless the provided $action
+ *  is invalid.
+ */
 function gofast_og_delete_space_process($gid, $action = NULL, $api = FALSE){
   $_POST['technically_save'] = TRUE;
   if(!isset($action) || !isset($gid)){
@@ -7376,11 +7674,12 @@ function gofast_og_delete_space_process($gid, $action = NULL, $api = FALSE){
           }
 
           if(!empty(array_diff($parents_formatted, $new_parents_formatted)) || !empty(array_diff($new_parents_formatted, $parents_formatted))){
+            $error_message = t('Unable to delete the location of ', array(), array('context' => 'gofast')) . $nid . '/' . node_load($nid)->title;
             if($api === FALSE){
-              print t('Unable to delete the location of ', array(), array('context' => 'gofast')) . $nid . '/' . node_load($nid)->title;
+              print $error_message;
               exit;
             }else{
-              return 500;
+              return $error_message;
             }
           }
         }else{ //This is not a document
@@ -7413,11 +7712,12 @@ function gofast_og_delete_space_process($gid, $action = NULL, $api = FALSE){
           }
 
           if(!empty(array_diff($new_gids, $old_gids)) || !empty(array_diff($old_gids, $new_gids))){
+            $error_message = t('Unable to delete the location of ', array(), array('context' => 'gofast')) . $nid . '/' . node_load($nid)->title;
             if($api === FALSE){
-              print t('Unable to delete the location of ', array(), array('context' => 'gofast')) . $nid . '/' . node_load($nid)->title;
+              print $error_message;
               exit;
             }else{
-              return 500;
+              return $error_message;
             }
           }
         }
@@ -7443,16 +7743,36 @@ function gofast_og_delete_space_process($gid, $action = NULL, $api = FALSE){
       $multiple = FALSE;
 
       //We retrieve all space content
-      $content = gofast_og_get_content($gid, FALSE, TRUE);
-      if(count($content)>10){
+      $nids = gofast_og_get_content($gid, FALSE, TRUE);
+      if(count($nids)>10){
         //We need to call this function multiple times to prevent timeout and overload
-        $remaining = (count($content)-10);
-        $content = array_slice($content, 0, 10);
+        $remaining = (count($nids)-10);
+        $nids = array_slice($nids, 0, 10);
         $multiple = TRUE;
       }
 
-      foreach($content as $nid){
-        $_GET['nid'] = $nid;
+      $nodes = node_load_multiple($nids);
+      foreach($nodes as $node){
+        if(gofast_cmis_node_is_locked($node)){
+          $error = t("Some documents can't be deleted because they are locked (being edited)", array(), array("context" => "gofast:gofast_og"));
+          break;
+        }
+        /** @var EntityDrupalWrapper */
+        $wrapper = _gofast_og_store_entity_status_as_original_status('node', $node->nid, NULL, FALSE);
+
+        // Set Alfresco replication trigger control variable for deletion to
+        // prevent alfresco replication for field which has no matching Alfresco
+        // metadata and to prevent replication from preventing us from deleting
+        // the space folder.
+        $node_reference = gofast_cmis_node_get_item_id($wrapper);
+        $cmis_delete_variable_name = 'cmis_delete_'.$node_reference;
+        variable_set($cmis_delete_variable_name, 'true');
+        $wrapper->save();
+        // Just in case it might not have been deleted.
+        variable_del($cmis_delete_variable_name);
+
+        // Unpublish document node.
+        $_GET['node'] = $node;
         gofast_ajax_node_unpublish(null, null, FALSE, TRUE, TRUE);
       }
        if($multiple == TRUE){
@@ -7463,11 +7783,15 @@ function gofast_og_delete_space_process($gid, $action = NULL, $api = FALSE){
           return $remaining;
         }
       }else{
+        $message = "OK";
+        if(isset($error)){
+          $message = $error;
+        }
         if($api === FALSE){
-          print "OK";
+          print $message;
         exit;
         }else{
-          return "OK";
+          return $message;
         }
       }
       break;
@@ -7481,10 +7805,11 @@ function gofast_og_delete_space_process($gid, $action = NULL, $api = FALSE){
           return "OK";
         }
       }else{
+        $error_message = t("Can't delete the folder", array(), array('context' => 'gofast:og'));
         if($api === false){
-         echo t("Can't delete the folder", array(), array('context' => 'gofast:og'));
+         echo $error_message;
         }else{
-          return 500;
+          return $error_message;
         }
       }
       exit;
@@ -7498,8 +7823,10 @@ function gofast_og_delete_space_process($gid, $action = NULL, $api = FALSE){
 
       set_time_limit(0);
 
+      // Soft delete node (unpublishing).
       $space = node_load($gid);
-      node_delete($gid);
+      _gofast_og_soft_delete_space_node($space);
+
       variable_del('deleting_space_'.$gid);
       global $user;
 
@@ -7540,6 +7867,672 @@ function gofast_og_delete_space_process($gid, $action = NULL, $api = FALSE){
       }
       break;
   }
+}
+
+/**
+ * Access callback function for space restoration.
+ *
+ * @see gofast_og_can_delete_space() from which this function loosely follows
+ *  the structure.
+ *
+ * @param object|null $account Account of the user we are checking if it can
+ *  restore the given space node. Defaults to the current user when null.
+ * @param numeric|object|EntityDrupalWrapper $node Node ID, object or wrapper of
+ *  the node we would want to restore.
+ * @return bool True if the user can restore the given node, false otherwise.
+ */
+function gofast_og_can_restore_space($account, $node) {
+  if (!is_object($account)) {
+    $account = $GLOBALS['user'];
+  }
+
+  /** @var EntityDrupalWrapper */
+  $wrapper = entity_metadata_wrapper('node', $node);
+  $node = $wrapper->value();
+  // Node does not exist, allow.
+  if ($node === NULL) {
+    return TRUE;
+  }
+
+  // If user is main admin, always allow (may be internal operation).
+  // Also allow platform super-admins.
+  if ($account->uid === 1 || gofast_user_is_adm($account)) {
+    return TRUE;
+  }
+
+  $account_roles = gofast_og_get_user_final_roles_for_space('node', $node->nid, $account->uid);
+  // Allow if user was (still is) space administrator.
+  return in_array('administrator member', $account_roles, true);
+}
+
+/**
+ * Menu callback handler.
+ *
+ * Serves the front-end API to restore a node.
+ *
+ * Expects being called multiple times in a row.
+ *
+ * @see gofast_og_restore_space_full() to restore a space fully within code.
+ *
+ * @param numeric $nid ID of the space node to restore.
+ * @param GFSpaceRestoreAction $action Action/processing step to execute.
+ */
+function gofast_og_restore_space_callback($nid, $action) {
+  $context = $_POST['context'];
+  $node = entity_metadata_wrapper('node', $nid);
+  if (!gofast_og_is_space($node->value())) {
+    print json_encode(['error' => 'not_a_space']);
+    exit;
+  }
+
+  $context = json_decode($context, TRUE) ?? [];
+  $process_result = gofast_og_restore_space_process($node, $action, $context);
+  print json_encode([
+    'node_id' => $process_result['node']->getIdentifier(),
+    'result' => $process_result['result'],
+    // Cast to object to ensure context is always serialized as a JSON object.
+    'context' => (object) $process_result['context'],
+    'action' => $process_result['action'],
+    'next' => $process_result['next'],
+  ]);
+  exit;
+}
+
+/**
+ * Soft delete a space node.
+ *
+ * Soft deleting implies unpublishing the Drupal node.
+ *
+ * In addition to unpublishing the space node, all members are kicked from the
+ * associated chat room.
+ *
+ * @param numeric|object|EntityDrupalWrapper $node The node of the space to make soft-deleted.
+ * @return EntityDrupalWrapper A new wrapper for the node.
+ */
+function _gofast_og_soft_delete_space_node($node) {
+  /** @var EntityDrupalWrapper */
+  $node = entity_metadata_wrapper('node', $node);
+  $node->status->set(NODE_NOT_PUBLISHED);
+  $node->save();
+
+  // Check that gofast_riot module is enabled before calling its functions
+  // FIXME: Use a custom hook ?
+  if (module_exists('gofast_riot')) {
+    $node = gofast_riot_kick_all_members_from_space_room($node);
+    // NOTICE: At this point the room should only have the administration bot user,
+    // which we keep to be able to restore the room later.
+  }
+
+  return $node;
+}
+
+/**
+ * Restore a soft-deleted node on the GoFAST side.
+ *
+ * Retoration implies republishing a node.
+ *
+ * @see gofast_og_restore_space_process() For the full process of restoring a
+ *  soft-deleted space this is a step of.
+ *
+ * @param numeric|object|EntityDrupalWrapper $node The node of the space to make soft-deleted.
+ * @return EntityDrupalWrapper A new wrapper for the node.
+ */
+function _gofast_og_restore_space_node($node) {
+  /** @var EntityDrupalWrapper */
+  $node = entity_metadata_wrapper('node', $node);
+  $node->status->set(NODE_PUBLISHED);
+  $node->save();
+
+  // Check that gofast_riot module is enabled.
+  // FIXME: use a real custom hook.
+  if (module_exists('gofast_riot')) {
+    // Reinvite all members to chat room if it exists.
+    $node = gofast_riot_invite_all_space_members_to_room($node);
+  }
+
+  return $node;
+}
+
+/**
+ * Internal function to restore a space folder node on alfresco as part of space restoration.
+ *
+ * @see gofast_og_restore_space_process() For the full process of restoring a
+ *  soft-deleted space this is a step of.
+ *
+ * @param numeric|object|EntityDrupalWrapper $node ID, object or wrapper of the
+ *  space node for which we will restore the folder.
+ * @return array{
+ *    EntityDrupalWrapper,
+ *    array{error: array{code: string, value: object}} | array{value: object}
+ *  } Returns a tuple of a new node entity wrapper and either a success array
+ *  with a 'value' key or an error array with an 'error' key.
+ */
+function _gofast_og_restore_space_folder($node) {
+  $node = entity_metadata_wrapper('node', $node);
+  $folder_id = $node->{GOFAST_CMIS_FOLDER_REFERENCE_FIELD}->value();
+
+  $restoration_result = gofast_cmis_alfresco_api_restore_node($folder_id, TRUE);
+
+  $result = NULL;
+  if (!isset($restoration_result->error)) {
+    return [$node, ['value' => $restoration_result]];
+  }
+  $result = [
+    'error' => [
+      'code' => match ($restoration_result->error->statusCode) {
+        401, 403 => 'unauthorized',
+        404 => 'not_found',
+        409 => 'node_name_taken_in_restore_location',
+        default => 'generic',
+      },
+      'value' => $restoration_result,
+    ]
+  ];
+  return [$node, $result];
+}
+
+/**
+ * Store an entity's current status in the entity's original status field.
+ *
+ * @param string $entity_type Type of the entity to change.
+ * @param numeric|object|EntityDrupalWrapper $entity The entity to save.
+ * @param null|(callable(EntityDrupalWrapper):numeric) $get_status Callback to
+ *  get the status value from an entity.
+ * @param bool $save Whether to save the entity or not before returning,
+ *  defaults to TRUE.
+ * @return EntityMetadataWrapper
+ */
+function _gofast_og_store_entity_status_as_original_status($entity_type, $entity, $get_status = NULL, $save = TRUE) {
+  $wrapper = entity_metadata_wrapper($entity_type, $entity);
+  if (!$wrapper instanceof EntityDrupalWrapper) {
+    return $wrapper;
+  }
+  if (!isset($wrapper->{GOFAST_OG_ORIGINAL_STATUS_FIELD})) {
+    return $wrapper;
+  }
+
+  if (!isset($get_status)) {
+    $get_status = fn($w) => $w->status->value();
+  }
+
+  $wrapper->{GOFAST_OG_ORIGINAL_STATUS_FIELD}->set($get_status($wrapper));
+  if ($save) {
+    $wrapper->save();
+  }
+  return $wrapper;
+}
+
+/**
+ * Restore an entity's status from the entity's original status field.
+ *
+ * @param string $entity_type Type of the entity to change.
+ * @param numeric|object|EntityDrupalWrapper $entity The entity to save.
+ * @param null|callable(EntityDrupalWrapper,int):void $set_status Callback to
+ *  set the approriate status property on an entity wrapper. Defaults to setting
+ *  the status property on the provided wrapper.
+ * @param bool $save Whether to save the entity or not before returning,
+ *  defaults to TRUE.
+ * @return EntityMetadataWrapper
+ */
+function _gofast_og_restore_entity_status_from_original_status($entity_type, $entity, $set_status = NULL, $save = TRUE) {
+  $wrapper = entity_metadata_wrapper($entity_type, $entity);
+  if (!$wrapper instanceof EntityDrupalWrapper) {
+    return $wrapper;
+  }
+  if (!isset($wrapper->{GOFAST_OG_ORIGINAL_STATUS_FIELD})) {
+    return $wrapper;
+  }
+
+  if (!isset(($set_status))) {
+    $set_status = fn($w, $v) => $w->status->set($v);
+  }
+
+  $set_status($wrapper, $wrapper->{GOFAST_OG_ORIGINAL_STATUS_FIELD}->value());
+  if ($save) {
+    $wrapper->save();
+  }
+  return $wrapper;
+}
+
+/**
+ * Remove an entity's original status field value.
+ *
+ * @param string $entity_type Type of the entity to change.
+ * @param numeric|object|EntityDrupalWrapper $entity The entity to save.
+ * @param bool $save Whether to save the entity or not before returning,
+ *  defaults to TRUE.
+ * @return EntityMetadataWrapper
+ */
+function _gofast_og_unset_entity_original_status($entity_type, $entity, $save = TRUE) {
+  $wrapper = entity_metadata_wrapper($entity_type, $entity);
+  if (!$wrapper instanceof EntityDrupalWrapper) {
+    return $wrapper;
+  }
+  if (!isset($wrapper->{GOFAST_OG_ORIGINAL_STATUS_FIELD})) {
+    return $wrapper;
+  }
+
+  $wrapper->{GOFAST_OG_ORIGINAL_STATUS_FIELD}->set(NULL);
+  if ($save) {
+    $wrapper->save();
+  }
+  return $wrapper;
+}
+
+/**
+ * Retrieves the content of a space that can be restored.
+ *
+ * Restorable content is defined as a node whose status differs from the value
+ * in its `field_original_status` field.
+ *
+ * @param numeric|object|EntityDrupalWrapper $node ID, object or wrapper of the
+ *  space node to get the restorable contents from.
+ * @param array{limit?:int} $options Optional array of options for the retrieval of
+ *  restorable contents. The available options are:
+ *  - `limit`: If present, the result will be limited to this number of entries.
+ *    This can be used to implement batching among other use cases.
+ * @return array<numeric> Node ids of restorable contents of $node.
+ */
+function _gofast_og_space_get_restorable_contents($node, $options = []) {
+  /** @var EntityDrupalWrapper */
+  $node = entity_metadata_wrapper('node', $node);
+  if (!gofast_og_is_space($node->value())) {
+    return [];
+  };
+  $node_id = $node->getIdentifier();
+
+  // Query alias variables.
+  $original_status_field_table_name = 'field_data_' . GOFAST_OG_ORIGINAL_STATUS_FIELD;
+  $original_status_field_value_column_name = GOFAST_OG_ORIGINAL_STATUS_FIELD . '_value';
+
+  // Query for restorable node ids.
+  $query = db_select('og_membership', 'ogm');
+  $query->fields('ogm', ['etid']);
+  $query->join('node', 'n', "ogm.etid = n.nid");
+  $query->join($original_status_field_table_name, 'fos', "fos.entity_id = n.nid AND fos.entity_type = 'node'");
+  $query->condition('ogm.gid', $node_id)
+    ->where("ogm.group_type = 'node'")
+    ->where("ogm.entity_type = 'node'")
+    ->condition('ogm.state', OG_STATE_ACTIVE)
+    ->where("n.status <> fos.$original_status_field_value_column_name");
+
+  // Add given limit option to query.
+  if (isset($options['limit'])) {
+    $query->range(0, $options['limit']);
+  }
+
+  return $query->execute()->fetchCol();
+}
+
+/**
+ * Restores the restorable contents of a space.
+ *
+ * Effectively assigns the restorable content nodes' `status` to the value of
+ * the `field_original_status` field and unsets the field's value.
+ *
+ * @see gofast_og_restore_space_process() For the full process of restoring a
+ *  soft-deleted space this is a step of.
+ *
+ * @param numeric|object|EntityDrupalWrapper $node Space node ID, object or
+ *  wrapper of which to restore the contents of.
+ * @param array{limit?:int,count_remaining?:bool} $options Optional array of
+ *  options on how to restore space contents. The available options are:
+ *  - `limit`: Limit how many content nodes are restored by a single call of
+ *    this function. Multiple calls can be used to restore all contents in batches
+ *    then.
+ *  - `count_remaining`: Makes the function return an exact count of remaining
+ *    nodes to restore.
+ * @return array{value:array{has_more:bool,remaining:int}} A result array with
+ *  a `value` key containing an array with the following keys:
+ *  - `has_more`: boolean for if there is more restorable nodes to restore.
+ *  - `remaining`: Number of remaining nodes to restore. Note that this value is
+ *    exact only if the `count_remaining` option is true.
+ */
+function _gofast_og_restore_space_contents($node, $options = []) {
+  // Parse options into easier to use variables.
+  $limit = isset($options['limit']) ? $options['limit'] : NULL;
+  $is_limited = isset($limit) && is_int($limit);
+  $count_remaining = isset($options['count_remaining']) && $options['count_remaining'];
+
+  // Get the restorable contents.
+  $query_options = [];
+  if ($is_limited && !$count_remaining) {
+    // Limit the query by the number we need and one extra to be able to tell if
+    // we have more to process.
+    $query_options['limit'] = $limit + 1;
+  }
+
+  $restorable_ids = _gofast_og_space_get_restorable_contents($node, $query_options);
+  $ids_to_restore = $restorable_ids;
+  $has_more = FALSE;
+  $remaining_count = 0;
+  if ($is_limited) {
+    // Splice removes items from the restorable ids array, if it still contains
+    // items, i.e. it is not empty, we have more items to process than the limit
+    // allows us to process.
+    $ids_to_restore = array_splice($restorable_ids, 0, $limit);
+    $remaining_count = count($restorable_ids);
+    $has_more = $remaining_count > 0;
+  }
+
+  // We will consider all operations as "technical" saves (no notification of
+  // modifications, etc).
+  global $technically_changed;
+  $original_technically_changed = $technically_changed;
+  $original_prevent_notify = $_POST['prevent_notify'];
+  try {
+    // Process the batch of nodes to restore.
+    foreach ($ids_to_restore as $node_id) {
+      $restored_node = _gofast_og_restore_entity_status_from_original_status('node', $node_id, NULL, FALSE);
+      // NOTE/FIXME There might be an issue where a node that was already deleted
+      // from a space will never get its the original status field removed
+      $restored_node = _gofast_og_unset_entity_original_status('entity', $restored_node, FALSE);
+      if ($restored_node instanceof EntityDrupalWrapper) {
+        // "Technical" save on entity wrapper.
+        $technically_changed = $restored_node->changed->value();
+        $_POST['prevent_notify'] = TRUE;
+        $restored_node->save();
+      }
+    }
+  } finally {
+    // Restore old values.
+    $_POST['prevent_notify'] = $original_prevent_notify;
+    $technically_changed = $original_technically_changed;
+  }
+
+  return [
+    'value' => [
+      'has_more' => $has_more,
+      'remaining' => $remaining_count,
+    ],
+  ];
+}
+
+/**
+ * Process a single step of the space restoration process.
+ *
+ * Each step may be run in different request handling PHP processes, as such
+ * process-local features may not work as intended (e.g.: Storing data on super
+ * globals, static variables, drupal_static, etc)
+ *
+ * This function follows a sort of re-enterable state machine pattern.
+ *
+ * This function itself should limit the number of side-effects it causes, but
+ * is not restricted from calling functions that cause side-effects.
+ *
+ * TODO/improvement: Add error recovery mechanism to ensure we do not have
+ * half-restored spaces.
+ *
+ * @see gofast_og_restore_space_full() to restore a space fully within code.
+ * @see gofast_og_restore_space_callback() For the menu callback called from
+ *  front-end
+ * @see gofast_api_post_space_restore() For the API handler to restore a space
+ *  using the REST API.
+ * @see https://wiki.internal.ceo-vision.com/en/Development/Documentation/space_restoration_process
+ *  for a diagram of the underlying state machine.
+ *
+ * @phpstan-type GFSpaceRestoreAction
+ *  'start'
+ *  |'restore_node'
+ *  |'restore_folder'
+ *  |'restore_contents'
+ *  |'end'
+ *  Restoration processing step name. These appear in URLs, be aware of the characters used.
+ * @phpstan-type GFSpaceRestoreResultStatus 'done'|'error'|'processing' Status of restoration processing step
+ * @phpstan-type GFSpaceRestoreProcessExecutionResult array{
+ *  node: EntityDrupalWrapper,
+ *  action: GFSpaceRestoreAction,
+ *  next: GFSpaceRestoreAction|null,
+ *  context: array,
+ *  result: array{
+ *    ok: bool,
+ *    status: GFSpaceRestoreResultStatus,
+ *    error?: mixed,
+ *    message?: string,
+ *  },
+ * } Processing step execution result array
+ *
+ * @param EntityDrupalWrapper $node Node wrapper of the space node being restored.
+ * @param GFSpaceRestoreAction $action Name of the current step.
+ * @param array{settings?:array} $context Freeform array of context, each
+ *  processing step can add to it for later calls to read from. A `settings` key
+ *  is reserved to exclusively read settings from during processing.
+ *
+ * @return GFSpaceRestoreProcessExecutionResult A processing result array with
+ *  all possibly modified values (node, context), a reminder of the step that
+ *  was just executed, the next step and a step processing result array with
+ *  keys to indicate if the processing succeeded, if the overall step is done,
+ *  has an error or still processing and additional data relative to the specific
+ *  call to process.
+ */
+function gofast_og_restore_space_process($node, $action, $context) {
+  switch ($action) {
+    case 'start':
+      // Common start processing step, allows indirection to the first real step
+      // as well a an opportunity to setup the environment beforehand. This step
+      // should only ever be executed once.
+      return [
+        'node' => $node,
+        'action' => $action,
+        'next' => 'restore_folder',
+        'result' => ['ok' => TRUE, 'status' => 'done'],
+        'context' => $context,
+      ];
+      break;
+
+    case 'restore_folder':
+      [$node, $result] = _gofast_og_restore_space_folder($node);
+      $error = $result['error'];
+
+      // Restorable folder was not found, check if it maybe is already restored
+      if ($result['error']['code'] === 'not_found') {
+        $folder_id = gofast_cmis_node_get_item_id($node);
+        $folder_item = gofast_cmis_item_get($folder_id, TRUE, FALSE);
+        // Folder exists, it was already restored, recover from error.
+        if ($folder_item !== FALSE) {
+          $error = NULL;
+        }
+      }
+
+      $is_error = isset($error);
+
+      return [
+        'node' => $node,
+        'action' => $action,
+        'next' => 'restore_contents',
+        'result' => [
+          'ok' => !$is_error,
+          'status' => $is_error ? 'error' : 'done',
+          'error' => $error,
+          'message' => $is_error ?
+            match ($error['code']) {
+              'unauthorized' => t(
+                'Not allowed',
+                [],
+                ['context' => 'gofast'],
+              ),
+              'not_found' => t(
+                'Deleted folder node does not exist',
+                [],
+                ['context' => 'gofast'],
+              ),
+              'node_name_taken_in_restore_location' => t(
+                'Folder with same name already exists in restoration location',
+                [],
+                ['context' => 'gofast'],
+              ),
+              default => t(
+                'Unknown error while restoring folder',
+                [],
+                ['context' => 'gofast'],
+              ),
+            }
+            : NULL,
+        ],
+        'context' => $context,
+      ];
+      break;
+
+    case 'restore_contents':
+      $result = _gofast_og_restore_space_contents($node, [
+        'limit' => 10,
+        'count_remaining' => TRUE,
+      ]);
+      $is_error = isset($result['error']);
+      $next_step = 'restore_node';
+      if ($result['value']['has_more']) {
+        $next_step = 'restore_contents';
+      }
+
+      return [
+        'node' => $node,
+        'action' => $action,
+        'next' => $next_step,
+        'result' => [
+          'ok' => !$is_error,
+          'status' => match (TRUE) {
+            $is_error => 'error',
+            $result['value']['has_more'] => 'processing',
+            default => 'done',
+          },
+        ] + (
+          $is_error ?
+          [
+            'error' => $result['error'],
+            'message' => match ($result['error']['code']) {
+              default => t(
+                'Unknown error while restoring space contents',
+                [],
+                ['context' => 'gofast'],
+              ),
+            },
+          ]
+          : [
+            'remaining' => $result['value']['remaining'],
+          ]
+        ),
+        'context' => $context,
+      ];
+      break;
+
+    case 'restore_node':
+      global $user;
+      $old_status = $node->status->value();
+
+      $node = _gofast_og_restore_space_node($node);
+
+      // Insert audit line.
+      $now = time();
+      $uid = $user->uid;
+      $node_id = $node->getIdentifier();
+      $last_event_unserialized = [
+        "mod_timestamp" => $now,
+        "mod_author" => $uid,
+      ];
+
+      $last_event_serialized = rawurlencode(serialize([
+        "mod_timestamp" => $now,
+        "mod_author" => $uid,
+        "mod_title" => $node->title->value(),
+        "ruid" => ["value" => $uid],
+        "nid" => ["value" => $node_id],
+        "status" => [
+          "from" => $old_status,
+          "to" => $node->status->value(),
+        ],
+      ]));
+
+      gofast_audit_insert_line_audit($node_id, "restore_space", $last_event_serialized, $last_event_unserialized);
+
+      return [
+        'node' => $node,
+        'action' => $action,
+        'next' => 'end',
+        'result' => ['ok' => TRUE, 'status' => 'done'],
+        'context' => $context,
+      ];
+      break;
+
+    case 'end':
+      // Common end of processing actions, currently there is none. The case
+      // exists for convenience ans as future-proofing. This step should only
+      // ever be executed once.
+      return [
+        'node' => $node,
+        'action' => $action,
+        'next' => NULL, // This step is terminal
+        'result' => ['ok' => TRUE, 'status' => 'done'],
+        'context' => $context,
+      ];
+      break;
+
+    default:
+      $message = 'Unknown space restoration step: @step';
+      $variables = ['@step' => $action];
+      watchdog('gofast_og', $message, $variables, WATCHDOG_ERROR);
+      throw new LogicException(strtr($message, $variables));
+      break;
+  }
+}
+
+/**
+ * Executes the full process of restoring a space node synchronously.
+ *
+ * @see gofast_og_restore_space_process() For how each individual step is processed
+ * @see gofast_og_restore_space_callback() For the menu callback called from front-end
+ * @see gofast_api_post_space_restore() For the API handler to restore a space using the REST API.
+ *
+ * @param numeric|object|EntityDrupalWrapper $node Node ID, object or wrapper of
+ *  the space to restore.
+ * @return null|array{code:string} Null on success, an array with an error code otherwise.
+ */
+function gofast_og_restore_space_full($node) {
+  // Parse/normalize/validate input.
+  $node = entity_metadata_wrapper('node', $node);
+  if (!gofast_og_is_space($node->value())) {
+    return ['code' => 'not_a_space'];
+  }
+
+  // Setup.
+  $context = [];
+  $step = 'start';
+
+  // This loop should eventually end like when the processing is called from the front-end.
+  while (TRUE) {
+    $process_result = gofast_og_restore_space_process($node, $step, $context);
+    // Has processing step errored?
+    if (!$process_result['result']['ok']) {
+      // Handle error.
+      if (isset($process_result['result']['message'])) {
+        watchdog(
+          'gofast_og',
+          'Error while processing space restoration with message: %message',
+          ['%message' => $process_result['result']['message']],
+          WATCHDOG_ERROR,
+        );
+      } else {
+        watchdog(
+          'gofast_og',
+          'Error while processing space restoration.',
+          [],
+          WATCHDOG_ERROR,
+        );
+      }
+      return ['code' => 'process_error'];
+    }
+
+    // Has processing ended?
+    if (!$process_result['next']) {
+      break;
+    }
+
+    // Prepare for next step.
+    $node = $process_result['node'];
+    $step = $process_result['next'];
+    $context = $process_result['context'];
+  }
+
+  return NULL;
 }
 
 /*
@@ -7590,6 +8583,22 @@ function gofast_api_space_member($params)
   }
 }
 
+/**
+ * Implements gofast_api_RESOURCE_ACTION for space restore.
+ * @resource space
+ * @action restore
+ */
+function gofast_api_space_restore($params) {
+  switch ($params['method']) {
+    case 'POST':
+      gofast_api_post_space_restore($params);
+      break;
+    default:
+      gofast_api_not_implemented("This method");
+      break;
+  }
+}
+
 function gofast_api_get_space_space($params){
   //Check content type
   if (strpos($params['Content-Type'], "application/json") === FALSE) {
@@ -7609,7 +8618,9 @@ function gofast_api_get_space_space($params){
       gofast_api_mandatory_parameter("gid must be numeric");
     }
   } else {
-    gofast_api_mandatory_parameter("gid");
+    $all_user_spaces = array_values(gofast_og_get_spaces_by_user($user, TRUE, FALSE, FALSE, TRUE));
+    gofast_api_success($all_user_spaces);
+    drupal_exit();
   }
 
   $space = node_load($gid);
@@ -7826,26 +8837,63 @@ function  gofast_api_delete_space_space($params){
       drupal_add_http_header('Content-Type', 'application/json');
       fastcgi_finish_request();
 
-  $response_unmultifile_documents = gofast_og_delete_space_process($space->nid,'unmultifile_documents',TRUE);
-  while($response_unmultifile_documents !== "OK"){
-    $response_unmultifile_documents = gofast_og_delete_space_process($space->nid,'unmultifile_documents',TRUE);
+  do {
+    $unmultifile_documents_result = gofast_og_delete_space_process($space->nid, 'unmultifile_documents', TRUE);
+  } while (!is_string($unmultifile_documents_result));
+  if ($unmultifile_documents_result !== 'OK') {
+    watchdog(
+      'gofast_api',
+      'Error while de-multi-filing documents during space deletion: @message',
+      ['@message' => var_export($unmultifile_documents_result, TRUE)],
+      WATCHDOG_ERROR,
+    );
+    return;
   }
 
-   $response_delete_documents = gofast_og_delete_space_process($space->nid,'delete_documents',TRUE);
-  while($response_delete_documents !== "OK"){
-    $response_delete_documents = gofast_og_delete_space_process($space->nid,'delete_documents',TRUE);
+  do {
+    $delete_documents_result = gofast_og_delete_space_process($space->nid, 'delete_documents', TRUE);
+  } while (!is_string($delete_documents_result));
+  if ($delete_documents_result !== 'OK') {
+    watchdog(
+      'gofast_api',
+      'Error while deleting documents during space deletion: @message',
+      ['@message' => var_export($delete_documents_result, TRUE)],
+      WATCHDOG_ERROR,
+    );
+    return;
   }
 
-   $response_delete_folder = gofast_og_delete_space_process($space->nid,'delete_folder',TRUE);
-  while($response_delete_folder !== "OK"){
-    $response_delete_folder = gofast_og_delete_space_process($space->nid,'delete_folder',TRUE);
+  $delete_folder_result = gofast_og_delete_space_process($space->nid, 'delete_folder', TRUE);
+  if ($delete_folder_result !== 'OK') {
+    watchdog(
+      'gofast_api',
+      'Error while deleting space folder during space deletion: @message',
+      ['@message' => var_export($delete_folder_result, TRUE)],
+      WATCHDOG_ERROR,
+    );
+    return;
   }
 
-    gofast_og_delete_space_process($space->nid,'delete_drupal',TRUE);
+  // Result is not assigned because it is always 'PROGRESS'.
+  gofast_og_delete_space_process($space->nid, 'delete_drupal', TRUE);
 
-   $response_delete_drupal_progression = gofast_og_delete_space_process($space->nid,'delete_drupal_progression',TRUE);
-  while($response_delete_drupal_progression !== "OK"){
-    $response_delete_drupal_progression = gofast_og_delete_space_process($space->nid,'delete_drupal_progression',TRUE);
+  // This whould not really loop as the call beforehand for step 'delete_drupal'
+  // is synchronous and the 'delete_drupal_progression' step changes its return
+  $delete_drupal_progression_result = gofast_og_delete_space_process($space->nid, 'delete_drupal_progression', TRUE);
+  while ($delete_drupal_progression_result === 'PROGRESS') {
+    // Since this is a synchronisation step, if it fails, retry after a delay
+    // (hopefully not blocking the desired operation)
+    usleep(100_000 /* µs = 100ms*/);
+    $delete_drupal_progression_result = gofast_og_delete_space_process($space->nid, 'delete_drupal_progression', TRUE);
+  }
+  if ($delete_drupal_progression_result !== 'OK') {
+    watchdog(
+      'gofast_api',
+      'Error during synchronization while deleting space: @message',
+      ['@message' => var_export($delete_drupal_progression_result, TRUE)],
+      WATCHDOG_ERROR,
+    );
+    return;
   }
 
   //gofast_api_success($response,"200 OK","application/json",null,FALSE);
@@ -7899,7 +8947,7 @@ function gofast_api_put_space_member($params)
     gofast_api_mandatory_parameter("role");
   }
 
-  if ($role != GOFAST_OG_ROLE_ADMIN && $role != GOFAST_OG_ROLE_STANDARD && $role != GOFAST_OG_ROLE_READ_ONLY) {
+  if (!in_array($role, [GOFAST_OG_ROLE_ADMIN, GOFAST_OG_ROLE_STANDARD, GOFAST_OG_ROLE_READ_ONLY, GOFAST_OG_ROLE_MANAGER])) {
     gofast_api_mandatory_parameter("wrong data for field role");
   }
 
@@ -8012,7 +9060,7 @@ function gofast_api_patch_space_member($params){
     gofast_api_mandatory_parameter("new_role");
   }
 
-  if($new_role != GOFAST_OG_ROLE_ADMIN && $new_role != GOFAST_OG_ROLE_STANDARD && $new_role != GOFAST_OG_ROLE_READ_ONLY){
+  if(!in_array($new_role, [GOFAST_OG_ROLE_ADMIN, GOFAST_OG_ROLE_STANDARD, GOFAST_OG_ROLE_READ_ONLY, GOFAST_OG_ROLE_MANAGER])) {
     gofast_api_mandatory_parameter("wrong data for field new_role");
   }
 
@@ -8079,7 +9127,7 @@ function gofast_api_patch_space_member($params){
 
       // deleting role from current user
       foreach (array_keys($og_roles) as $old_rid) {
-        if (!in_array($old_rid, (array)$new_rid)) {
+        if ($old_rid != $new_rid) {
           og_role_revoke("node", $gid, $id, $old_rid);
         }
       }
@@ -8091,9 +9139,9 @@ function gofast_api_patch_space_member($params){
   }else if(isset($userlists_ulid["userlist"]) && in_array($id, $userlists_ulid["userlist"],true)){
     $role_userlist = gofast_userlist_og_get_userlist_roles('node',$space->nid,$id,FALSE, TRUE);
      // deleting role from current user
-      foreach (array_keys($role_userlist) as $old_ulid) {
-        if (!in_array($old_ulid, $new_rid)) {
-            gofast_userlist_og_role_revoke_userlist('node', $gid, $id, $old_ulid);
+      foreach (array_keys($role_userlist) as $old_rid) {
+        if ($old_rid != $new_rid) {
+          gofast_userlist_og_role_revoke_userlist('node', $gid, $id, $old_rid);
         }
       }
     gofast_userlist_og_role_grant_userlist('node', $gid, $id, $new_rid);
@@ -8133,13 +9181,18 @@ function gofast_api_delete_space_member($params){
     gofast_api_mandatory_parameter("gid");
   }
 
+  // Track which type of member we are trying to remove.
+  $member_type = NULL;
+
     //Check if we have a uid or userlist node id  param
     if (isset($params['uid']) && !isset($params['ul_node_id'])) {
+      $member_type = 'user';
       $uid = $params['uid'];
       if (!is_numeric($uid)) {
       gofast_api_mandatory_parameter("uid must be numeric");
       }
     } else if (!isset($params['uid']) && isset($params['ul_node_id'])) {
+      $member_type = 'userlist';
       $ul_node_id = $params['ul_node_id'];
       if (!is_numeric($ul_node_id)) {
         gofast_api_mandatory_parameter("ul_node_id must be numeric");
@@ -8149,6 +9202,10 @@ function gofast_api_delete_space_member($params){
     } else {
       gofast_api_mandatory_parameter("uid or ul_node_id");
     }
+
+  if ($member_type === NULL) {
+    gofast_api_internal_server_error("Unknown member type");
+  }
 
 
   // control new role
@@ -8183,6 +9240,9 @@ function gofast_api_delete_space_member($params){
     }
   }
 
+  // Normalise id as numeric string for strict comparison with internal ID values,
+  // which usually are passed as numeric strings.
+  $id = (string) $id;
 
    //Check cound of administrators in this space
         $users_admins = gofast_userlist_og_get_node_members_by_role($space->nid, array(OG_STATE_ACTIVE), "administrator member");
@@ -8192,17 +9252,19 @@ function gofast_api_delete_space_member($params){
 
    $userlists_ulid = gofast_userlist_og_get_group_members_properties($space, array(),null, 'node', array('userlist'));
 
-  if(in_array($id, $members,true)){
+  if ($member_type === 'user' && in_array($id, $members, TRUE)) {
 
-   $membership = og_get_membership('node', $space->nid, 'user', $id);
+   // The space template wrapper is only defined once space templates are merged.
+   $membership = function_exists('gofast_og_get_membership') ? gofast_og_get_membership('node', $space->nid, 'user', $id) : og_get_membership('node', $space->nid, 'user', $id);
      if($membership != false){
     $membership->delete();
      }else{
       gofast_api_internal_server_error("User already deleted");
      }
       $output['type'] = 'user';
-  }else if(isset($userlists_ulid["userlist"]) && in_array($id, $userlists_ulid["userlist"],true)){
-   $membership = og_get_membership('node', $space->nid, 'userlist', $id);
+  }
+  elseif ($member_type === 'userlist' && isset($userlists_ulid["userlist"]) && in_array($id, $userlists_ulid["userlist"], TRUE)) {
+   $membership = function_exists('gofast_og_get_membership') ? gofast_og_get_membership('node', $space->nid, 'userlist', $id) : og_get_membership('node', $space->nid, 'userlist', $id);
      if( $membership != false){
       $membership->delete();
      }else{
@@ -8210,9 +9272,10 @@ function gofast_api_delete_space_member($params){
      }
       $output['type'] = 'userlist';
   }else{
-    if (isset($uid)) {
+    if ($member_type == 'user') {
       gofast_api_internal_server_error("User dose not exist in the indicate groupe");
-    } else if ($ul_node_id) {
+    }
+    elseif ($member_type == 'userlist') {
       gofast_api_internal_server_error("Userlist dose not exist in the indicate groupe");
     }
   }
@@ -8221,6 +9284,129 @@ function gofast_api_delete_space_member($params){
   gofast_api_success($output);
 }
 
+/**
+ * POST handler for API /api/space/restore
+ *
+ * Restores a space given its node ID.
+ *
+ * @param array $params API Call parameters.
+ * @return never This function does not return
+ */
+function gofast_api_post_space_restore($params) {
+  $node_id = $params['nid'];
+  if (!isset($node_id)) {
+    gofast_api_mandatory_parameter('nid');
+  }
+
+  $node = node_load($node_id);
+  // Check that node exists and current user can view the node (assuming a user
+  // that can delete a space must also be able to view it).
+  if ($node === FALSE || !node_access('view', $node)) {
+    gofast_api_not_found();
+  }
+
+  // Check passed node is a space.
+  if (!gofast_og_is_space($node)) {
+    // FIXME: This really should be a "400 Bad request" response and not a 500...
+    gofast_api_internal_server_error(format_string(
+      'Node @nid is not a space',
+      ['@nid' => $node_id],
+    ));
+  }
+
+  if (!gofast_og_can_restore_space(NULL, $node_id)) {
+    gofast_api_not_authorized();
+  }
+
+  if ($node->status !== NODE_NOT_PUBLISHED) {
+    // FIXME: This really should be a "400 Bad request" response and not a 500...
+    gofast_api_internal_server_error(format_string(
+      'Node @nid is not deleted',
+      ['@nid' => $node_id],
+    ));
+  }
+
+  // Allow processing to take as much time as it needs.
+  set_time_limit(0);
+  $result = gofast_og_restore_space_full($node);
+  if ($result !== NULL) {
+    gofast_api_internal_server_error(format_string(
+      "Failed to restore node @nid",
+      ['@nid' => $node_id],
+    ));
+  }
+
+  gofast_api_success([
+    'success' => TRUE,
+  ]);
+}
+
+/**
+ * Checks if an entity is member of a space.
+ *
+ * By default, it checks if the current user is a member of the space.
+ *
+ * When checking if a user entity is member of a space, it also checks if it is
+ * a member through a user list.
+ *
+ * @param (numeric | object | EntityDrupalWrapper) $space_node
+ *   The space node to check if the entity is a member of
+ * @param string $entity_type
+ *   Type of the member entity to check.
+ *
+ *   Defaults to `'user'`.
+ * @param ?object $entity
+ *   Member entity object to check.
+ *
+ *   When `NULL`, `$entity_type` is ignored and the entity to check is set to
+ *   the current user.
+ *
+ *   Defaults to `NULL`.
+ * @param (OG_STATE_ACTIVE | OG_STATE_PENDING | OG_STATE_BLOCKED)[] $states
+ *   OG membership state values to include.
+ *
+ *   Defaults to `[OG_STATE_ACTIVE]`.
+ *
+ * @return bool
+ *   Whether the entity is considered a member of the space node.
+ */
+function gofast_og_is_space_member($space_node, $entity_type = 'user', $entity = NULL, $states = [OG_STATE_ACTIVE]) {
+  if ($entity === NULL) {
+    $entity_type = 'user';
+    $entity = $GLOBALS['user'];
+  }
+  /** @var EntityDrupalWrapper */
+  $space_node = entity_metadata_wrapper('node', $space_node);
+
+  // Check if entity is a member of the space node OG group.
+  if (og_is_member('node', $space_node->getIdentifier(), $entity_type, $entity, $states)) {
+    return TRUE;
+  }
+
+  // If not looking for a user entity, we don't check further.
+  if ($entity_type !== 'user') {
+    return FALSE;
+  }
+
+  // FIXME? Loading all members when only trying to check the existence of a
+  // membership for one of them seems wasteful.
+  // Check if user entity is a member through a userlist:
+  // Get list of members including those from userlists for selected states.
+  $state_map = array(
+    OG_STATE_ACTIVE => 'active',
+    OG_STATE_PENDING => 'pending',
+    OG_STATE_BLOCKED => 'blocked'
+  );
+
+  // Check if user is member of space in any of the provided states.
+  return gofast_iterable_any(
+    $states,
+    fn ($s) => in_array(
+      $entity->uid,
+      gofast_og_get_members_userlist_included($space_node->value(), $state_map[$s]),
+    ),
+  );
+}
 
 /**
  * Return the higher role for the given space
@@ -8489,11 +9675,11 @@ function gofast_og_space_members_async($nid){
   $roles_query = og_roles('node', gofast_get_node_type($nid), $nid, FALSE, FALSE);
   $uids_user_can_access = gofast_og_get_all_uids_user_can_access($user) ?: [];
 
+  //check if we are admin of current space
+  $is_admin = in_array($user->uid, $all_admins_space);
+
   foreach($usersMembers as $data){
     if($data->etid > 1 || $data->entity_type == 'userlist' ){
-
-      //check if we are admin of current space
-      $is_admin = in_array($user->uid, $all_admins_space);
 
       $user_contextual_actions = [];
 
@@ -8527,6 +9713,18 @@ function gofast_og_space_members_async($nid){
         $member['actions'] = theme('contextual_links', array('buttons' => $user_contextual_actions));
       } else {
         $member['actions'] = "";
+      }
+
+      // Current user is admin or member is current user and membership is
+      // pending: add join request message.
+      $can_view_message = $is_admin || ($data->entity_type === 'user' && $data->etid === $user->uid);
+      if ($can_view_message && $data->state == 2) {
+        /** @var EntityDrupalWrapper */
+        $wrapper = entity_metadata_wrapper('og_membership', $data->id);
+        $request_message = $wrapper->og_membership_request->value();
+        if (!empty($request_message)) {
+          $member['membership_request_message'] = $request_message;
+        }
       }
 
       if($data->entity_type == 'user'){
@@ -8602,7 +9800,7 @@ function gofast_og_home_async($nid){
         'node' => $article_node,
         'only_article' => TRUE
       ]);
-      $node_body = theme('gofast_og_home', array('gid' => $nid, 'content' => $article_node_content, 'description' => $node->field_description[LANGUAGE_NONE][0]['value'], 'space_name' => $node->title, 'custom_logo' => $node->field_logo_uri[LANGUAGE_NONE][0]['value'] ?? NULL));
+      $node_body = theme('gofast_og_home', array('gid' => $nid, 'content' => $article_node_content, 'description' => $node->field_description[LANGUAGE_NONE][0]['value'] ?? NULL, 'space_name' => $node->title, 'custom_logo' => $node->field_logo_uri[LANGUAGE_NONE][0]['value'] ?? NULL));
     } else {
 
 
@@ -8670,7 +9868,7 @@ function gofast_og_get_visible_node_users($node){
   $gids = [$node->nid]; 
   
   if(!gofast_og_is_space($node)){
-    $gids = gofast_og_get_parents_gids(nid:$node->nid, return:TRUE);
+    $gids = gofast_og_get_parent($node);
     $gids += array_map(
       fn ($mirrored_space_parent_result) => $mirrored_space_parent_result['cmis_item']->properties['gofast:nid'],
       iterator_to_array(gofast_cmis_node_get_mirrored_parent_spaces($node)),
@@ -8697,16 +9895,20 @@ function gofast_og_get_visible_node_users($node){
   exit;
 }
 
-function gofast_og_get_parents_gids($nid, $return = FALSE){
+function gofast_og_api_get_parents_gids($nid) {
+  print json_encode(gofast_og_get_parents_gids($nid));
+  exit;
+}
+
+function gofast_og_get_parents_gids($nid){
 
   $node = node_load($nid);
+  if($node === false) {
+      return false;
+  }
   $parents = gofast_og_get_parent($node);
 
-  if($return){
-    return $parents;
-  }
-  print json_encode($parents);
-  exit;
+  return $parents;
 }
 
 /*
@@ -9170,9 +10372,18 @@ function gofast_og_ask_join_space_form($form, &$form_state){
   return $form;
 }
 
+/** Form validation handler for gofast_og_ask_join_space_form */
+function gofast_og_ask_join_space_form_validate($form, &$form_state) {
+  $gid = $form_state['build_info']['args'][0];
+  // Prevent user without confidential clearance to ask to join confidential space.
+  if (gofast_group_is_confidential($gid) && !gofast_user_can_user_access_confidential_content()) {
+    form_set_error('confidentiality', t('You do not have the clearance for this action on this space', [], ['context' => 'gofast']));
+  }
+}
+
 function gofast_og_ask_join_space_form_submit($form, &$form_state){
   $gid = $form_state['build_info']['args'][0];
-  $comment = $form_state['values']['comment_input'];
+  $comment = gofast_xss_clean($form_state['values']['comment_join']);
 
    if(isset($_SESSION["gids_bulk_actions"])){
        $gids =$_SESSION["gids_bulk_actions"];
@@ -9230,6 +10441,19 @@ function gofast_og_has_extranet_location($node_location_paths) {
     }
   }
   return $has_extranet_location;
+}
+
+/**
+ * Checks if any of a given nodes locations is within a TEMPLATES folder.
+ *
+ * @param string[] $node_location_paths List of paths for the node's location.
+ * @return bool True if any path had a TEMPLATES folder, false otherwise.
+ */
+function gofast_og_has_template_location($node_location_paths) {
+  return gofast_iterable_any(
+    $node_location_paths,
+    fn ($path) => (bool) preg_match('/\\/TEMPLATES(\\/|$)/', $path),
+  );
 }
 
 /**
@@ -9797,4 +11021,92 @@ function gofast_og_get_private_space_by_username($username) {
   $result = $query->execute()->fetchAll();
 
   return $result ;
+}
+/**
+ * Fix spaces integrity in internal LDAP
+ *
+ * @param string $bundle Space bundle to resyncro
+ * @return void
+ */
+function gofast_og_resynchro_space_bundle_ldap_memberships($bundle) {
+  watchdog("GoFAST OG", "START $bundle spaces ldap memberships resyncro");
+  $query = new EntityFieldQuery();
+  $result = $query->entityCondition('entity_type', 'node')
+  ->entityCondition('bundle', $bundle)
+  ->execute();
+  $nodes = node_load_multiple(array_keys($result['node']));
+  
+  foreach($nodes as $node){
+    gofast_resynchro_ldap_membership_one_space($node);
+  }
+  
+  gofast_cmis_webservice_force_alfresco_ldap_synch(true);
+  watchdog("GoFAST OG", "END $bundle spaces ldap memberships resyncro");
+}
+
+/**
+ * Returns an array of all public spaces administrators uids
+ * 
+ * @return string[]
+ */
+function gofast_og_get_public_spaces_admin_uids() {
+  if(PUBLIC_USERLIST_NID === NULL) {
+    return [];
+  }
+
+  $public_ul_ulid = gofast_userlist_get_ulid_by_nid(PUBLIC_USERLIST_NID);
+  $public_admins_uids = gofast_userlist_get_members_without_entity_load($public_ul_ulid);
+  $public_admins_uids = array_map(function($ul_member){
+    return $ul_member->uid;
+  }, $public_admins_uids);
+
+  return $public_admins_uids;
+}
+
+// Check if the user can pre add members to a space
+function gofast_og_can_user_pre_add_members_to_space($gid, $uid = null){
+  global $user;
+  if($uid == null){
+    $uid = $user->uid;
+  }
+  $account = user_load($uid);
+  if(user_access("pre add members", $account)){
+    return true;
+  }
+  if(og_user_access("node", $gid, "pre add members", $account)){
+    return true;
+  }
+
+  return false;
+}
+
+/**
+ * Implements hook_node_grants().
+ *
+ * Grants every internal user view access to all public spaces.
+ *
+ * @param stdClass $account
+ *   The account the grants are computed for
+ * @param 'view'|'update'|'delete' $op
+ *   The operation the grants are requested for
+ *
+ * @return array<string,int[]>
+ *   The published public space node IDs keyed by realm
+ */
+function gofast_og_node_grants($account, $op) {
+  if ($op !== 'view' || empty($account->uid) || gofast_user_is_extranet($account)) {
+    return array();
+  }
+
+  $public_gids = &drupal_static(__FUNCTION__);
+  if (!isset($public_gids)) {
+    $public_gids = db_select('node', 'n')
+      ->fields('n', array('nid'))
+      ->condition('type', 'public')
+      ->condition('status', 1)
+      ->execute()
+      ->fetchCol();
+  }
+
+  return $public_gids ? array(OG_ACCESS_REALM . ':node' => $public_gids) : array();
 }

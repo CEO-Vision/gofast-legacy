@@ -34,7 +34,8 @@ function gofast_audit_get_list_event_types(){
       t("Modification") => array(
         "update_node",
         "update_userlist",
-        "comment_update"
+        "comment_update",
+        "update_user",
       ),
       t("Download", array(), array("context" => "gofast:gofast_audit")) => array(
         "download_file",
@@ -60,6 +61,7 @@ function gofast_audit_get_list_event_types(){
       t('Comment modification', array(), array("context" => "gofast:gofast_audit")) => array("comment_updated"),
       t('Comment deletion', array(), array("context" => "gofast:gofast_audit")) => array("comment_deleted"),
       t('Role modification', array(), array("context" => "gofast:gofast_audit")) => array("update_role"),
+      t('Restoration', [], ['context' => 'gofast:gofast_audit']) => ['restore_space'],
     );
     return $availables_values;
 }
@@ -147,16 +149,14 @@ function gofast_audit_menu(){
     'page callback' => 'gofast_audit_generate_file',
     'type' => MENU_CALLBACK,
     'page arguments' => array('gofast_admin_settings'),
-    'access arguments' => array('administer site configuration'),
-    'access callback' => 'user_access',
+    'access callback' => TRUE,
   );
 
   $items['gofast_audit_export_xlsx/download/%'] = array(
     'page callback' => 'gofast_audit_retrieve_file',
     'type' => MENU_CALLBACK,
     'page arguments' => array(2),
-    'access arguments' => array('administer site configuration'),
-    'access callback' => 'user_access',
+    'access callback' => TRUE,
   );
 
   $items['gofast_audit/space_audit/%'] = array(
@@ -177,7 +177,10 @@ function gofast_audit_menu(){
 function gofast_audit_optimize_query_set_joins($columns, &$query, &$target_alias, &$target_id) {
   $is_user = !empty(array_intersect(["login", "displayname"], $columns));
   $is_node = !empty(array_intersect(["title", "type"], $columns));
-  $is_audit = !empty(array_intersect(["timestamp", "date", "startDate", "endDate", "event_type", "eventtype"], $columns));
+  // "type" needs the audit table too: the User and Personal space types are told apart by a.event_type
+  // (filter and sort expression), which a subquery on the node table alone does not have
+  $is_audit = !empty(array_intersect(["timestamp", "date", "startDate", "endDate", "event_type", "eventtype", "type"], $columns));
+  $is_audit_only = $is_audit && !($is_user || $is_node);
   $user_props = [
     "alias" => "u",
     "id" => "uid",
@@ -203,7 +206,11 @@ function gofast_audit_optimize_query_set_joins($columns, &$query, &$target_alias
 
   $query = db_select($props["table"], $props["alias"])->fields($props["alias"], $props["fields"]);
   if ($is_audit || $has_both) {
-    $query->innerJoin($audit_props["table"], $audit_props["alias"], "{$audit_props['alias']}.{$props['id']} ={$props['alias']}.{$props['id']}");
+    // When filtering only on audit columns, wee need to keep entries not
+    // associated with nodes (e.g. filtering on user unblocking event), thus we
+    // make a right outer join instead of an inner join.
+    $join_method = $is_audit_only ? [$query, 'rightJoin'] : [$query, 'innerJoin'];
+    $join_method($audit_props["table"], $audit_props["alias"], "{$audit_props['alias']}.{$props['id']} ={$props['alias']}.{$props['id']}");
     $query->fields($audit_props['alias'], $audit_props['fields']);  
   }
 
@@ -266,8 +273,14 @@ function gofast_audit_optimize_query(&$subquery, $filters, $sort, &$target_alias
   if (empty(array_intersect($joinable_columns, $all_fields))) {
     return;
   }
+  // Sorting alone on a node or user column is faster on the audit table, which also keeps the events without node or user
+  if (in_array($sort["field"] ?? "", ["title", "type", "login", "displayname"], TRUE) && empty(array_intersect($joinable_columns, array_keys(array_filter($filters))))) {
+    return;
+  }
   $target_id = "";
-  gofast_audit_optimize_query_set_joins($all_fields, $subquery, $target_alias, $target_id);
+  // The node and space scopes filter on audit columns: keep the audit table joined.
+  $join_fields = $type != "site" ? [...$all_fields, "timestamp"] : $all_fields;
+  gofast_audit_optimize_query_set_joins($join_fields, $subquery, $target_alias, $target_id);
   if (!empty(array_intersect($joinable_columns, array_keys($filters)))) {
     gofast_audit_optimize_query_filters($subquery, $filters, $target_alias, $relations_by_field, $type, $entity_id);
   }
@@ -283,7 +296,10 @@ function gofast_audit_optimize_query(&$subquery, $filters, $sort, &$target_alias
   // since we don't target the audit table anymore, we join it back by adding it as the first relation
   $aliases = $subquery->getTables();
   $append = $aliases["a"] ? " AND a.id = $target_alias.id" : "";
-  $relations_by_field["a"] = [[GOFAST_AUDIT_TABLE_NAME, 'a', "a.$target_id = $target_alias.$target_id" . $append]];
+  // Make sure to keep possible audit entries without an associated node or user
+  // that still fit all filtering criteria. (e.g. when filtering by audit column
+  // only, like filtering by event type like user unblocking).
+  $relations_by_field["a"] = [[GOFAST_AUDIT_TABLE_NAME, 'a', "($target_alias.$target_id IS NULL OR a.$target_id = $target_alias.$target_id)" . $append]];
 }
 
 /**
@@ -337,6 +353,10 @@ function gofast_audit_sort_query(&$query, $sort, $subquery = FALSE) {
     $query->addExpression("row_number() OVER (ORDER BY $arguments[0] $arguments[1])", "rn");
   } else {
     $query->orderBy(...$arguments);
+    // Most recent first within a same value
+    if ($arguments[0] !== "timestamp") {
+      $query->orderBy("timestamp", "DESC");
+    }
   }
 }
 
@@ -347,20 +367,30 @@ function gofast_audit_sort_query(&$query, $sort, $subquery = FALSE) {
 function gofast_audit_filter_query(&$query, $filters, $type, $entity_id) {
   $conn = Database::getConnection();
   // logic for filtering
-    if (!empty($filters['login'])) {
-    $query->where("u.name LIKE " . $conn->quote("%" . db_like($filters["login"]) . "%"));
+  if (!empty($filters['login'])) {
+    $query->where(gofast_audit_get_final_name_expression(FALSE, "u.name") . " LIKE " . $conn->quote("%" . db_like($filters["login"]) . "%"));
   }
   if (!empty($filters['displayname'])) {
     $or = db_or();
-    $or->where("ldap_user_givenname_value LIKE " . $conn->quote("%" . db_like($filters["displayname"]) . "%"));
-    $or->where("ldap_user_sn_value LIKE " . $conn->quote("%" . db_like($filters["displayname"]) . "%"));
+    $or->where(gofast_audit_get_final_name_expression(TRUE, "fin.ldap_user_givenname_value") . " LIKE " . $conn->quote("%" . db_like($filters["displayname"]) . "%"));
+    $or->where(gofast_audit_get_final_name_expression(TRUE, "ln.ldap_user_sn_value") . " LIKE " . $conn->quote("%" . db_like($filters["displayname"]) . "%"));
     $query->condition($or);
   }
   if (!empty($filters['title'])) {
     $query->where("n.title LIKE " . $conn->quote("%" . db_like($filters["title"]) . "%"));
   }
   if (!empty($filters['type'])) {
-    $query->where("n.type = " .  $conn->quote($filters['type']) );
+    // Events about a user are stored on their private space: "user" and "private_space" split them
+    $user_events = implode(", ", array_map(array($conn, 'quote'), array_keys(gofast_audit_user_event_targets())));
+    if ($filters['type'] == 'user') {
+      $query->where("n.type = 'private_space' AND a.event_type IN ($user_events)");
+    }
+    elseif ($filters['type'] == 'private_space') {
+      $query->where("n.type = 'private_space' AND a.event_type NOT IN ($user_events)");
+    }
+    else {
+      $query->where("n.type = " .  $conn->quote($filters['type']) );
+    }
   }
   if(!empty($filters['startDate']) && !empty($filters['endDate'])){
     if ($filters['startDate'] == $filters['endDate']) {
@@ -388,6 +418,27 @@ function gofast_audit_filter_query(&$query, $filters, $type, $entity_id) {
     $or->where("a.nid IN (" . $children_string . ")");
     $query->condition($or);
   }
+}
+
+/**
+ * SQL expression to return a custom string on admin or anonymous user.
+ * 
+ * @param bool $empty if we don't want to display or match anything.
+ *
+ * @return string
+ */
+function gofast_audit_get_final_name_expression($empty = FALSE, $fallback = "") {
+  if ($empty) {
+      return "CASE WHEN u.uid = 0 OR u.uid = 1 THEN '' ELSE $fallback END";
+  }
+  return "CASE WHEN u.uid = 0 THEN '" . t("Anonymous") . "' WHEN u.uid = 1 THEN '" . t("System") . "' ELSE $fallback END";
+}
+
+/**
+ * Events about a user, stored on their private space, keyed to the details entry holding the targeted user.
+ */
+function gofast_audit_user_event_targets() {
+  return ['login' => 'mod_author', 'create_user' => 'user_create', 'update_user' => 'uid_updated', 'user_leave' => 'uid_to_block', 'user_unleave' => 'uid_to_block'];
 }
 
 function gofast_audit_get_audit($type = "site", $entity_id = 0) {
@@ -455,10 +506,15 @@ function gofast_audit_get_audit($type = "site", $entity_id = 0) {
   if (isset($target_fields["n"])) {
     // get options for type selector
     $type_options = gofast_get_all_node_types();
+    $type_options['user'] = t('User', array(), array('context' => 'gofast'));
     asort($type_options);
     // cases to make possible sorting by translated type
     // the lowercase is used to be able to do the actual sorting (SQL sorting being case-sensitive and a category name can begin by a lowercase letter)
     $translated_type_nocase_expression = "CASE";
+    if (isset($target_fields["a"])) {
+      $user_events = "'" . implode("', '", array_keys(gofast_audit_user_event_targets())) . "'";
+      $translated_type_nocase_expression .= " WHEN n.type = 'private_space' AND a.event_type IN ($user_events) THEN '" . strtolower(htmlspecialchars($type_options['user'], ENT_QUOTES)) . "'";
+    }
     foreach ($type_options as $machine_name => $readable_value) {
       $translated_type_nocase_expression .= " WHEN n.type = '" . $machine_name . "' THEN '" . strtolower(htmlspecialchars($readable_value, ENT_QUOTES)) . "'";
     }
@@ -476,6 +532,9 @@ function gofast_audit_get_audit($type = "site", $entity_id = 0) {
   $expressions_by_field = [
     "a" => [["translated_event_type" => $translated_event_type_expression]],
     "n" => [["translated_type_nocase" => $translated_type_nocase_expression]],
+    "u" => [["final_name" => gofast_audit_get_final_name_expression(FALSE, "u.name")]],
+    "fin" => [["final_givenname" => gofast_audit_get_final_name_expression(TRUE, "fin.ldap_user_givenname_value")]],
+    "ln" => [["final_sn" => gofast_audit_get_final_name_expression(TRUE, "ln.ldap_user_sn_value")]],
   ];
 
   $subquery = FALSE;
@@ -573,8 +632,23 @@ function gofast_audit_get_audit($type = "site", $entity_id = 0) {
 
   // use of target ids to avoid large offsets slowing down the query dramatically
   $target_ids = [];
-  if (!$subquery && $offset > 0) {
+  // The node and user sorts also go through the audit ids on the first page: sorting the whole joined query is slow
+  $sort_on_node = in_array($sort["field"] ?? "", ["title", "type"], TRUE);
+  $sort_on_user = in_array($sort["field"] ?? "", ["login", "displayname"], TRUE);
+  if (!$subquery && ($offset > 0 || (($sort_on_node || $sort_on_user) && !isset($_GET["export"])))) {
     $target_ids_query = db_select(GOFAST_AUDIT_TABLE_NAME, "a")->fields("a", ["id"]);
+    if ($sort_on_node) {
+      $target_ids_query->leftJoin("node", "n", "a.nid = n.nid");
+      $target_ids_query->addField("n", "title");
+      $target_ids_query->addExpression($translated_type_nocase_expression, "translated_type_nocase");
+    }
+    if ($sort["field"] == "login") {
+      $target_ids_query->leftJoin("users", "u", "a.uid = u.uid");
+    }
+    if ($sort["field"] == "displayname") {
+      $target_ids_query->leftJoin("field_data_ldap_user_sn", "ln", "ln.entity_id = a.uid");
+      $target_ids_query->addField("ln", "ldap_user_sn_value");
+    }
     gofast_audit_filter_query($target_ids_query, $filters, $type, $entity_id);
     gofast_audit_sort_query($target_ids_query, $sort);
     $target_ids_query->range($offset, $pagination["perpage"]);
@@ -600,9 +674,27 @@ function gofast_audit_get_audit($type = "site", $entity_id = 0) {
   // display-only logic
   foreach ($results as $result) {
       $result->date = format_date($result->timestamp, "short");
-      $result->displayname = ($result->ldap_user_givenname_value ?? "") . " " . ($result->ldap_user_sn_value ?? "");
+      $result->displayname = ($result->final_givenname ?? "") . " " . ($result->final_sn ?? "");
       if ($result->type == "private_space") {
-        $result->title = t('My Personal Space', array(), array('context' => 'gofast'));
+        // Events about a user are stored on their private space: the targeted user is its owner,
+        // or the one kept in the event details when the space is gone
+        $user_event_targets = gofast_audit_user_event_targets();
+        $target_key = $user_event_targets[$result->event_type] ?? NULL;
+        $details = isset($result->details) ? unserialize(rawurldecode($result->details)) : [];
+        $node = node_load($result->nid);
+        $owner_uid = $node->uid ?? ($target_key ? ($details[$target_key] ?? NULL) : NULL);
+        $owner_name = $owner_uid ? gofast_user_display_name($owner_uid) : FALSE;
+        if ($target_key && $owner_name) {
+          $result->type = "user";
+          $result->title = $owner_name;
+          $result->href = "/user/$owner_uid";
+        }
+        elseif ($owner_name) {
+          $result->title = t('Personal space of @name', array('@name' => $owner_name), array('context' => 'gofast'));
+        }
+        else {
+          $result->title = t('My Personal Space', array(), array('context' => 'gofast'));
+        }
       }
       if($result->type == "kanban"){
         $node = node_load($result->nid);
@@ -610,9 +702,14 @@ function gofast_audit_get_audit($type = "site", $entity_id = 0) {
         $result->title = $parent_space->title;
         $result->href = "$parent_space->nid#ogkanban";
       }
-      $result->type = gofast_get_human_readable_node_type($result->type);
-      if($result->type != null){
-        $result->translated_type = t($result->type);
+      if ($result->type == "user") {
+        $result->type = $result->translated_type = t('User', array(), array('context' => 'gofast'));
+      }
+      else {
+        $result->type = gofast_get_human_readable_node_type($result->type);
+        if($result->type != null){
+          $result->translated_type = t($result->type);
+        }
       }
       if (isset($result->details)) {
         $details_data = [];
@@ -648,6 +745,14 @@ function gofast_audit_get_audit($type = "site", $entity_id = 0) {
 }
 
 function gofast_audit_generate_file(){
+  $type = $_GET["type"] ?? "site";
+  $gid = $_GET["gid"] ?? 0;
+  // Check if we have access to audit before downloading export file
+  if(!gofast_audit_access($type, $gid)){
+    drupal_access_denied();
+    exit;
+  }
+  
   set_time_limit(0);
   /** PHPSpreadSheet */
   require_once libraries_get_path('phpspreadsheet').'/vendor/autoload.php';
@@ -664,7 +769,7 @@ function gofast_audit_generate_file(){
   
   // Get audit data for current query
   $_GET["export"] = TRUE;
-  $results = gofast_audit_get_audit();
+  $results = gofast_audit_get_audit($type, $gid);
 
   if(count($results) > 0){
     //Users tab
@@ -684,7 +789,7 @@ function gofast_audit_generate_file(){
       $objPHPExcel->getActiveSheet()->SetCellValue('B'.$i, $result->name);
       $objPHPExcel->getActiveSheet()->SetCellValue('C'.$i, $result->ldap_user_givenname_value);
       $objPHPExcel->getActiveSheet()->SetCellValue('D'.$i, $result->ldap_user_sn_value);
-      $objPHPExcel->getActiveSheet()->SetCellValue('E'.$i, $result->node_ceo_vision_audit_nid);
+      $objPHPExcel->getActiveSheet()->SetCellValue('E'.$i, $result->title ?? "");
       $objPHPExcel->getActiveSheet()->SetCellValue('F'.$i, $result->nid);
       $objPHPExcel->getActiveSheet()->SetCellValue('G'.$i, $result->translated_event_type);
       $objPHPExcel->getActiveSheet()->SetCellValue('H'.$i, $result->translated_type);
@@ -997,6 +1102,11 @@ function gofast_audit_message_formated($message){
             gofast_audit_insert_line_audit($message_data["nid"]["value"],$event_type, $last_event_serialized, $last_event_unserialized);
         break;
         case "NCON":
+            // The space kanban board is created behind the scenes on the first
+            // display of the space: not an action of the visiting user.
+            if (gofast_get_node_type($message_data["nid"]["value"], TRUE) === 'kanban') {
+                break;
+            }
             //first we check if a creation line already exists in the audit for this node
              $result = db_select('ceo_vision_audit', 'a')
             ->fields('a', array('nid')) // select on "nid" field because there is an index on it
@@ -1005,13 +1115,19 @@ function gofast_audit_message_formated($message){
             ->execute();
 
             if($result->rowCount() > 0){
-                continue;
+                break;
             }
 
-            $last_event_unserialized["mod_timestamp"] = time();
-            $last_event_unserialized["mod_timestamp"] = time();
-            $last_event_unserialized["mod_author"] = $message_data["ruid"]["value"];
-            $event = array('mod_author' => $message_data["ruid"]["value"], 'mod_timestamp' => time(), 'status' => 'new');
+            // only if we are in a cmis manual replication from gofast file browser
+            global $after_replication;
+            if ($after_replication) {
+              $last_event_unserialized["mod_timestamp"] = $message_data["created"]["value"] ?? time();
+              $last_event_unserialized["mod_author"]    = $message_data["uid"]["value"] ?? $message_data["ruid"]["value"];
+            }else{
+              $last_event_unserialized["mod_timestamp"] = time();
+              $last_event_unserialized["mod_author"] = $message_data["ruid"]["value"];
+            }        
+            $event = array('mod_author' => $last_event_unserialized["mod_author"], 'mod_timestamp' => $last_event_unserialized["mod_timestamp"], 'status' => 'new');
             $event = serialize($event);
             $last_event_serialized = rawurlencode($event);
             $event_type = "new_node";
@@ -1118,6 +1234,14 @@ function gofast_audit_view_node_update_events_log($data){
         $event_message["message"] = "";
         $details = "<div style='max-width:400px;'><span style='font-size:12px;'>".gofast_message_ext_api_render_event($event_message)."</span></div>";
         break;
+       case 'update_user': 
+        $event_message["event"] = $event_type; 
+        $event_message[0]['uid_updated'] = $event_unformatted["uid_updated"]; 
+        $event_message[0]["old"] = $event_unformatted["old"]; 
+        $event_message[0]["new"] = $event_unformatted["new"]; 
+        $event_message[0]["label_changed_new"] = $event_unformatted["label_changed_new"]; 
+        $event_message[0]["label_changed_old"] = $event_unformatted["label_changed_old"]; 
+        $details = "<div style='max-width:400px;'><span style='font-size:12px;'>".gofast_message_ext_api_render_event($event_message)."</span></div>";
       case 'delete_user':
         $event_message["event"] = $event_type;
         $event_message[0]['user_delete_name'] = $event_unformatted["user_delete_name"];
@@ -1329,3 +1453,147 @@ function gofast_audit_create_user(int $uid_create, string $creation_method = 'ma
   gofast_audit_insert_line_audit($new_private_space_nid, 'create_user', $last_event_serialized, $last_event_unserialized);
 
 }
+
+function gofast_audit_archive_space($nid,$archive=true){
+  global $user;
+
+  $last_event_unserialized["mod_timestamp"] = time();
+  $last_event_unserialized["mod_author"] = $user->uid;
+  $event_type = "archive_space";
+  $event_type = $archive ? 'archive_space' : 'unarchive_space' ;
+  $event = array('mod_author' => $user->uid, 'mod_timestamp' => time(), 'event' => $event_type);
+  $event = serialize($event);
+  $last_event_serialized = rawurlencode($event);
+
+  gofast_audit_insert_line_audit($nid,$event_type,$last_event_serialized, $last_event_unserialized );
+}
+
+function gofast_audit_user_insert_lines($account){
+  if (empty($account->original)) {
+    return;
+  }
+
+  global $user;
+  $psid  = gofast_og_get_user_private_space($account, FALSE) ?: 0;
+  $diffs = gofast_audit_account_compare($account, $account->original);
+
+  foreach ($diffs as $diff) {
+    $event_data = [
+      'mod_author'        => $user->uid,
+      'mod_timestamp'     => time(),
+      'event'             => 'update_user',
+      'uid_updated'       => $account->uid,
+      'old'               => $diff['old'],
+      'new'               => $diff['new'],
+      'label_changed_old' => $diff['label_changed_old'],
+      'label_changed_new' => $diff['label_changed_new'],
+    ];
+
+    $last_event_serialized = rawurlencode(serialize($event_data));
+
+    gofast_audit_insert_line_audit($psid, 'update_user', $last_event_serialized, $event_data);
+  }
+}
+
+/**
+ * Compare account and old account object
+ *
+ * @param object $new
+ * @param object $original
+ *
+ * @return array all differences
+ */
+function gofast_audit_account_compare($new, $original) {
+  $diffs = [];
+
+  // displayname
+  $orig_givenname = $original->ldap_user_givenname[LANGUAGE_NONE][0]['value'] ?? NULL;
+  $new_givenname  = $new->ldap_user_givenname[LANGUAGE_NONE][0]['value'] ?? NULL;
+  $orig_sn        = $original->ldap_user_sn[LANGUAGE_NONE][0]['value'] ?? NULL;
+  $new_sn         = $new->ldap_user_sn[LANGUAGE_NONE][0]['value'] ?? NULL;
+
+  if ($orig_givenname !== $new_givenname || $orig_sn !== $new_sn) {
+    $diffs['name'] = [
+      'old'               => gofast_user_display_name($original),
+      'new'               => gofast_user_display_name($new),
+      'label_changed_old' => 'Old name',
+      'label_changed_new' => 'New name',
+    ];
+  }
+
+  // booleans
+  $mapped_fields = [
+    'is_extranet' => [
+      'label_old' => 'Before',
+      'label_new' => 'After',
+      'values'    => [1 => 'external', 0 => 'internal'],
+    ],
+    'field_has_confidential_access' => [
+      'label_old' => 'Before',
+      'label_new' => 'After',
+      'values'    => [1 => 'Has confidential access', 0 => "Doesn't have confidential access"],
+    ],
+    'sasl_auth' => [
+      'label_old' => 'Old SASL configuration',
+      'label_new' => 'New SASL configuration',
+      'values'    => [1 => 'SASL enabled', 0 => 'SASL disabled'],
+    ],
+    'is_broadcaster' => [
+      'label_old' => 'Before',
+      'label_new' => 'After',
+      'values'    => [1 => 'Broadcaster', 0 => 'Not broadcaster'],
+    ],
+    'field_is_comment_restricted' => [
+      'label_old' => 'Before',
+      'label_new' => 'After',
+      'values'    => [1 => 'Restricted on comments and annotations', 0 => 'Not restricted on comments and annotations'],
+    ],
+  ];
+
+  foreach ($mapped_fields as $field => $config) {
+    $orig_raw = $original->{$field}[LANGUAGE_NONE][0]['value'] ?? NULL;
+    $new_raw  = $new->{$field}[LANGUAGE_NONE][0]['value'] ?? NULL;
+
+    if ((bool)$orig_raw !== (bool)$new_raw) {
+      $diffs[$field] = [
+        'old'               => $config['values'][(int) $orig_raw] ?? $orig_raw,
+        'new'               => $config['values'][(int) $new_raw] ?? $new_raw,
+        'label_changed_old' => $config['label_old'],
+        'label_changed_new' => $config['label_new'],
+      ];
+    }
+  }
+
+  // Specific case for roles
+  $orig_roles = is_array($original->roles) ? $original->roles : [];
+  $new_roles  = is_array($new->roles) ? $new->roles : [];
+
+  ksort($orig_roles);
+  ksort($new_roles);
+
+  $added_roles_ids   = array_keys(array_diff_key($new_roles, $orig_roles));
+  $removed_roles_ids = array_keys(array_diff_key($orig_roles, $new_roles));
+
+  if (!empty($added_roles_ids) || !empty($removed_roles_ids)) {
+    $load_role_names = function (array $rids) {
+      $names = [];
+      foreach ($rids as $rid) {
+        if ($role = user_role_load($rid)) {
+          $names[] = $role->name;
+        }
+      }
+      return !empty($names) ? implode(',', $names) . ',' : '';
+    };
+
+    $diffs['roles'] = [
+      'old'               => $load_role_names($removed_roles_ids),
+      'new'               => $load_role_names($added_roles_ids),
+      'label_changed_old' => 'removed roles',
+      'label_changed_new' => 'added roles',
+    ];
+  }
+
+  return $diffs;
+}
+
+

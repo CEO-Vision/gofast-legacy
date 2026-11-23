@@ -47,16 +47,6 @@ function gofast_features_global_user_default_permissions() {
     'module' => 'backup_migrate',
   );
 
-  // Exported permission: 'access ckeditor link'.
-  $permissions['access ckeditor link'] = array(
-    'name' => 'access ckeditor link',
-    'roles' => array(
-      'administrator' => 'administrator',
-      'authenticated user' => 'authenticated user',
-    ),
-    'module' => 'ckeditor_link',
-  );
-
   // Exported permission: 'access cmis'.
   $permissions['access cmis'] = array(
     'name' => 'access cmis',
@@ -266,20 +256,6 @@ function gofast_features_global_user_default_permissions() {
     'module' => 'gofast',
   );
 
-  // Exported permission: 'administer ckeditor'.
-  $permissions['administer ckeditor'] = array(
-    'name' => 'administer ckeditor',
-    'roles' => array(),
-    'module' => 'ckeditor',
-  );
-
-  // Exported permission: 'administer ckeditor link'.
-  $permissions['administer ckeditor link'] = array(
-    'name' => 'administer ckeditor link',
-    'roles' => array(),
-    'module' => 'ckeditor_link',
-  );
-
   // Exported permission: 'administer cmis'.
   $permissions['administer cmis'] = array(
     'name' => 'administer cmis',
@@ -326,6 +302,7 @@ function gofast_features_global_user_default_permissions() {
     'name' => 'administer documents configuration',
     'roles' => array(
       'administrator' => 'administrator',
+      'business administrator' => 'business administrator',
     ),
     'module' => 'gofast',
   );
@@ -799,6 +776,24 @@ function gofast_features_global_user_default_permissions() {
     'module' => 'node',
   );
 
+  // Exported permission: 'can have relation relationships'.
+  $permissions['can have relation relationships'] = array(
+    'name' => 'can have relation relationships',
+    'roles' => array(
+      'authenticated user' => 'authenticated user',
+    ),
+    'module' => 'user_relationships',
+  );
+
+  // Exported permission: 'can request relation relationships'.
+  $permissions['can request relation relationships'] = array(
+    'name' => 'can request relation relationships',
+    'roles' => array(
+      'authenticated user' => 'authenticated user',
+    ),
+    'module' => 'user_relationships',
+  );
+
   // Exported permission: 'contact administrators'.
   $permissions['contact administrators'] = array(
     'name' => 'contact administrators',
@@ -990,13 +985,6 @@ function gofast_features_global_user_default_permissions() {
       'contributor' => 'contributor',
     ),
     'module' => 'node',
-  );
-
-  // Exported permission: 'customize ckeditor'.
-  $permissions['customize ckeditor'] = array(
-    'name' => 'customize ckeditor',
-    'roles' => array(),
-    'module' => 'ckeditor',
   );
 
   // Exported permission: 'customize shortcut links'.
@@ -2347,6 +2335,17 @@ function gofast_features_global_user_default_permissions() {
     ),
     'module' => 'gofast_webhook',
   );
+  
+    // Exported permission: 'administer license configuration'.
+    $permissions['administer license configuration'] = array(
+      'name' => 'administer license configuration',
+      'roles' => array(
+        'administrator' => 'administrator',
+        'business administrator' => 'business administrator',
+      ),
+      'module' => 'gofast',
+    );
+  
 
   return $permissions;
 }

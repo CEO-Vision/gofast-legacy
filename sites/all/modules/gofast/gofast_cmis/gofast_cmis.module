@@ -152,6 +152,23 @@ define('GOFAST_CMIS_METADATA_EXTRACTION_THRESHOLD', 50);
  */
 define('GOFAST_CMIS_DWG_PREVIEW_MAX_SIZE', variable_get("gofast_cmis_dwg_preview_max_size", 15728640));
 
+/**
+ * Max character length allowed for a space title, measured empirically
+ * against this platform's Alfresco/CMIS chain (211+ characters breaks it).
+ * @package gofast_cmis
+ */
+define('GOFAST_CMIS_MAX_FOLDER_NAME_LENGTH', variable_get("gofast_cmis_max_folder_name_length", 210));
+
+/**
+ * Defines an arbitrary number/value appended as a search parameter on the
+ * viewer URLs to dodge browser caches.
+ *
+ * This is usually incremented when files inside the viewer have been updated to
+ * prevent browser cache issues once deployed.
+ * @var int
+ */
+define('_GOFAST_CMIS_CUSTOM_PDFJS_VIEWER_VERSION', 254);
+
 function gofast_cmis_enable() {
   $gofast_weight = db_select('system')
           ->fields('system', array('weight'))
@@ -292,6 +309,8 @@ function gofast_cmis_cmis_invoke($url, $properties, $settings) {
   }
 
   try {
+    //Rewrite local call to make sure it has not been altered by opencmis alfresco configuration
+    $url = preg_replace('#^https?://[^/]+/alfresco/#', 'http://localhost:8080/alfresco/', $url);
     return cmis_common_cmis_invoke($url, $properties, $settings);
   }
   catch (CMISException $e) {
@@ -361,8 +380,7 @@ function gofast_cmis_init() {
   drupal_add_js(drupal_get_path('module', 'gofast_cmis') . "/js/gofast_cmis_document_preview.js");
   drupal_add_js(drupal_get_path('module', 'gofast_cmis') . '/js/gofast_cmis_publication.js');
   drupal_add_js(drupal_get_path('module', 'gofast_cmis') . '/gofast_cmis.js');
-  module_load_include('inc', 'tableofcontents', 'tableofcontents.admin');
-  //je declare la variable globale qui determine si les requetes cmis doivent se faire en admin ou non
+  // I declare the global variable that determines whether CMIS requests should be made as administrator or not
   global $cmis_sudo_admin;
   $cmis_sudo_admin = false;
 
@@ -870,10 +888,12 @@ function gofast_cmis_node_form_after_build($form, &$form_state) {
   $original_date_items = field_get_items('node', $form['#node']->translation_source, 'field_date');
   $original_date = $original_date_items[0]['value'] ?? "";
   if (!empty($original_date)) {
-    $input_format = variable_get('date_format_short', 'm/d/Y - H:i');
-    $input_formats = explode("-", $input_format);
-    $date_format = trim($input_formats[0]);
-    $time_format = trim($input_formats[1]);
+    // Read the format directly from the date widget element to avoid mismatches with the global date_format_short variable.
+    $full_format = isset($form['field_date'][LANGUAGE_NONE][0]['value']['#date_format'])
+      ? $form['field_date'][LANGUAGE_NONE][0]['value']['#date_format']
+      : variable_get('date_format_short', 'm/d/Y - H:i');
+    $date_format = date_limit_format($full_format, array('month', 'day', 'year'));
+    $time_format = date_limit_format($full_format, array('hour', 'minute', 'second'));
     $timestamp = strtotime($original_date);
     $date = date($date_format, $timestamp); // the format is declared in the field instance
     $time = date($time_format, $timestamp);
@@ -1425,13 +1445,6 @@ function gofast_cmis_menu() {
     'type' => MENU_CALLBACK,
   );
 
-  $items['cmis/duplicate'] = array(
-    'page callback' => 'gofast_cmis_duplicate_files',
-    'access arguments' => array('access content'),
-    'access callback' => 'user_access',
-    'type' => MENU_CALLBACK,
-  );
-
   $items['gofast/cmis/get_folders_mirror'] = array(
     'page callback' => 'gofast_cmis_get_folders_mirror',
     'access arguments' => array('access content'),
@@ -1979,7 +1992,6 @@ function gofast_cmis_entity_presave($entity, $type) {
     }
 
     if (variable_get("cmis_delete_" . $entity->reference, "false") === "true") {
-      variable_del("cmis_delete_" . $entity->reference);
       return;
     }
     gofast_cmis_static_cache($node_reference, true);
@@ -2144,6 +2156,76 @@ function gofast_cmis_after_rename_integrity(){
 }
 
 /**
+ * Synchronises a document node's content memberships to spaces according to its locations.
+ *
+ * This function accounts for mirroring.
+ *
+ * This function modifies the passed node object.
+ *
+ * @param \stdClass $node Loaded document node.
+ * @return \stdClass The provided modified node instance.
+ */
+function gofast_cmis_sync_document_node_content_memberships_with_locations($node) {
+  // Retrieve parent space ids from locations.
+  $parent_spaces_ids_from_locations = [];
+  // Collect all the parent space node ids for all locations.
+  foreach ($node->{GOFAST_CMIS_LOCATIONS_FIELD}[LANGUAGE_NONE] as ['value' => $path]) {
+    $location_cmis_item = gofast_cmis_item_get_by_path($path);
+    $location_cmis_item_id = $location_cmis_item->id;
+
+    // If parent/location is already a space, just add its id to the list.
+    $parent_space_id = $location_cmis_item->properties['gofast:nid'];
+    if (isset($parent_space_id)) {
+      $parent_spaces_ids_from_locations[$parent_space_id] = $parent_space_id;
+      continue;
+    }
+
+    // Check for parent spaces of folder accounting for mirroring.
+    foreach (gofast_cmis_item_get_mirrored_parent_spaces($location_cmis_item_id) as $parent_space) {
+      $parent_space_id = $parent_space['cmis_item']->properties['gofast:nid'];
+      $parent_spaces_ids_from_locations[$parent_space_id] = $parent_space_id;
+    }
+  }
+
+  // Diff actual parent spaces according to locations with current ones.
+  $node_memberships = $node->{GOFAST_OG_CONTENT_MEMBERSHIP_FIELD}[LANGUAGE_NONE] ?? [];
+  $node_memberships = array_filter(
+    $node_memberships,
+    fn($m) => isset($parent_spaces_ids_from_locations[$m['target_id']]),
+  );
+  // Change the shape of the array so that key = value.
+  $existing_parent_group_ids = array_replace(
+    [],
+    ...array_map(
+      fn($m) => [$m['target_id'] => $m['target_id']],
+      $node_memberships,
+    ),
+  );
+
+  // Remove excessive memberships
+  // Doing the diff on keys might be equivalent but faster? Since the keys = values but guaranteed unique.
+  $node_og_parent_group_ids_to_remove = array_diff($existing_parent_group_ids, $parent_spaces_ids_from_locations);
+
+  $node_memberships = array_filter(
+    $node_memberships,
+    fn($m) => !isset($node_og_parent_group_ids_to_remove[$m['target_id']]),
+  );
+
+  // Fix missing memberships according to locations.
+  $node_og_parent_group_ids_to_add = array_diff($parent_spaces_ids_from_locations, $existing_parent_group_ids);
+
+  foreach ($node_og_parent_group_ids_to_add as $parent_group_id) {
+    // Add missing content membership.
+    $node_memberships[] = [
+      'target_id' => $parent_group_id,
+    ];
+  }
+  $node->{GOFAST_OG_CONTENT_MEMBERSHIP_FIELD}[LANGUAGE_NONE] = $node_memberships;
+
+  return $node;
+}
+
+/**
  * @package gofast_cmis
  * Hook node presave.
  *
@@ -2151,6 +2233,12 @@ function gofast_cmis_after_rename_integrity(){
  * @param type $node the node we update
  */
 function gofast_cmis_node_presave($node) {
+
+  // Subscribe document to spaces accounting for mirroring on creation.
+  if ($node->type === 'alfresco_item' && !isset($node->original)) {
+    gofast_cmis_sync_document_node_content_memberships_with_locations($node);
+  }
+
   // If we are unpublishing the node, do not replicate alfresco aspect & data
   if ($node->status === NODE_NOT_PUBLISHED || !isset($node->original)) {
     return;
@@ -2231,7 +2319,7 @@ function gofast_cmis_extract_document_metadata($file_path, $reference, $run_as_a
     fastcgi_finish_request();
   }
   $properties = [];
-      $command = "java -jar " . GOFAST_TIKA_PATH . " -x " . $file_path;
+      $command = gofast_tika_command('-x', $file_path);
       $result = [];
       try {
         ini_set('memory_limit', '-1');
@@ -2259,6 +2347,11 @@ function gofast_cmis_extract_document_metadata($file_path, $reference, $run_as_a
  * @param type $node
  */
 function gofast_cmis_update_aspect_properties($node, $op = null) {
+  // If node has been updated following a replication process, we don't want to replicate it again
+  global $after_replication;
+  if ($after_replication) {
+    return;
+  }
    $node_is_group = gofast_og_is_space($node);
 
   // we update here alfresco aspect
@@ -2290,21 +2383,52 @@ function gofast_cmis_update_aspect_properties($node, $op = null) {
  
     $properties['gofast:nid'] = $wrapper->getIdentifier();
     $properties['gofast:language'] = $node->language;
+
+    // Handle datetimes
     $properties['gofast:date'] = "";
-    if (isset($node->field_custom_date) && $node->type !== 'conference' && !empty($node->field_custom_date[LANGUAGE_NONE]) && isset($node->field_custom_date[LANGUAGE_NONE][0]["value"])) {
-      $custom_date_value = $node->field_custom_date[LANGUAGE_NONE][0]["value"];
-      $custom_datetime = new DateTime($custom_date_value);
+    $properties['gofast:dueDate'] = "";
+    foreach(gofast_metadata_alf_prop_to_drupal_field_map() as $alf_prop => $field) {
+      if ($field["is_datetime"] != TRUE) {
+        continue;
+      }
+      $custom_date_value = $node->{$field["name"]}[LANGUAGE_NONE][0]["value"];
+      if (!$custom_date_value) {
+        continue;
+      }
+
+      $field_info = field_info_field($field['name']);
+      $date_time_zone = NULL;
+      // Assuming field is a datetime field:
+      if (($field_info['settings']['tz_handling'] ?? NULL) === 'none') {
+        // For dates with no time zone handling: always assume date is in UTC,
+        // this way alfresco does not change it while trying to do its conversions
+        // and the date value is preserved.
+        // We do not and cannot know the original time zone when this value was set,
+        // if it wasn't UTC some offset will be created here, but it should stay
+        // stable during exchanges between Drupal and ALfresco.
+        $date_time_zone = new \DateTimeZone('UTC');
+      }
+      elseif (isset($field_info['settings']['tz_handling'])) {
+        // Use stored time zone for date handling.
+        // Date module should set this value correctly when loading the field data,
+        // including cases of tz_handling that implicitly use the UTC timezone like `site`.
+        $date_time_zone = new \DateTimeZone($node->{$field['name']}[LANGUAGE_NONE][0]['timezone_db']);
+      }
+
+      $custom_datetime = new DateTime($custom_date_value, $date_time_zone);
       $custom_date_iso8601 = $custom_datetime->format('c');
-      $properties['gofast:date'] = $custom_date_iso8601;
+      $properties[$alf_prop] = $custom_date_iso8601;
     }
+
     $properties['gofast:bundle'] = $wrapper->getBundle();
     $properties['gofast:isgroup'] = $node_is_group ? 'true' : 'false';
     if($node_is_group){
-       $properties['gofast:preventDelete'] = 'true';
+      $properties['gofast:isarchived'] = gofast_group_is_archive($node) ? 'true' : 'false';
+      $properties['gofast:preventDelete'] = 'true';
     }elseif($node->field_retention_end[LANGUAGE_NONE][0]['value'] !== NULL || gofast_get_content_state_archived($node)){
-        $properties['gofast:preventDelete'] = 'true';
+      $properties['gofast:preventDelete'] = 'true';
     }else{
-        $properties['gofast:preventDelete'] = 'false';
+      $properties['gofast:preventDelete'] = 'false';
     }
 
 
@@ -2344,6 +2468,10 @@ function gofast_cmis_update_aspect_properties($node, $op = null) {
 
     if(isset($wrapper->{"field_classification"})){
       $properties['gofast:classification'] = $wrapper->field_classification->value() !== null ? $wrapper->field_classification->value()->name : "";
+    }
+
+    if(isset($wrapper->{"field_person_in_charge"}) && $wrapper->{"field_person_in_charge"}->value()){
+      $properties['gofast:personInCharge'] = $wrapper->{"field_person_in_charge"}->value()->name;
     }
 
     foreach(module_implements('alter_cmis_update_aspect_properties') as $module) {
@@ -2592,8 +2720,8 @@ function gofast_cmis_exists_node($reference) {
  * fonction qui crée un noeud de type document de maniere programmatique avec les parametres recus
  * @global type $repository_id
  * @param type $node_ref
- * @param type $person
- * @param type $name
+ * @param string $person
+ * @param string $name
  * @param type $status
  * @param type $language
  * @param type $private
@@ -2627,6 +2755,10 @@ function gofast_cmis_create_node_programmatically($node_ref, $person, $name, $st
     $action_user->uid = GOFAST_USER_ADMINISTRATOR_ID;
   }
   $node->uid = $action_user->uid;
+  // Special case when a file has been anonymously submitted from a webform 
+  if (str_contains($emplacement, GOFAST_WEBFORM_FOLDER_NAME) && $node->uid == 1) {
+    $node->uid = $action_user->uid = 0;
+  }
 
   $node->{GOFAST_CMIS_REFERENCE_FIELD}[LANGUAGE_NONE][0]['value'] = $node_ref;
   $node->{GOFAST_CMIS_LOCATIONS_FIELD}[LANGUAGE_NONE][0]['value'] = $emplacement;
@@ -2888,26 +3020,9 @@ function gofast_cmis_automatic_multifilling($node) {
   }
 
   // Finally, update the node permissions if the node is multifilled
-  $private_space = array();
-  
-  // Get parents (new method with implementation of folder mirroring)  
-  $node_parents = gofast_cmis_webservice_get_node_parents($node_reference);
-  $node_groups = array();
-  foreach ($node_parents as $node_parent) {
-    $node_groups[] = node_load(gofast_og_get_group_id_from_title_2($node_parent, TRUE, TRUE));
-  }
-  
-  foreach ($node_groups as $node_group) {
-    $space_dn = rawurlencode(gofast_ldap_space_cn($node_group));
-    if (gofast_og_is_user_private_space($node_group)) {
-      $private_space[] = $space_dn;
-    }
-    else {
-      $groups[] = $space_dn;
-    }
-  }
-  if (!empty($groups) || !empty($private_space)) {
-    gofast_cmis_webservice_item_assign_permissions($node_reference, $groups, $private_space);
+  $spaces = gofast_cmis_webservice_item_get_spaces_for_permissions($node_reference);
+  if (!empty($spaces['groups']) || !empty($spaces['private_spaces'])) {
+    gofast_cmis_webservice_item_assign_permissions($node_reference, $spaces['groups'], $spaces['private_spaces']);
   }
   return $node;
 }
@@ -3461,7 +3576,13 @@ function gofast_cmis_form_alfresco_item_node_form_submit($form, &$form_state) {
         }
       }
       $form_state['values']['title'] = $field_filename;
-      $file_content = isset($file->content) ? $file->content : file_get_contents($file->uri);
+
+      $file_content = '';
+      if(isset($file->content)){
+        $file_content = $file->content;
+      } else if(isset($file->uri)) {
+        $file_content = file_get_contents($file->uri);
+      }
 
       if(empty($file_content)){
         $commands[] = gofast_command_toast_message(t('Your file is empty or you have selected no file.', array(), array('context' => 'gofast:gofast_cmis')), "error");
@@ -3522,6 +3643,85 @@ function gofast_cmis_form_alfresco_item_node_form_submit($form, &$form_state) {
 }
 
 /**
+ * Change form errors according to actions returned from callback
+ *
+ * The given callback is called for each form error given the error name and
+ * the error message, and should return an action to modify the error.
+ *
+ * Actions are usually arrays where the first element (at index 0) is the
+ * action name, and the rest can be arguments. If the returned action does not
+ * match any known action, the default action ('keep') is taken. This implies
+ * that the callback may return NULL or not return (both are equivalent) to not
+ * change the error.
+ *
+ * List of supported actions:
+ * - `remove`: Remove the error. The drupal message can be kept by specifying a
+ *   truthy value for the `form_only` key
+ * - `override`: Replace the error message by the second value in the action
+ *   array (at index 1).
+ * - `keep` (default): Keep the error as is.
+ *
+ * @param callable(string $name,string $message):
+ *  array{0:'remove',error_only?:bool}
+ *  |array{0:'override',1:string}
+ *  |array{0?:'keep'}
+ *  |null
+ *  |void $callback Function to map errors to actions which modify the
+ *  underlying drupal state. The default action in case the returned one is not
+ *  recognized is keeping the error.
+ * @return void
+ */
+function gofast_cmis_override_form_errors($callback) {
+  // Check if there are form errors
+  $errors = form_get_errors();
+  if (!$errors) {
+    return;
+  }
+
+  // Clear form errors and drupal error messages
+  form_clear_error();
+  $error_messages = drupal_get_messages('error');
+  // Iterate over errors with callback and apply returned action
+  $removed_messages = [];
+  $new_errors = [];
+
+  foreach ($errors as $name => $message) {
+    $action = $callback($name, $message);
+
+    if (is_array($action) && isset($action[0])) {
+      // remove action: remove the error message
+      if ($action[0] === 'remove') {
+        if (!isset($action['form_only']) || !$action['form_only']) {
+          $removed_messages[] = $message;
+        }
+        continue;
+      }
+
+      // override action: replace current message by given value
+      if ($action[0] === 'override') {
+        $removed_messages[] = $message;
+        $new_errors[$name] = $action[1];
+        continue;
+      }
+    }
+
+    // No other action matched, assume 'keep' and preserve error
+    $new_errors[$name] = $message;
+  }
+
+  // Reinstate form errors and drupal messages with new values
+  foreach ($new_errors as $name => $message) {
+    form_set_error($name, $message);
+    // form_set_error calls drupal_set_message already, we add these messages
+    // to prevent duplication
+    $removed_messages[] = $message;
+  }
+  foreach (array_diff($error_messages['error'], $removed_messages) as $message) {
+    drupal_set_message($message, 'error');
+  }
+}
+
+/**
  * @package gofast_cmis
  * Implements hook_form_validate().
  *
@@ -3552,53 +3752,37 @@ function gofast_cmis_form_alfresco_item_node_form_validate($form, &$form_state) 
         }
    }
 
-  $errors = form_get_errors();
-  if ($errors) {
-    // Clear errors.
-    form_clear_error();
-    // Clear error messages.
-    $error_messages = drupal_get_messages('error');
-    // Initialize an array where removed error messages are stored.
-    $removed_messages = array();
+  $location_element_title = $form['og_group_content_ref'][LANGUAGE_NONE][0]['#title'];
+  $location_required_error_message = t('!name field is required.', ['!name' => $location_element_title]);
 
-    // Remove all errors originated by the 'foo][bar' element.
-    foreach ($errors as $name => $error_message) {
-      if ($name == 'field_emplacement][und') {
-        $removed_messages[] = $error_message;
-        unset($errors[$name]);
-      }else if($name == "templates"){
-          $removed_messages[] = $error_message;
-          unset($errors[$name]);
-      }
-      elseif($error_message==''){
-          unset($errors[$name]);
-     }
+  gofast_cmis_override_form_errors(function ($name, $message) use (&$form_state, $location_required_error_message) {
+    // Ignore field_emplacement and templates errors
+    if (in_array($name, ['field_emplacement][und', 'templates'])) {
+      return ['remove'];
     }
 
-    // Reinstate remaining errors, except if it concern the og_group_content_ref field and if the broadcast field is fill
-    foreach ($errors as $name => $error) {
-      if(strpos($name, "og_group_content_ref") !== FALSE  && (count($form_state['values']['broadcast_to']) > 0)){
-            $removed_messages[] = $error_message;
-            unset($errors[$name]);
-            continue;
+    // Filter out empty messages from form errors
+    if ($message == '') {
+      return ['remove', 'form_only' => TRUE];
+    }
+
+    // Handle node location errors
+    if (strpos($name, "og_group_content_ref") !== FALSE) {
+      // Ignore errors from locations if broadcast_to is filled
+      if (count($form_state['values']['broadcast_to']) > 0) {
+        return ['remove'];
       }
 
-      form_set_error($name, $error);
-      // form_set_error() calls drupal_set_message(), so we have to filter out
-      // these from the error messages as well.
-      $removed_messages[] = $error;
+      // Replace 'required' message of locations with more fitting/undestandable message
+      if ($message === $location_required_error_message) {
+        return ['override', t(
+          'Please select at least one location.',
+          [],
+          ['context' => 'gofast'],
+        )];
+      }
     }
-
-    // Reinstate remaining error messages (which, at this point, are messages that
-    // were originated outside of the validation process).
-    foreach (array_diff($error_messages['error'], $removed_messages) as $message) {
-      drupal_set_message($message, 'error');
-    }
-  }
-
-
-
-
+  });
 
   //$form_state['no_redirect'] = TRUE;
   global $user;
@@ -4014,6 +4198,11 @@ function gofast_cmis_form_article_node_form_validate($form, &$form_state) {
 
   if (isset($form_state['input'][GOFAST_CMIS_LOCATIONS_FIELD])) {
     $location_value = $form_state['input'][GOFAST_CMIS_LOCATIONS_FIELD][LANGUAGE_NONE];
+    // No location picked: the group lookup below would fail with a misleading error.
+    if (empty($location_value)) {
+      form_set_error(GOFAST_CMIS_LOCATIONS_FIELD, t('Please select a location'));
+      return;
+    }
     $parent_type = gofast_get_node_type($location_value, TRUE);
     $parent_name = "Wikis";
   
@@ -4245,7 +4434,7 @@ function gofast_cmis_extract_email_content($node, $filename) {
 
   if ($mimetype == "application/vnd.ms-outlook") {
     // if it's a .msg: convert it into .eml
-    $command = "java -jar " . GOFAST_TIKA_PATH . " -x ".$filename;
+    $command = gofast_tika_command('-x', $filename);
     try {
       ini_set('memory_limit', '-1');
       exec($command, $result);
@@ -4285,6 +4474,8 @@ function gofast_cmis_extract_external_page_from_url($url) {
   curl_setopt($ch, CURLOPT_TIMEOUT, 10);
   curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, 0);
   curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, 0);
+  curl_setopt($ch, CURLOPT_FOLLOWLOCATION, TRUE);
+  curl_setopt($ch, CURLOPT_MAXREDIRS, 10);
 
   //Proxy configuration
   global $conf;
@@ -4384,7 +4575,7 @@ function gofast_cmis_get_content_preview($node) {
   }
   
   //Add preview element
-  $output .= "<div class='flex-grow-1 ".(gofast_essential_is_essential() ? "overflow-hidden" : "")."' style='height:100%;' id='container_preview_element'>" . gofast_cmis_get_content_preview_element($node) . "</div>";
+  $output .= "<div class='gofast-preview-container".(gofast_essential_is_essential() ? " overflow-hidden" : "")."' id='container_preview_element'>" . gofast_cmis_get_content_preview_element($node) . "</div>";
   
   return $output;
 }
@@ -4409,7 +4600,7 @@ function gofast_cmis_get_content_preview_element($node) {
     $documents_form_defaults = variable_get("documents_form_defaults", $default_documents_form_configuration);
     
     //Check if the document is restricted
-  $is_confidential_or_internal = isset($node->field_criticity['und'][0]['tid']) && (taxonomy_term_load($node->field_criticity['und'][0]['tid'])->name == "Confidential Data" || taxonomy_term_load($node->field_criticity['und'][0]['tid'])->name == "Internal Distribution");
+  $is_confidential_or_internal = gofast_taxonomy_is_node_confidential_or_internal($node);
   $no_print = $is_confidential_or_internal ? "&no_print=1" : "";
   
   //Check if the document has search items
@@ -4442,7 +4633,7 @@ function gofast_cmis_get_content_preview_element($node) {
 
     if($_GET["search"] || $is_confidential_or_internal || $has_annotations || $pdfjs_forced){
       //Use PDF.js
-      $link = '/sites/all/libraries/pdf/web/viewer_gofast.html?v=253'. $no_print .'&file=' . rawurlencode($link) . $has_search;
+      $link = '/sites/all/libraries/pdf/web/viewer_gofast.html?v=' . _GOFAST_CMIS_CUSTOM_PDFJS_VIEWER_VERSION . $no_print .'&file=' . rawurlencode($link) . $has_search;
       $output .= '<iframe id="pdf_frame" name="pdf-frame" style="border:none;z-index:0;" src="' . $link . '" type="application/pdf" width="100%" height="100%"></iframe>';
       $output .= '<script>jQuery(document).ready(function(){Drupal.gofast_cmis.triggerAnnotator();})</script>';
         }else{
@@ -4484,8 +4675,19 @@ function gofast_cmis_get_content_preview_element($node) {
     }
       
     if(in_array($extension, ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp'])){
-      //CASE : Image, just display them
-      $output .= '<img src="' . $link . '" style="object-fit: contain;" width="100%" height="100%"/>'; // we use a class
+      //CASE : Image, just display them inside a wrapper element
+      $output .= <<<HTML
+        <div
+          class="gf-image-preview-wrapper h-100 w-100"
+          style="contain: size"
+        >
+          <img
+            class="gf-loading-content"
+            src="$link"
+            style="object-fit: contain; width: 100%; height: 100%"
+          />
+        </div>
+        HTML;
     } else if(in_array($extension, ['svg'])) {
       //CASE : Svg, absence of extension Alfresco-side as well as tags inside file content may be responsible for most browsers disallowing preview
       $content = file_get_contents("http://localhost:8080" . $link);
@@ -4514,17 +4716,17 @@ function gofast_cmis_get_content_preview_element($node) {
       $output .= '<audio src="' . $link . '"></audio>';
     }else if(in_array($extension, ['mp4', 'webm'])){
       //CASE : Video, just display
-      $output .= '<video controls class="w-100 max-h-100"><source src="' . $link . '" type="video/' . $extension . '"></video>';
+      $output .= '<video controls class="max-w-100 max-h-100"><source src="' . $link . '" type="video/' . $extension . '"></video>';
     }else if(in_array($extension, ['pdf'])){
       //CASE : PDF, just display
       if($_GET["search"] || $is_confidential_or_internal || $has_annotations || $pdfjs_forced){
         //Use PDF.js
-        $link = '/sites/all/libraries/pdf/web/viewer_gofast.html?v=253'. $no_print .'&file=' . rawurlencode($link) . $has_search;
+        $link = '/sites/all/libraries/pdf/web/viewer_gofast.html?v=' . _GOFAST_CMIS_CUSTOM_PDFJS_VIEWER_VERSION . $no_print .'&file=' . rawurlencode($link) . $has_search;
         $output .= '<iframe id="pdf_frame" name="pdf-frame" style="border:none;z-index:0;" src="' . $link . '" type="application/pdf" width="100%" height="100%"></iframe>';
         $output .= '<script>jQuery(document).ready(function(){Drupal.gofast_cmis.triggerAnnotator();})</script>';
       }else{
         //Don't use PDF.js
-        $output .= '<embed src="' . $thumbnail_link . '" type="application/pdf" width="100%" height="100%"></embed>';
+        $output .= '<embed src="' . $link . '" type="application/pdf" width="100%" height="100%"></embed>';
       }
     }else if(in_array($extension, ['html'])){
       $doc_link = "/gofast/ajax/generate_preview/" . $node->nid . "/true?only_print=true";
@@ -4533,7 +4735,7 @@ function gofast_cmis_get_content_preview_element($node) {
       //CASE : Other, ask Alfresco to generate a PDF preview
       if($_GET["search"] || $is_confidential_or_internal || $has_annotations || $pdfjs_forced){
         //Use PDF.js
-        $thumbnail_link = '/sites/all/libraries/pdf/web/viewer_gofast.html?v=253'. $no_print .'&file=' . rawurlencode($thumbnail_link) . $has_search;
+        $thumbnail_link = '/sites/all/libraries/pdf/web/viewer_gofast.html?v=' . _GOFAST_CMIS_CUSTOM_PDFJS_VIEWER_VERSION . $no_print .'&file=' . rawurlencode($thumbnail_link) . $has_search;
         $output .= '<iframe id="pdf_frame" name="pdf-frame" style="border:none;z-index:0;" src="' . $thumbnail_link . '" type="application/pdf" width="100%" height="100%"></iframe>';
         $output .= '<script>jQuery(document).ready(function(){Drupal.gofast_cmis.triggerAnnotator();})</script>';
       }else{
@@ -4769,7 +4971,7 @@ function gofast_cmis_utils_sort_by_version($a, $b) {
 function gofast_cmis_ajax_get_alfresco_revisions($node)
 {
   $data_version = gofast_cmis_get_block_versions($node, null, false);
-  $is_confidential = isset($node->field_criticity['und'][0]['tid']) && taxonomy_term_load($node->field_criticity['und'][0]['tid'])->name == "Confidential Data";
+  $is_confidential = gofast_taxonomy_is_node_confidential($node);
   print theme('gofast_history_tab', ['version' => $data_version['str'], "is_confidential" => $is_confidential]);
   exit;
 }
@@ -4788,7 +4990,7 @@ function gofast_cmis_versions_list_to_html_list($list) {
   $node = node_load($nid);
 
   // check confidential or internal content
-  $is_confidential_or_internal = isset($node->field_criticity['und'][0]['tid']) && (taxonomy_term_load($node->field_criticity['und'][0]['tid'])->name == "Confidential Data" || taxonomy_term_load($node->field_criticity['und'][0]['tid'])->name == "Internal distribution");
+  $is_confidential_or_internal = gofast_taxonomy_is_node_confidential_or_internal($node);
 
   $publication_history = $node->field_publication_history[LANGUAGE_NONE][0]["value"];
   $publication_history = json_decode($publication_history, true);
@@ -4858,14 +5060,16 @@ function gofast_cmis_versions_list_to_html_list($list) {
  */
 function gofast_cmis_versions_list_to_array_users_list($list, $type)
 {
+  if (empty($list)) {
+    return [];
+  }
   //get the field_publication_history content, to get the mapping between versions doc and versions publication
-  global $base_url;
 
   $nid = gofast_ajax_file_browser_get_nid_from_reference($list[0]->nodeRef);
   $node = node_load($nid);
 
   // check confidential or internal content
-  $is_confidential_or_internal = isset($node->field_criticity['und'][0]['tid']) && (taxonomy_term_load($node->field_criticity['und'][0]['tid'])->name == "Confidential Data" || taxonomy_term_load($node->field_criticity['und'][0]['tid'])->name == "Internal distribution");
+  $is_confidential_or_internal = gofast_taxonomy_is_node_confidential_or_internal($node);
 
   $publication_history = $node->field_publication_history[LANGUAGE_NONE][0]["value"];
   $publication_history = json_decode($publication_history, true);
@@ -5325,13 +5529,12 @@ function gofast_cmis_create_empty_file_into_temporary($values, $field) {
     $object_template = gofast_cmis_item_get($alfresco_id);
     $content = gofast_cmis_item_get_content($alfresco_id);
      //GOFAST-3608 Change template office
+    }
     $mime = gofast_cmis_switch_template_alfresco_mimetype($extension);
     if($mime == FALSE){
       $mime = $object_template->properties['cmis:contentStreamMimeType'];
     }
-  }
-
-
+    
     $file->extension = $extension;
     $file->filepath = $file_path;
     $file->uri = $file_path;
@@ -5356,8 +5559,19 @@ function gofast_cmis_convert_template_file($file,$orig_extension){
     fclose($temp_file);
   }
   putenv('PATH=/usr/local/bin:/bin:/usr/bin:/usr/local/sbin:/usr/sbin:/sbin');
-  watchdog("debug filepath convert", "libreoffice7.6 --headless --convert-to $file->extension '/var/www/d7/sites/default/files/".$file->filename.".".$orig_extension."' --outdir /var/www/d7/sites/default/files");
-  shell_exec("libreoffice7.6 --headless --convert-to $file->extension '/var/www/d7/sites/default/files/".$file->filename.".".$orig_extension."' --outdir /var/www/d7/sites/default/files");
+
+  // Prepare and escape conversion command's dynamic arguments.
+  $command_arguments = [
+    'input_file_path' => '/var/www/d7/sites/default/files/' . $file->filename . '.' . $orig_extension,
+    'output_extension' => $file->extension,
+  ];
+  $command_arguments = array_map(fn($v) => escapeshellarg($v), $command_arguments);
+
+  // Build conversion command string and execute.
+  $conversion_command = "libreoffice7.6 --headless --convert-to {$command_arguments['output_extension']} {$command_arguments['input_file_path']} --outdir /var/www/d7/sites/default/files";
+  watchdog("debug filepath convert", $conversion_command);
+  exec($conversion_command);
+
   if($file->filepath == ""){
     drupal_unlink("/var/www/d7/sites/default/files/".$file->filename.".".$orig_extension);
   }
@@ -5944,56 +6158,6 @@ function gofast_cmis_get_mimetype_extension_match_array(){
   );
 }
 
-
-function gofast_cmis_duplicate_files()
-{
-
-  global $user;
-  $nid = $_POST['node_id'];
-  $node = node_load($nid);
-
-  $file = gofast_cmis_item_get_content($node->field_reference[LANGUAGE_NONE][0]['value']);
-
-  $file_main_location = $node->field_main_emplacement['und']['0']['value'];
-  $file_location  = urldecode(str_replace('/alfresco/webdav', '', $_POST['destination']));
-
-  $complete_title =  $node->title;
-
-  $title = array_shift(explode('.', $complete_title));
-  $extension = array_pop(explode('.', $complete_title));
-
-  $existings_locations = gofast_cmis_check_file_exists_in_paths($complete_title, array($file_location));
-
-  $i = 1;
-  $new_title = $complete_title;
-
-  while (!empty($existings_locations)) {
-    $new_title = $title . '(' . $i . ')' . '.' . $extension;
-    $existings_locations = gofast_cmis_check_file_exists_in_paths($new_title, array($file_location));
-    $i++;
-  }
-
-  $mimetype = gofast_cmis_get_mimetype_extension_match_array()[$extension];
-
-  $main_folder_item = gofast_cmis_item_get_by_path($file_location);
-  
-  watchdog('SMA DEBUG', $file_location);
-  watchdog('SMA DEBUG', json_encode($main_folder_item));
-  
-  
-  $inserted_item = gofast_cmis_item_content_insert($main_folder_item->id, $new_title, $file, $mimetype);
-  $node_ref = $inserted_item->properties['alfcmis:nodeRef'];
-  $gid = gofast_cmis_get_spaceid_by_webdav_folder($file_location, null);
-  
-  watchdog('SMA DEBUG', 'node_gid = '.$gid);
-  watchdog('SMA DEBUG', 'node_ref = '.$node_ref );
-
-  //Document uploaded, create node programmatically
-  $node = gofast_cmis_create_node_programmatically($node_ref, $user->name, $new_title, false, "und", false, $gid, $file_location, "");
-
-  // Faudrais ajouté l'audite pour la duplication .....------......
-}
-
 /**
  * GOFAST-6505
  * Updates users who have administrator as default_role, changes to contributor
@@ -6197,9 +6361,13 @@ function gofast_cmis_get_downloaded_item($nodeRef, $options = array()) {
   $parent_item = $options["parent_item"] ?? null;
   if($parent_item){
     $output_title = gofast_cmis_generate_unique_title($parent_item, $output_title);
-  } else {
+  } else if(!$output_title){
     // We don't need to make unique title if we don't have parent item (e.g. bulk download)
     $output_title = t('Archive', array(), array('context' => 'gofast')).'.zip';
+  }
+  // Make sure there is zip extension in output file title
+  if(!str_ends_with($output_title, ".zip")){
+    $output_title .= ".zip";
   }
 
   while ($attempt < $maxAttempts) {

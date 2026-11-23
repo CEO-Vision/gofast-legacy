@@ -14,6 +14,16 @@ define('GOFAST_USER_ADMINISTRATOR_USERNAME', variable_get('gofast_user_adm_usern
 define('GOFAST_USER_ADMINISTRATOR_ID', variable_get('gofast_user_administrator_id', FALSE));
 
 /**
+ * User properties sent to the browser (Gofast.get('user')), as the user object
+ * also holds the password hash and the session data.
+ */
+define('GOFAST_USER_JS_PROPERTIES', array(
+  'uid', 'uuid', 'name', 'displayName', 'language', 'timezone', 'roles', 'picture',
+  'avatar', 'avatar_anon', 'atatus_set', 'display_carousel', 'password_expires',
+  'privateComment', 'can_administer_users',
+));
+
+/**
  * Global role name that refers to administration permissions.
  */
 define('GOFAST_ROLE_ADMIN', 'administrator');
@@ -109,6 +119,15 @@ define('GOFAST_USER_EXTRANET_RESTRICTION_DEFAULT', GOFAST_USER_EXTRANET_RESTRICT
  */
 define('GOFAST_USER_DEFAULT_FORMAT', 'Profil');
 
+/** Name of field to indicate a user can access restricted spaces (has confidential clearance) */
+define('GOFAST_USER_HAS_CONFIDENTIAL_ACCESS_FIELD', 'field_has_confidential_access');
+
+/**
+ * Atatus tracking states
+ */
+define('ATATUS_TRACKING_DISABLED', 1);
+define('ATATUS_TRACKING_ENABLED', 2);
+
 require_once(drupal_get_path('module', 'gofast_user') . '/gofast_user.utils.inc');
 require_once(drupal_get_path('module', 'gofast_user') . '/gofast_user.form.inc');
 require_once(drupal_get_path('module', 'gofast_user') . '/gofast_user.api.inc');
@@ -193,11 +212,11 @@ function gofast_user_init() {
     $user->atatus_set = FALSE;
   }
 
-  $notify_password_expiration = variable_get("gofast_notify_password_expiration", 0);
-  if ($notify_password_expiration && isset($account->field_password_expiration_date[LANGUAGE_NONE][0]["value"])) {
+  $ldap_password_settings = gofast_ldap_get_user_password_policy_settings();
+  $notify_password_expiration_timestamp_threshold = $ldap_password_settings['notify_password_expiration'];
+  if ($notify_password_expiration_timestamp_threshold && isset($account->field_password_expiration_date[LANGUAGE_NONE][0]["value"])) {
     $password_expires = $account->field_password_expiration_date[LANGUAGE_NONE][0]["value"];
-    $timestamp_threshold = $notify_password_expiration * 60 * 60 * 24;
-    if ($password_expires > 0 && ($password_expires - time() <  $timestamp_threshold)) {
+    if ($password_expires > 0 && ($password_expires - time() <  $notify_password_expiration_timestamp_threshold)) {
       $user->password_expires = $password_expires;
     }
   }
@@ -224,7 +243,13 @@ function gofast_user_init() {
 
   lock_release("gofast_carousel_users");
 
-  drupal_add_js(array('gofast' => array('user' => $user)), 'setting');
+  $js_user = new stdClass();
+  foreach (GOFAST_USER_JS_PROPERTIES as $key) {
+    if (isset($user->$key)) {
+      $js_user->$key = $user->$key;
+    }
+  }
+  drupal_add_js(array('gofast' => array('user' => $js_user)), 'setting');
   $spaces_config = gofast_admin_get_space_defaults();
   drupal_add_js(
     array(
@@ -343,6 +368,10 @@ function gofast_user_theme()
       'render element' => 'form',
       'path' => drupal_get_path('theme', 'bootstrap_keen') . '/templates',
       'template' => 'user_profile_form'
+    ),
+    'gofast_user_reporting_infos_table' => array(
+      'template' => 'tpl/gofast-user-reporting-data-table',
+      'variables' => array('all_data' => NULL)
     ),
   );
 }
@@ -659,41 +688,29 @@ function gofast_user_user_presave(&$edit, $account, $category) {
   $edit['data']['ckeditor_show_toggle'] = 'f';
 
   //the user is going to be blocked
-    if(isset($edit["status"]) && $edit["status"] == 0 && $account->status == 1){
-      $server = gofast_ldap_server_load(GOFAST_LDAP_INT_SERVER);
-      $dn = gofast_ldap_user_dn($account->uid);
-      $current_pass_encrypt = gofast_ldap_get_user_pwd($account);
-      $userPassword = base64_decode($current_pass_encrypt);
-      $server->modifyLdapEntry($dn, array('userPassword' => "_blocked_".$userPassword));
-      $edit["pass"] = "_blocked_".$userPassword;
-    }elseif(isset($edit["status"]) && $edit["status"] == 1 && $account->status == 0){
-      $server = gofast_ldap_server_load(GOFAST_LDAP_INT_SERVER);
-      $dn = gofast_ldap_user_dn($account->uid);
+  if(isset($edit["status"]) && $edit["status"] == 0 && $account->status == 1){
+    $server = gofast_ldap_server_load(GOFAST_LDAP_INT_SERVER);
+    $dn = gofast_ldap_user_dn($account->uid);
+    // Set pwdAccountLockedTime attribute to block user ldap side
+    // 000001010000Z is a special value reserved to signify manual, indefinite lock
+    $server->modifyLdapEntry($dn, array('pwdAccountLockedTime' => "000001010000Z"));
+  }elseif(isset($edit["status"]) && $edit["status"] == 1 && $account->status == 0){
+    $server = gofast_ldap_server_load(GOFAST_LDAP_INT_SERVER);
+    $dn = gofast_ldap_user_dn($account->uid);
+    // Delete pwdAccountLockedTime attribute to unblock user ldap side
+    $server->modifyLdapEntry($dn, ['pwdAccountLockedTime' => []]);
+  }
 
-      //if SASL is enabled on the account
-      if($account->sasl_auth[LANGUAGE_NONE][0]['value'] == 1){
-        // External server domain components.
-        $ext_server = gofast_ldap_server_load(GOFAST_LDAP_EXT_SERVER);
-        $basedn = is_array($ext_server->basedn) ? reset($ext_server->basedn) : $ext_server->basedn;
-        $dc_string = substr($basedn, strpos($basedn, 'dc='));
-        $domain = str_replace(array('dc=', ',', 'DC='), array('', '.',''), $dc_string);
+  //update password expiration field as well
+  // A rename keeps the password: the LDAP entry may already carry the new name
+  // while the database still holds the old one.
+  $is_renamed = isset($account->original) && $account->original->name !== $account->name;
+  if (!$account->is_new && !$is_renamed) {
+    gofast_ldap_update_password_expiration($account);
+  }
 
-        $userPassword = "{SASL}{$account->name}@{$domain}";
-      }else{
-        $current_pass_encrypt = gofast_ldap_get_user_pwd($account);
-        $userPassword = base64_decode($current_pass_encrypt);
-        $userPassword = str_replace("_blocked_", "", $userPassword);
-      }
-      $server->modifyLdapEntry($dn, array('userPassword' => $userPassword));
-    }
-
-    //update password expiration field as well
-    if (!$account->is_new) {
-      gofast_ldap_update_password_expiration($account);
-    }
-
-    if(isset($account->is_new) && isset($edit['roles'][3])){
-        ## if the user will be admin then add ADMIN_GOFAST
+  if(isset($account->is_new) && isset($edit['roles'][3])){
+  ## if the user will be admin then add ADMIN_GOFAST
 	$LdapServer = gofast_ldap_server_load(GOFAST_LDAP_INT_SERVER);
 	$LdapServer->connectAndBindIfNotAlready();
 	$ldap_basedn = variable_get('gofast_ldap_int_base_dn');
@@ -882,9 +899,170 @@ function gofast_user_cronapi($op, $job = NULL) {
     'description' => 'Force the synchronization of the user when the user is renamed',
     'rule' => '* * * * *', // Every minute
   );
-
+  
+  $items['gofast_user_store_reporting_informations_cron'] = array(
+    'description' => 'Store the users reporting informations for administrative purpose',
+    'rule' => '0 2 * * *', // Every day at 02:00
+  );
+  
+  $items['gofast_user_sendmail_subscription_cron'] = array(
+    'description' => 'Send notification when subscription end date will be reached',
+    'rule' => '0 2 * * *', // Every day at 02:00
+  );
+  
   return $items;
 }
+
+function gofast_user_sendmail_subscription_cron(){
+  if (module_exists('gofast_community')) {
+    return;
+  }
+  
+  // check if end subscription date will reach soon
+  $endDate = gofast_user_reporting_get_subscription_end_date();
+  
+  if(($endDate->getTimestamp() - time()) > (30 * 24 * 3600 )){
+    // end date is far more than 30d, do nothing
+    // clear a potentially sendmail date
+    variable_del('gofast_subscription_sendmail_end_date');
+    return;
+  }
+  
+  // else , check if we already send mail
+  $sendmail_date =  variable_get('gofast_subscription_sendmail_end_date', 0);
+  
+  if($sendmail_date === 0){
+    // never send this email, so do it 
+     gofast_user_sendmail_subscription_end_date();
+     variable_set('gofast_subscription_sendmail_end_date', time());
+     return;
+  }
+  
+}
+
+function gofast_user_sendmail_subscription_end_date(){
+  $license_infos = gofast_get_licence_infos();
+  $last_data = end(gofast_user_reporting_get_stored_data_history());
+  $all_data = gofast_user_reporting_get_stored_data_history();
+  $month_before = format_date( $last_data->timestamp, "medium");
+  $total_users_count = $last_data->count_internal_actives + $last_data->count_external_actives;
+  $threshold = (new DateTime())->modify('-1 year')->getTimestamp();
+  $sum_internal   = 0;
+  $sum_external   = 0;
+  $count = 0;
+  foreach ($all_data as $row) {
+      if ($row->timestamp >= $threshold) {
+          $sum_internal += $row->count_internal_actives;
+          $sum_external += $row->count_external_actives;
+          $count++;
+      }
+  }
+  $average_internal = $count > 0 ? $sum_internal / $count : 0;
+  $annual_average_internal_users = (int) ceil($average_internal);
+  $average_external = $count > 0 ? $sum_external / $count : 0;
+  $annual_average_external_users = (int) ceil($average_external);
+ 
+  $variables = array("@renewal_date" => $license_infos->expiration_date,
+                    '@previous_month_renewal' => $month_before,
+                    '@total_number_of_users' => $total_users_count,
+                    '@number_of_internal_users' => $last_data->count_internal_actives,
+                    '@number_of_external_users' => $last_data->count_external_actives,
+                    '@limit_internal_users' => $license_infos->internal_accounts_limit,
+                    '@limit_external_users' => $license_infos->external_accounts_limit,
+                    '@annual_average_internal_users' => $annual_average_internal_users,
+                    '@annual_average_external_users' => $annual_average_external_users,
+                    '@mautic_link_cgv' => 'https://mautic.ceo-vision.com/asset/43:cgv-ceo-vision'
+                  );
+
+  $support_users = gofast_user_load_multiple_by_roles(GOFAST_ROLE_BUSINESS_ADMIN);
+  if(count($support_users) > 0){
+    foreach($support_users as $support_user){
+      $subject = t('[GOFAST] Annual Reporting – User Verification and GoFAST Subscription Renewal', array(), array('context' => 'gofast:gofast_user', 'langcode' => $support_user->language));
+      gofast_user_sendmail_single_subscription_end_date($support_user->uid, $support_user->language, $subject, $variables);
+    }
+  }
+
+  $subject = t('[GOFAST] Annual Reporting – User Verification and GoFAST Subscription Renewal', array(), array('context' => 'gofast:gofast_user', 'langcode' => 'en'));
+  gofast_user_sendmail_single_subscription_end_date("admin@ceo-vision.com", "en", $subject, $variables);
+}
+
+function gofast_user_sendmail_single_subscription_end_date($recipient, $langcode, $subject, $variables) {
+  $message = t("Hello,<br /><br />
+As part of the annual renewal of your GoFAST subscription scheduled for @renewal_date, we are providing you with information regarding user billing:<br /><br />
+Our policy for adjusting user accounts is detailed in our <a href='@mautic_link_cgv'>Terms and Conditions</a> under the section 'PRICING AND PAYMENT TERMS'. <b>Those T&Cs are considered read and approved.</b><br /><br />
+The adjustment is made by calculating the difference between the average number of user accounts opened during the current year and the user accounts billed on the current subscription (expiring in 30 days); that is:<br /><br />
+Number of internal users billed at the start of the subscription = @limit_internal_users<br />
+Number of external users billed at the start of the subscription = @limit_external_users<br /><br />
+Average number of active internal users during the period = @annual_average_internal_users<br />
+Average number of active external users during the period = @annual_average_external_users<br /><br />", $variables, array('context' => "gofast:gofast_user", 'langcode' => $langcode));
+
+$message .= t("After calculation:<br /><br />",$variables, array('context' => "gofast:gofast_user", 'langcode' => $langcode));
+  
+if($variables["@annual_average_internal_users"] > $variables["@limit_internal_users"]){
+    $difference_internal = $variables["@annual_average_internal_users"] - $variables["@limit_internal_users"];
+    $variables["@difference_internal"] = $difference_internal; 
+   $message .= t("Internal accounts to be adjusted: @annual_average_internal_users - @limit_internal_users = @difference_internal additional internal user accounts during the current period. An adjustment invoice will be issued to cover these @difference_internal additional accounts.<br /><br />", $variables, array('context' => "gofast:gofast_user", 'langcode' => $langcode));
+}else{
+   $message .= t("Internal accounts to be adjusted: @annual_average_internal_users - @limit_internal_users = 0 – No additional internal user accounts were created during the period, therefore no adjustment invoice will be issued.<br /><br />", $variables, array('context' => "gofast:gofast_user", 'langcode' => $langcode));
+}
+
+if($variables["@annual_average_external_users"] > $variables["@limit_external_users"]){
+    $difference_external = $variables["@annual_average_external_users"] - $variables["@limit_external_users"];
+    $variables["@difference_external"] = $difference_external;
+   $message .= t("External accounts to be adjusted: @annual_average_external_users - @limit_external_users = @difference_external additional external user accounts during the current period. An adjustment invoice will be issued to cover these @difference_external additional accounts.<br /><br />", $variables, array('context' => "gofast:gofast_user", 'langcode' => $langcode));
+}else{
+   $message .= t("External accounts to be adjusted: @annual_average_external_users - @limit_external_users = 0 – No additional external user accounts were created during the period, therefore no adjustment invoice will be issued.<br /><br />", $variables, array('context' => "gofast:gofast_user", 'langcode' => $langcode));
+}
+
+ $message .= t("If you have any questions, please do not hesitate to contact us.<br />Best regards,<br /><br />The GoFAST – CEO-Vision Team", $variables, array('context' => "gofast:gofast_user", 'langcode' => $langcode));
+
+$recpt = [['recpt' => $recipient, 'method' => 'to']];
+  $body = theme('gofast-notifications-user-subscriptions', [
+    'message' => $message,
+    'langcode' => $langcode,
+  ]);
+  $mail = [
+    'body' => $body,
+    'title' => t("GOFAST", [], ['context' => "gofast:gofast_user"]),
+    'subject' => $subject,
+    'footer' => ""
+  ];
+  gofast_mail_queue_api_queue_ext($mail, $recpt, time());
+} 
+
+function gofast_user_store_reporting_informations_cron(){
+  
+  // check if last line is more than one month. if yes, store a new one
+  $last_line= db_query("select id,timestamp from {gofast_users_reporting} order by id desc limit 0,1")->fetch();
+  
+  if($last_line->timestamp === null){
+     // no data, create first line only on day 1 or 2  
+    $day = date('j');
+    if ($day == 1 || $day == 2) {
+      // let the function continue
+    } else {
+       return;
+    }
+  }
+  
+  if((time() - $last_line->timestamp) < (30 * 24 * 3600 )){
+    // less than 30d, do nothing
+    return;
+  }
+  
+  $data = gofast_user_reporting_get_counts();
+  
+  db_insert('gofast_users_reporting')
+        ->fields(array(
+          'timestamp' => time(),
+          'count_internal_actives' =>  $data['active_users_count'],
+          'count_external_actives' => $data['active_users_count_extranet'],
+          'count_internal_inactives' => $data['inactive_users_count'],
+          'count_external_inactives' => $data['inactive_users_count_extranet'],
+        ))
+        ->execute();
+}
+
 function gofast_user_mail_alter(&$message) {
 
   // some useful variables
@@ -1244,11 +1422,24 @@ function gofast_user_user_update(&$edit, $account, $category) {
             $last_event_unserialized["mod_timestamp"] = time();
             $last_event_unserialized["mod_author"] = $account->uid;
 
-            //Insert inton audit
+            //Insert into audit
             gofast_audit_insert_line_audit(0, 'user_blocked', $last_event_serialized, $last_event_unserialized); //The value 0 is define in order to not render node in the audit
       }
   }
+
+
+  // If user is not blocked, reset failed attempts count if user login successfully or update it's password
+  if($account->status != 0){
+    $fake_count_array = variable_get("login_security_user_wrong_fake_username_array", LOGIN_SECURITY_USER_WRONG_FAKE_USERNAME_ARRAY);
+
+    if(isset($fake_count_array[$account->name])){
+      $fake_count_array[$account->name] = 0;
+      variable_set("login_security_user_wrong_fake_username_array", $fake_count_array);
+    }
+  }
   
+  gofast_audit_user_insert_lines($account);
+
   if(variable_get('gofast_user_current_username_updated', FALSE)){
     variable_set('gofast_user_current_username_updated', FALSE);
     variable_set('gofast_user_current_username_updated_force_synchro', TRUE);
@@ -1256,8 +1447,6 @@ function gofast_user_user_update(&$edit, $account, $category) {
       user_logout();
     }
   }
-  
-  //watchdog('user_update', json_encode($edit));
 
 }
 
@@ -1303,7 +1492,8 @@ function template_preprocess_user_login_block(&$variables){
   $variables['form']['name']['#attributes'] = array('class' => array('form-control-solid', 'h-auto', 'p-4', 'rounded-lg'), 'tabindex' => '1');
   $variables['form']['name']['#attributes']['autocomplete'] = 'off';
   unset($variables['form']['name']['#title']);
-  $variables['form']['pass']['#attributes'] = array('class' => array('form-control-solid', 'h-auto', 'p-4', 'rounded-lg'), 'tabindex' => '2');
+
+  $variables['form']['pass']['#inner_input']['#attributes']['tabindex'] = '2';
   unset($variables['form']['pass']['#title']);
   $variables['form']['actions']['submit']['#attributes'] = array('class' => array('font-weight-bolder', 'font-size-h6', 'px-8', 'py-2', 'my-3', 'ml-3'));
     // print '<pre>'; print_r($variables); exit;
@@ -1413,7 +1603,7 @@ function gofast_user_preprocess_user_profile(&$variables) {
      )
    );
 
-   if ($self || user_access('gofast administer users')) {
+   if ($self || gofast_user_is_business_admin()) {
      // Make the picture editable.
      $href = "gofast/nojs/user/edit-avatar/{$account->uid}";
      $alt = t('Edit picture', array(), array('context' => 'gofast:gofast_user'));
@@ -1434,7 +1624,7 @@ function gofast_user_preprocess_user_profile(&$variables) {
     $roles[$key] = gofast_get_profiles_key_value_map()[$roles_user];
    }
 
-   $permissions_fields = array("extranet", "broadcaster", "comment_restricted");
+   $permissions_fields = array("extranet", "broadcaster", "comment_restricted", "granted_confidential_access");
    $permissions_key_value_map = gofast_get_permissions_key_value_map();
    $permissions = array();
    foreach($permissions_fields as $permissions_field) {
@@ -1583,7 +1773,7 @@ function template_preprocess_gofast_user_profile_personal_card(&$variables){
     )
   );
 
-  if ($self || user_access('gofast administer users')) {
+  if ($self || gofast_user_is_business_admin()) {
     // Make the picture editable.
     $href = "gofast/nojs/user/edit-avatar/{$account->uid}";
     $alt = t('Edit picture', array(), array('context' => 'gofast:gofast_user'));
@@ -1867,7 +2057,8 @@ function gofast_user_preprocess_picture(&$variables) {
     }
   }
   // Javascript mouse events (popup small profile on mouse events).
-  if ($access && $variables['popup'] === TRUE) {
+  // Allow displaying admin profil popup for everyone
+  if (($access || $account->uid == 1) && $variables['popup'] === TRUE) {
     $variables['classes_array'][] = 'profile-to-popup';
   }
 }
@@ -1896,30 +2087,13 @@ function gofast_user_preprocess_page(&$variables){
  * Implements hook_user_login
  */
 function gofast_user_user_login(&$edit, $account) {
-    global $user;
+  global $user;
 
-    //Generate token
-    $uuid = gofast_generate_uuid();
-    $tokenGofast = base64_encode($uuid);
+  //Generate end timestamp
+  $timestamp = time() + 60;
 
-    //Generate end timestamp
-    $timestamp = time() + 60;
-
-    //Store the token
-    db_merge('gofast_token')
-        ->insertFields(array(
-            'uid' => $user->uid,
-            'token' => $tokenGofast,
-            'timestamp' => $timestamp,
-        ))
-        ->updateFields(array(
-          'token' => $tokenGofast,
-          'timestamp' => $timestamp,
-        ))
-        ->key(array('uid' => $user->uid))
-        ->execute();
-
-  variable_set("gofast_token_user_login", $tokenGofast);
+  //Get already existing token or generate a new one with the new validity timestamp
+  gofast_user_api_get_token($user, $timestamp);
 }
 
 /**
@@ -2055,6 +2229,11 @@ function template_preprocess_gofast_user_profile_popup_template(&$variables) {
 
     $user_popup = user_load($user_id);
     $variables["user_name"] = gofast_user_display_name($user_popup);
+    // Display only the name for admin user profile popup
+    if($user_id == 1) {
+      $variables["only_name"] = TRUE;
+      return;
+    }
     $variables["user_orga"] = gofast_ldap_ou_title($user_popup);
     $variables["user_role"] = $user_popup->ldap_user_o[LANGUAGE_NONE][0]['value'];
 

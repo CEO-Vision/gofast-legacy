@@ -11,3 +11,7 @@ configure = admin/structure/feeds
 
 core = 7.x
 php = 5.2
+
+version = 7.x-2.7
+project = ldap
+datestamp = 1775066467

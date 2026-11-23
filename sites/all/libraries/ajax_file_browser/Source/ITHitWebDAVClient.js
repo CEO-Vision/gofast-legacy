@@ -1,5 +1,5 @@
 // -----------------------------------------------------------------------
-// IT Hit WebDAV Ajax Library v5.21.5886.0
+// IT Hit WebDAV Ajax Library v6.0.8910.0
 // Copyright © 2020 IT Hit LTD. All rights reserved.
 // License: https://www.webdavsystem.com/ajax/
 // -----------------------------------------------------------------------
@@ -8,9 +8,9 @@
 // Declare ITHit core.
 if ('undefined' === typeof ITHit) {
 	
-	(function () {
+	(function (global) {
 		
-		this.ITHit = {
+		global.ITHit = {
 			
 			_oComponents: {},
 			_oNamespace: {},
@@ -53,7 +53,7 @@ if ('undefined' === typeof ITHit) {
 			// Temporary object.
 			Temp: {}
 		};
-	})();
+	})(typeof window !== "undefined" ? window : typeof global !== "undefined" ? global : this);
 	
 }
 
@@ -1526,6 +1526,12 @@ ITHit.Add('DecodeHost',
 	}
 );
 
+/**
+ * License Id
+ * @public
+ * @name ITHit.WebDAV.Client.LicenseId
+ * @type {string}
+ */
 ITHit.Add('WebDAV.Client.LicenseId', null);
 
 (function() {
@@ -1664,7 +1670,9 @@ ITHit.Add('WebDAV.Client.LicenseId', null);
 
 /**
  * This namespace provides classes for accessing WebDAV server items, file structure management, properties management and items locking.
+ * @public
  * @namespace ITHit.WebDAV.Client
+ * @class ITHit.WebDAV.Client
  */
 
 /**
@@ -4000,7 +4008,7 @@ ITHit.DefineClass('ITHit.WebDAV.Client.PropertyName', null, /** @lends ITHit.Web
 			 * @readonly
 			 * @type {string}
 			 */
-			ProtocolName: "dav10"
+			ProtocolName: "dav11"
 		}
 	});
 
@@ -4749,7 +4757,7 @@ ITHit.DefineClass('ITHit.WebDAV.Client.Methods.MultiResponse', null, /** @lends 
 
 		// Select nodes.
 		var oRes = ITHit.XPath.evaluate('/d:multistatus/d:response', oXmlDoc, oResolver);
-
+		
 		// Loop through selected nodes. 		
 		while( (oNode = oRes.iterateNext())) {
 			this.Responses.push(new ITHit.WebDAV.Client.Methods.Response(oNode.cloneNode(), sOriginalUri));
@@ -5013,7 +5021,7 @@ ITHit.DefineClass('ITHit.WebDAV.Client.Methods.Propfind', ITHit.WebDAV.Client.Me
 
             // Append created child nodes.
             propfind.appendChild(propEl);
-
+            
             // add limit child nodes
             if (offset !== undefined && offset != null && nResults !== undefined && nResults != null) {
                 var limit = oWriter.createElementNS(ITHit.WebDAV.Client.DavConstants.NamespaceUri, 'limit');
@@ -5845,7 +5853,6 @@ ITHit.DefineClass('ITHit.WebDAV.Client.Methods.Delete', ITHit.WebDAV.Client.Meth
 		_ProcessResponse: function (oResponse, sHref) {
 			// Get appropriate response object.
 			var oResp = ITHit.WebDAV.Client.Methods.ResponseFactory.GetResponse(oResponse, sHref);
-
 			return this._super(oResp);
 		}
 
@@ -6318,7 +6325,6 @@ ITHit.DefineClass('ITHit.WebDAV.Client.Methods.Lock', ITHit.WebDAV.Client.Method
 		// Create namespace resolver.
 		var oResolver = new ITHit.XPath.resolver();
 		oResolver.add('d', ITHit.WebDAV.Client.DavConstants.NamespaceUri);
-
 		// Select property element.
 		var oProp = new ITHit.WebDAV.Client.Property(ITHit.XPath.selectSingleNode('/d:prop', oXmlDoc, oResolver));
 
@@ -6754,14 +6760,14 @@ ITHit.DefineClass('ITHit.WebDAV.Client.Methods.Options', ITHit.WebDAV.Client.Met
 		if (sGsuite && -1 != sGsuite.toLowerCase().indexOf('gedit')) {
 		    iFeatures += ITHit.WebDAV.Client.Features.GSuite;
 		}
-
+	
 		var bMsAuthorViaDav = false;
+		
 		var sMsAuthorViaHeader = oResponse._Response.GetResponseHeader('ms-author-via', true);
-
 		if (sMsAuthorViaHeader && (-1 != sMsAuthorViaHeader.toLowerCase().indexOf('dav'))) {
 			bMsAuthorViaDav = true;
 		}
-
+		
 		// Detect search support
 		var iSearchSupported = false;
 		var sAllowHeader = oResponse._Response.GetResponseHeader('allow', true) || '';
@@ -6954,7 +6960,6 @@ ITHit.DefineClass('ITHit.WebDAV.Client.Methods.Report', ITHit.WebDAV.Client.Meth
 
 			// Create request.
 			var oWebDavRequest = ITHit.WebDAV.Client.Methods.Report.createRequest(oRequest, sHref, sHost, reportType, aProperties);
-
 
 			var self = this;
 			var fOnResponse = typeof fCallback === 'function'
@@ -7579,7 +7584,6 @@ ITHit.DefineClass('ITHit.WebDAV.Client.Methods.Report', ITHit.WebDAV.Client.Meth
 
 				var oProperty = ITHit.WebDAV.Client.HierarchyItem.GetProperty(oResponse, ITHit.WebDAV.Client.DavConstants.ResourceType);
 				var sResourceType = ITHit.WebDAV.Client.ResourceType.File;
-
 				if (oProperty.Value.getElementsByTagNameNS(ITHit.WebDAV.Client.DavConstants.NamespaceUri, 'collection').length > 0) {
 					sResourceType = ITHit.WebDAV.Client.ResourceType.Folder;
 				}
@@ -9148,7 +9152,6 @@ ITHit.DefineClass('ITHit.WebDAV.Client.Methods.Report', ITHit.WebDAV.Client.Meth
 				oRequest.MarkFinish();
 				throw oError;
 			}
-
 			oRequest.MarkFinish();
 		},
 
@@ -10009,7 +10012,7 @@ ITHit.DefineClass('ITHit.WebDAV.Client.Exceptions.IntegrationException', ITHit.W
 			},
 
 			_GetTimeoutException: function () {
-				var exception =  new ITHit.WebDAV.Client.Exceptions.IntegrationException(ITHit.Phrases.Exceptions.IntegrationTimeoutException.Paste(self._Timeout));
+				var exception =  new ITHit.WebDAV.Client.Exceptions.IntegrationException(ITHit.Phrases.Exceptions.IntegrationTimeoutException.Paste(self._Timeout));		
 				return exception;
 			},
 
@@ -10125,7 +10128,6 @@ ITHit.DefineClass('ITHit.WebDAV.Client.Methods.GPreview', ITHit.WebDAV.Client.Me
         var oResolver = new ITHit.XPath.resolver();
         oResolver.add('d', ITHit.WebDAV.Client.DavConstants.NamespaceUri);
         oResolver.add('ithit', "https://www.ithit.com/gpreviewschema/");
-       
         // Select property element.
         var oProp = new ITHit.WebDAV.Client.Property(ITHit.XPath.selectSingleNode('/d:prop', oXmlDoc, oResolver));
 
@@ -10185,6 +10187,13 @@ ITHit.DefineClass('ITHit.WebDAV.Client.Methods.GPreview', ITHit.WebDAV.Client.Me
 			 */
             ProtocolTimeoutMs: 3000,
 
+            /**
+			 * WebDAV protocol name.
+			 * @api
+			 * @type {string}
+			 */
+            ProtocolName: ITHit.WebDAV.Client.DavConstants.ProtocolName,
+
             ObsoleteMessage: function (funcName) {
                 if (confirm(funcName + " function is deprecated.\n\nSee how to upgrade here:\nhttp://www.webdavsystem.com/ajax/programming/upgrade\n\nSelect OK to navigate to the above URL.\n")) {
                     window.open("http://www.webdavsystem.com/ajax/programming/upgrade", "_blank");
@@ -10241,7 +10250,7 @@ ITHit.DefineClass('ITHit.WebDAV.Client.Methods.GPreview', ITHit.WebDAV.Client.Me
                 var ext;
                 switch (ITHit.DetectOS.OS) {
                     case "Windows":
-                        ext = "msi";
+                        ext = "msix";
                         break;
                     case "MacOS":
                         ext = "pkg";
@@ -10270,7 +10279,7 @@ ITHit.DefineClass('ITHit.WebDAV.Client.Methods.GPreview', ITHit.WebDAV.Client.Me
                 var array = [];
                 switch (ITHit.DetectOS.OS) {
                     case "Windows":
-                        array.push(fileName + ".msi");
+                        array.push(fileName + ".msix");
                         break;
                     case "MacOS":
                         array.push(fileName + ".pkg");
@@ -10286,6 +10295,26 @@ ITHit.DefineClass('ITHit.WebDAV.Client.Methods.GPreview', ITHit.WebDAV.Client.Me
                         break;
                 }
                 return array;
+            },
+
+            /**
+            * Gets Uri of the protocol installer depending on OS.
+            * @api
+            * @return {string} Uri of the protocol installer.
+            */
+            GetProtocolInstallUri: function () {
+                var protocolInstallerUri;
+                switch (ITHit.DetectOS.OS) {
+                    case "Windows":
+                        protocolInstallerUri = "ms-windows-store://pdp/?ProductId=9nqb82r5hmnh";
+                        break;
+                    case "MacOS":
+                        protocolInstallerUri = "https://apps.apple.com/us/app/webdav-drive/id6502366145";
+                        break;
+                    default:
+                        break;
+                }
+                return protocolInstallerUri;
             },
 
             /**
@@ -10773,7 +10802,8 @@ ITHit.DefineClass('ITHit.WebDAV.Client.Methods.GPreview', ITHit.WebDAV.Client.Me
                         self.MicrosoftOfficeEditDocument(sDocumentUrl, errorCallback);
                     }
                     else {
-                        self.CallErrorCallback(errorCallback);
+                        //self.CallErrorCallback(errorCallback);
+						self.DavProtocolEditDocument(sDocumentUrl, sMountUrl, errorCallback);
                     }
                 }
             },
@@ -10880,26 +10910,10 @@ ITHit.DefineClass('ITHit.WebDAV.Client.Methods.GPreview', ITHit.WebDAV.Client.Me
 			 */
 
             DavProtocolEditDocument: function (sDocumentUrls, sMountUrl, errorCallback, sReserved, sSearchIn, sCookieNames, sLoginUrl, sCommand) {
-                if (sCommand !== null && sCommand == 'Print') {
-                    self.GetDavProtocolAppVersionAsync(function (oAsyncResult) {
-                        if (oAsyncResult.IsSuccess && ITHit.WebDAV.Client.Version.VersionCompare(oAsyncResult.Result, '5.11') < 0) {
-                            if (confirm('Protocol application v5.11 or later is required.\n\nDownload the latest protocol application?')) {
-                                self.CallErrorCallback(errorCallback);
-                            }
-                        } else {
-                            internalDavProtocolEditDocument(sDocumentUrls, sMountUrl, errorCallback, sReserved, sSearchIn, sCookieNames, sLoginUrl, sCommand);
-                        }
-                    });
-                } else {
-                    internalDavProtocolEditDocument(sDocumentUrls, sMountUrl, errorCallback, sReserved, sSearchIn, sCookieNames, sLoginUrl, sCommand);
-                }
-
-                function internalDavProtocolEditDocument(sDocumentUrls, sMountUrl, errorCallback, sReserved, sSearchIn, sCookieNames, sLoginUrl, sCommand) {
-                    if (Array.isArray(sDocumentUrls))
+                if (Array.isArray(sDocumentUrls))
                         sDocumentUrls = JSON.stringify(sDocumentUrls)
 
-                    self.OpenDavProtocol(sDocumentUrls, sMountUrl, errorCallback, sReserved, sSearchIn, sCookieNames, sLoginUrl, sCommand);
-                }
+                self.OpenDavProtocol(sDocumentUrls, sMountUrl, errorCallback, sReserved, sSearchIn, sCookieNames, sLoginUrl, sCommand);
             },
 
             DavProtocolOpenFolderInOsFileManager: function (sFolderUrl, sMountUrl, errorCallback, sReserved, sSearchIn, sCookieNames, sLoginUrl, sCommand) {
@@ -10937,13 +10951,15 @@ ITHit.DefineClass('ITHit.WebDAV.Client.Methods.GPreview', ITHit.WebDAV.Client.Me
                     params.push('Command=' + ITHit.Trim(sCommand));
                 if (msOfficeSchema != null)
                     params.push('MsOfficeSchema=' + msOfficeSchema);
+                if (ITHit.WebDAV.Client.LicenseId)
+                    params.push('LicenseId=' + ITHit.WebDAV.Client.LicenseId);
 
-                if(sSearchIn == null && ITHit.DetectBrowser.Safari){
+                //if(sSearchIn == null && ITHit.DetectBrowser.Safari){
                     // on Safari open docs should work without extension for non cookies auth
-                }
-                else if(!this.CheckExtensionInstalledAndThrowErrorCallback(errorCallback)) return;
+                //}
+                //else if(!this.CheckExtensionInstalledAndThrowErrorCallback(errorCallback)) return;
 
-                var uri = ITHit.WebDAV.Client.DavConstants.ProtocolName + ':' + params.join(';'); // if URI contains '|' links doeas not work in Chrome on OS X
+                var uri = this.ProtocolName + ':' + params.join(';'); // if URI contains '|' links doeas not work in Chrome on OS X
 
                 //var uri = params.map(function(elem){for(i in elem){return i+'='+elem[i];}}).join(';');
                 //var uri = Object.getOwnPropertyNames(params).map(function(key){return key+'='+params[key]}).join(',');
@@ -11011,7 +11027,7 @@ ITHit.DefineClass('ITHit.WebDAV.Client.Methods.GPreview', ITHit.WebDAV.Client.Me
                     }
 
 
-                var uri = ITHit.WebDAV.Client.DavConstants.ProtocolName + ':' + params.join(';'); // if URI contains '|' links doeas not work in Chrome on OS X
+                var uri = this.ProtocolName + ':' + params.join(';'); // if URI contains '|' links doeas not work in Chrome on OS X
 
                 // Chrome on OS X does not open protocol link if it contains spaces
                 if (ITHit.DetectBrowser.Chrome && (ITHit.DetectOS.OS == 'MacOS')) {
@@ -11123,17 +11139,19 @@ ITHit.DefineClass('ITHit.WebDAV.Client.Methods.GPreview', ITHit.WebDAV.Client.Me
             },
 
             OpenUriUsingChrome: function (uri, errorCallback) {
-                if (86 <= ITHit.DetectBrowser.Chrome){
-                    window.location = uri; // callback not working due to blur is not thrown on protocol dialog appear
-                }else
+                //if (86 <= ITHit.DetectBrowser.Chrome){
+                //    window.location = uri; // callback not working due to blur is not thrown on protocol dialog appear
+                //}else
                     this.OpenUriWithTimeout(uri, errorCallback);
             },
             
             OpenUriUsingFirefox: function (uri, errorCallback) {
-                if (68 <= ITHit.DetectBrowser.FF){
-                    window.location = uri; // callback not working due to blur is not thrown on protocol dialog appear
-                }else
-                    this.OpenUriWithTimeout(uri, errorCallback);
+				this.OpenUriWithHiddenFrame(uri, errorCallback);
+				// commented as 68 is a very old FF and below approach reloads websockets
+                //if (68 <= ITHit.DetectBrowser.FF){
+                //    window.location = uri; // callback not working due to blur is not thrown on protocol dialog appear
+                //}else
+                //    this.OpenUriWithTimeout(uri, errorCallback);
             },
 
             OpenUriUsingIE: function (uri, errorCallback) {
@@ -11639,7 +11657,6 @@ ITHit.DefineClass('ITHit.WebDAV.Client.Methods.GEdit', ITHit.WebDAV.Client.Metho
         // Create namespace resolver.
         var oResolver = new ITHit.XPath.resolver();
         oResolver.add('d', ITHit.WebDAV.Client.DavConstants.NamespaceUri);
-
         // Select property element.
         var oProp = new ITHit.WebDAV.Client.Property(ITHit.XPath.selectSingleNode('/d:prop', oXmlDoc, oResolver));
 
@@ -11901,7 +11918,6 @@ ITHit.DefineClass('ITHit.WebDAV.Client.Methods.GUnlock', ITHit.WebDAV.Client.Met
                     sLockToken,
                     sRevisionID
                 );
-
 			    oRequest.MarkFinish();
 			},
 
@@ -12251,6 +12267,7 @@ ITHit.DefineClass('ITHit.WebDAV.Client.Methods.GUnlock', ITHit.WebDAV.Client.Met
 			var bIsSuccess = oResponse.Responses[0].Status.IsSuccess();
 
 			oRequest.MarkFinish();
+			
 			return bIsSuccess;
 		},
 
@@ -12787,6 +12804,7 @@ ITHit.DefineClass('ITHit.WebDAV.Client.Methods.Search', ITHit.WebDAV.Client.Meth
 
 			// Select block
 			var eSelectProp = oWriter.createElementNS(sNamespaceUri, 'prop');
+			
 			if (oSearchQuery.SelectProperties && oSearchQuery.SelectProperties.length > 0) {
 				// Selected properties.
 				for (var i = 0; i < oSearchQuery.SelectProperties.length; i++) {
@@ -12798,7 +12816,6 @@ ITHit.DefineClass('ITHit.WebDAV.Client.Methods.Search', ITHit.WebDAV.Client.Meth
 			}
 			var eSelect = oWriter.createElementNS(sNamespaceUri, 'select');
 			eSelect.appendChild(eSelectProp);
-
 			// Where like
 			var eLike = null;
 			if (oSearchQuery.EnableLike) {
@@ -12841,7 +12858,7 @@ ITHit.DefineClass('ITHit.WebDAV.Client.Methods.Search', ITHit.WebDAV.Client.Meth
 
 			var basicSearch = oWriter.createElementNS(sNamespaceUri, 'basicsearch');
 			basicSearch.appendChild(eSelect);
-			basicSearch.appendChild(eWhere);
+			basicSearch.appendChild(eWhere);             	
 
 			// Root block
 			var eSearchRequest = oWriter.createElementNS(sNamespaceUri, 'searchrequest');
@@ -13068,7 +13085,6 @@ ITHit.DefineClass('ITHit.WebDAV.Client.PageResults', null, /** @lends ITHit.WebD
 
             // Return created folder object.
             var oFolder = ITHit.WebDAV.Client.Folder.OpenItem(oRequest, ITHit.WebDAV.Client.Encoder.DecodeURI(sNewUri), aProperties);
-
             oRequest.MarkFinish();
             return oFolder;
         },
@@ -13170,8 +13186,8 @@ ITHit.DefineClass('ITHit.WebDAV.Client.PageResults', null, /** @lends ITHit.WebD
 
             // Return created file object.
             var oFile = ITHit.WebDAV.Client.File.OpenItem(oRequest, sNewUri, aProperties);
-
             oRequest.MarkFinish();
+            
             return oFile;
         },
 
@@ -14727,8 +14743,8 @@ ITHit.DefineClass('ITHit.WebDAV.Client.Methods.ErrorResponse', null, /** @lends 
 		var oResolver = new ITHit.XPath.resolver();
 		oResolver.add('d', ITHit.WebDAV.Client.DavConstants.NamespaceUri);
 
-		// Select nodes.
-		var oRes = ITHit.XPath.evaluate('/d:error/*', oXmlDoc, oResolver);
+		// Select nodes.	
+		var oRes = ITHit.XPath.evaluate('/d:error/*', oXmlDoc, oResolver);	
 
 		// Loop through selected nodes.
 		var oNode;
@@ -15746,7 +15762,6 @@ ITHit.Phrases.LoadJSON(ITHit.Temp.WebDAV_Phrases);
 			this.CountComplete++;
 
 			if (this._RequestsXhr[iRequestId]) {
-				this._RequestsXhr[iRequestId].loaded = this._RequestsXhr[iRequestId].total;
 				this.SetXhrEvent(iRequestId, this._RequestsXhr[iRequestId]);
 			} else {
 				this._UpdatePercent();
@@ -16202,8 +16217,9 @@ ITHit.Phrases.LoadJSON(ITHit.Temp.WebDAV_Phrases);
             /**
              * Version of AJAX Library
              * @api
+             * @type {string}
              */
-            Version: '5.21.5886.0',
+            Version: '6.0.8910.0',
 
             /**
             * Protocol Version of AJAX Library
@@ -18700,7 +18716,7 @@ var staticSelf = ITHit.DefineClass('ITHit.WebDAV.Client.Upload.Groups.Group',
             /**
              * Gets [File]{@link https://www.w3.org/TR/FileAPI/} object. Returns null in case of a folder.
              * @api
-             * @return {(File | null )}
+             * @return {(globalThis.File | null )}
              */
             GetFile: function() {
                 return this._UploadProvider.FSEntry.GetFile();
@@ -20163,6 +20179,22 @@ var staticSelf = ITHit.DefineClass('ITHit.WebDAV.Client.Upload.Groups.Group',
                 });
 
                 return oRequest;
+            },
+
+            /**
+             * Returns progress report corresponding to path.
+             * @public
+             * @param {string} sUrl The url to resource.
+             * @return {* | ITHit.WebDAV.Client.Request} Request object.
+             */
+            GetProgressReport: function(sUrl) {
+                var oRequest = this.CreateRequest(this.__className +
+
+                    '.Report()');
+                var sHost = ITHit.WebDAV.Client.HierarchyItem.GetHost(sUrl);
+                var oReport = ITHit.WebDAV.Client.Methods.Report.Go(oRequest, sUrl, sHost, null, null);
+                oRequest.MarkFinish();
+                return oReport;
             },
 
             /**
@@ -21933,13 +21965,11 @@ var staticSelf = ITHit.DefineClass('ITHit.WebDAV.Client.Upload.Groups.Group',
 
             /**
              * Set progress
-             * @param {ITHit.WebDAV.Client.Upload.Progress} oProgress The progress object to set.
+             * @param {ITHit.WebDAV.Client.Upload.Events.ProgressChanged} oProgress The progress object to set.
              * @private
              */
             _SetProgress: function(oProgress) {
-                var oldProgress = this._Progress;
-                this._Progress = oProgress;
-                var oEvent = new ITHit.WebDAV.Client.Upload.Events.ProgressChanged(this, oldProgress, oProgress);
+                var oEvent = new ITHit.WebDAV.Client.Upload.Events.ProgressChanged(this, oProgress.OldProgress, oProgress.NewProgress);
                 ITHit.Events.DispatchEvent(this, oEvent.Name, oEvent);
             }
         });
@@ -22887,9 +22917,9 @@ var staticSelf = ITHit.DefineClass('ITHit.WebDAV.Client.Upload.Groups.Group',
 
             /**
              * @private
-             * @type {Object.<string, ITHit.WebDAV.Client.Upload.Controls.Input>}
+             * @type {ITHit.WebDAV.Client.Upload.Controls.Input[]}
              */
-            _UnderlyingSet: null,
+            _UnderlyingArray: null,
 
             /**
              * @api
@@ -22945,7 +22975,7 @@ var staticSelf = ITHit.DefineClass('ITHit.WebDAV.Client.Upload.Groups.Group',
             RemoveById: function(sElementId) {
                 var oInput = this.GetById(sElementId);
                 if (oInput) {
-                    delete this._UnderlyingSet[sElementId];
+                    delete this._UnderlyingArray[sElementId];
                     this._RaiseOnCollectionChanged([], [oInput]);
                 }
             },

@@ -13,7 +13,6 @@ if (count(module_implements("extra_metadata")) >= 1) {
 
 ?>
 
-<div class="card card-custom card-stretch">
 <div class="card card-custom card-stretch <?= gofast_essential_is_essential()  ? "card-simplified" : "" ?>">
   <?php if(!gofast_essential_is_essential()) : ?>
     <div class="position-absolute h-100 d-flex"><span id="collapsible-metadata-panel-toggle" class="m-auto cursor-pointer d-flex"><i class="fas fa-chevron-left m-auto"></i></span></div>
@@ -80,29 +79,28 @@ if (count(module_implements("extra_metadata")) >= 1) {
     <i class="fa fa-2x fa-chevron-left<?= gofast_essential_is_essential() && !$detect->isMobile()  ? "" : " invisible" ?>"></i>
   </div>
   <?php endif; ?>
-</div>
 
+  <script type='text/javascript'>
+    jQuery(document).ready(function() {
+      Gofast.gofast_main_block_breadcrumb();
+      Gofast.gofast_right_block_breadcrumb();
+      Drupal.behaviors.webformAjaxification.attach(document, Drupal.settings);
+      Gofast.sideFileBrowser.initFileBrowser("webform-browser");
+      jQuery("#collapsible-metadata-panel-toggle").on("click", Gofast.initCollapsibleMetadataPanel);
 
+      jQuery("[href='#document__audittab'").on("click", function() {
+        Gofast.loadAuditBlock();
+      });
 
-<script type='text/javascript'>
-  jQuery(document).ready(function() {
-    Gofast.gofast_main_block_breadcrumb();
-    Gofast.gofast_right_block_breadcrumb();
-    Drupal.behaviors.webformAjaxification.attach(document, Drupal.settings);
-    Gofast.sideFileBrowser.initFileBrowser("webform-browser");
-    jQuery("#collapsible-metadata-panel-toggle").on("click", Gofast.initCollapsibleMetadataPanel);
-
-    jQuery("[href='#document__audittab'").on("click", function() {
-      Gofast.loadAuditBlock();
-    });
-
-    if(location.hash.startsWith("#comment-")){
-      Gofast.loadcomments("<?= $node->nid ?>");
-    }
-    setTimeout(function() {
-      if(!$(".myTabContent[data-nid='<?= $node->nid ?>'] #comments-container").hasClass("processed")){
+      if(location.hash.startsWith("#comment-")){
         Gofast.loadcomments("<?= $node->nid ?>");
       }
-    }, 2000);
-  });
-</script>
+      setTimeout(function() {
+        if(!$(".myTabContent[data-nid='<?= $node->nid ?>'] #comments-container").hasClass("processed")){
+          Gofast.loadcomments("<?= $node->nid ?>");
+        }
+      }, 2000);
+    });
+  </script>
+</div>
+

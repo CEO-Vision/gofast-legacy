@@ -388,17 +388,21 @@
                                            cellspacing="0" role="presentation"
                                            style="vertical-align:middle;">
                                         <tbody>
-                                        <tr>
-                                            <td>
+                                          <?php foreach($folder_informations as $folder_information): ?>
+                                          <tr>
+                                              <td>
+                                                  <img src="<?= $base_url . '/' . drupal_get_path('module', 'gofast_mail_queue') . '/icon/' . 'folder-primary.png' ?>"
+                                                    alt="<?= t("Folder Icon", [], ["context" => "gofast:gofast"]) ?>"
+                                                    width="18"/>&nbsp;
+                                              </td>
+                                              <td>
                                                 <a href="<?= $folder_information->url ?>"
-                                                   style="text-decoration: none;"
-                                                   color="#337ab7">
-                                                    <i class="fa-2x fa fa-folder"></i>
-                                                  <?= $folder_information->title ?></a>
-                                                <span style="font-size: 14px; font-weight: 400; color: #666666;">&nbsp;
-                                                </span>
-                                            </td>
-                                        </tr>
+                                                  style="text-decoration: none;">
+                                                  <?= $folder_information->title ?>
+                                                </a>
+                                              </td>
+                                          </tr>
+                                          <?php endforeach; ?>
                                         </tbody>
                                     </table>
                                 </div>
@@ -759,7 +763,7 @@
                         <tr>
                             <td align="left"
                                 style="font-size:0px;padding:10px 25px;word-break:break-word;">
-                                <div style="font-family:Poppins, Candara, Helvetica, Arial, sans-serif;font-size:14px;font-weight:400;line-height:1;text-align:left;color:#000000;"><?= t('If you want, you can download the file and edit it.', [], $l) ?> <?= $expiry_msg ?></div>
+                                <div style="font-family:Poppins, Candara, Helvetica, Arial, sans-serif;font-size:14px;font-weight:400;line-height:1;text-align:left;color:#000000;"><?= t('If you want, you can download the folder.', [], $l) ?> <?= $expiry_msg ?></div>
                             </td>
                         </tr>
                         </tbody>

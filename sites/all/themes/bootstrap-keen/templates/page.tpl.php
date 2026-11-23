@@ -252,7 +252,8 @@ if ($enable == 1 && $logoPath !== null && $logoPath !== '') {
                       <?php $explorer = render($page['explorer']); ?>
                       <!-- Tab panes -->
                       <div class="tab-content pb-4 overflow-auto flex-fill">
-                        <div class="tab-pane active" id="file-browser" role="tabpanel" aria-labelledby="explorer-file-browser">
+                        <!-- Rendered server-side: "processed" keeps the side browser from fetching it -->
+                        <div class="tab-pane active processed" id="file-browser" role="tabpanel" aria-labelledby="explorer-file-browser">
                           <!-- START explorer region -->
                           <?php print $explorer; ?>
                           <!-- END explorer region -->
@@ -425,11 +426,11 @@ if ($enable == 1 && $logoPath !== null && $logoPath !== '') {
     height: 5px;
     }
 ::-webkit-scrollbar-thumb{
-    background: rgba(200,200,200, 0.2);
+    background: rgba(75,75,75, 0.3);
     border-radius: 5px;
 }
 ::-webkit-scrollbar-thumb:hover{
-    background: rgba(200,200,200, 0.4);
+    background: rgba(75,75,75, 0.6);
 }
 ::-webkit-scrollbar-track{
     background: #ffffff00;

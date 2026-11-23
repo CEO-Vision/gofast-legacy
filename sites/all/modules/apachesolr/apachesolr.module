@@ -1125,14 +1125,18 @@ function apachesolr_form_facetapi_facet_dependencies_form_alter(&$form, $form_st
  *   FALSE otherwise.
  */
 function apachesolr_has_searched($env_id, $searched = NULL) {
-  $_searched  = &drupal_static(__FUNCTION__, FALSE);
+  // Initialize $_searched as an array to avoid issues with boolean conversion.
+  $_searched = &drupal_static(__FUNCTION__, array());
+
   if (is_bool($searched)) {
     $_searched[$env_id] = $searched;
   }
-  // Return false if the search environment is not available in our array
+
+  // Return false if the search environment is not available in our array.
   if (!isset($_searched[$env_id])) {
     return FALSE;
   }
+
   return $_searched[$env_id];
 }
 
@@ -1599,7 +1603,7 @@ function apachesolr_do_query(DrupalSolrQueryInterface $current_query) {
     return array(NULL, array());
   }
 
-  $keys = $query->getParam('q');
+  $keys = (string)$query->getParam('q');
   if (strlen($keys) == 0 && ($filters = $query->getFilters())) {
     // Move the fq params to q.alt for better performance. Only suitable
     // when using dismax or edismax, so we keep this out of the query class itself
@@ -2344,6 +2348,9 @@ function apachesolr_apachesolr_index_document_build_node(ApacheSolrDocument $doc
  * Strip html tags and also control characters that cause Jetty/Solr to fail.
  */
 function apachesolr_clean_text($text) {
+  if (empty($text)) {
+    return '';
+  }
   // Remove invisible content.
   $text = preg_replace('@<(applet|audio|canvas|command|embed|iframe|map|menu|noembed|noframes|noscript|script|style|svg|video)[^>]*>.*</\1>@siU', ' ', $text);
   // Add spaces before stripping tags to avoid running words together.

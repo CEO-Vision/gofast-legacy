@@ -53,6 +53,611 @@
     $('#popup_block_book_' + popup_id).children().first().popover('hide');
   });
 
+  /**
+   * Set of ztree component ids where async loading should be forced
+   *
+   * @see {@linkcode isZTreeComponentAsyncForced} to test if an id should have
+   *  async forced independently of this constant's actual type.
+   */
+  const forcedAsyncZTreeComponents = new Set([
+    "ztree_component_locations",
+    "ztree_component_custom_space",
+    "ztree_component_custom_space_member",
+    "ztree_component_custom_space_chat",
+    "ztree_component_custom_space_all",
+  ]);
+
+  /**
+   * Tests if a given tree component should be forced to load data asynchronously.
+   *
+   * @param {string} ztree_component_id ZTree component ID
+   * @returns Whether the tree component should load asynchronously.
+   */
+  function isZTreeComponentAsyncForced(ztree_component_id) {
+    return forcedAsyncZTreeComponents.has(ztree_component_id);
+  }
+
+  /**
+   * Gets the async url/path string to get tree nodes from.
+   *
+   * @param {string} ztree_component_id ID string of the ztree
+   *  component type (?)
+   * @returns A zTree compatible "URL" string.
+   *
+   *  NOTE: This might be, and currently is, only a path with query parameters.
+   *  (So technically not a URL or URI)
+   */
+  function getAsyncUrlBase(ztree_component_id) {
+    var url_async = "/ztree_location/async";
+    //Keep locations where Article belongs selected in ztree during edition, verifiy if doesnt create a problem
+    if (ztree_component_id == "ztree_component_content") {
+        var node_id = window.location.pathname.split('/')[2];
+        url_async = (isNaN(+node_id) || Gofast._settings.isEssential) ? url_async : url_async + "?node=" + node_id;
+    }
+
+    if (ztree_component_id == "ztree_component_content_templates"){
+      url_async = "/ztree_location/async?template=true";
+    }
+
+    if (ztree_component_id === "ztree_component_custom_space" || ztree_component_id === "ztree_component_custom_space_member") {
+      url_async = "/ztree_location_members/async?members=true";
+    }
+
+    if (ztree_component_id === "ztree_component_custom_space") {
+      url_async += "&chkDisabled=1";
+    }
+
+    if (ztree_component_id === "ztree_component_custom_space_chat") {
+      url_async = "/ztree_location_members/async?members=false&notmanaged=true";
+    }
+
+    if (ztree_component_id === "ztree_component_custom_space_all") {
+      url_async = "/ztree_location_members/async?members=false&notmanaged=true";
+    }
+
+    if (ztree_component_id === "ztree_component_locations") {
+      var param = [];
+      if($('#gofast-cmis-node-publish-form').length > 0){
+        param.push("publication=true");
+      }
+
+      if($('#gofast-dashboard-add-folder-form').length > 0 || $('#conference-node-form').length > 0){
+        param.push("disable_space_check=true");
+      }
+
+      if($('#gofast-taxonomy-manage-folder-locations-form').length) {
+        param.push("enable_mirror_check=true");
+      }
+
+      if ($('.gofast_is_internal_document_form').length > 0) {
+        param.push("is_internal=true");
+      }
+
+      if ($('.gofast_is_confidential_document_form').length > 0) {
+        param.push("is_confidential=true");
+      }
+
+      if (param && param.length > 0) {
+        $.each(param, function (key, value) {
+          if(key == 0){
+            url_async = "/ztree_location/async?" + value;
+          } else if (key > 0){
+            url_async = url_async + '&' + value;
+          }
+        });
+      }
+    }
+
+    return url_async;
+  }
+
+  /**
+   * Maximum number of descendant nodes fetched per request
+   *
+   * Note that this is not a hard limit and due to the hierarchy of the returned
+   * data of request, a few more than this many nodes may be received.
+   */
+  const maxItemsPerBatch = 400;
+
+  /**
+   * Parse a string in the format expected by zTree's async autoParam property.
+   *
+   * @param {string} paramString Parameter string, must be in the format
+   * `${property_name}` or `${property_name}=${query_parameter}`
+   */
+  const parseAutoParam = (paramString) => {
+    const [property, query] = paramString
+      .split("=")
+      .slice(0, 2)
+      .map((s) => s.trim());
+
+    if (query) {
+      return {
+        property,
+        query,
+      };
+    }
+
+    return {
+      property,
+      query: property,
+    };
+  };
+
+  /**
+   * Construct a payload object from a tree's async auto-parameters and the
+   * relevant node.
+   *
+   * @param {{}} treeObj zTree instance.
+   * @param {{}|null|undefined} treeNode Reference node to take parameter
+   *  values from.
+   * @returns A payload object constructed according to the autoParam setting.
+   */
+  const getTreeAutoParamPayload = (treeObj, treeNode) => {
+    // Auto parameters not set or no node to take values from?
+    if (treeNode == null || !treeObj.setting.async?.autoParam) {
+      return null;
+    }
+
+    // Collect values from node as specified by auto parameter configuration.
+    /** @type {Record<string, unknown>} */
+    const payload = {};
+
+    for (const autoParam of treeObj.setting.async.autoParam) {
+      const parameter = parseAutoParam(autoParam);
+      payload[parameter.query] = treeNode[parameter.property];
+    }
+
+    return payload;
+  }
+
+  /**
+   * Construct a payload object from the tree's otherParam async setting.
+   *
+   * @param {{}} treeObj zTree instance to use the settings of.
+   * @returns A payload object constructed according to the otherParam setting.
+   */
+  const getTreeOtherParamPayload = (treeObj) => {
+    // Other parameters not set?
+    if (!treeObj.setting.async?.otherParam) {
+      return null;
+    }
+
+    const otherParam = treeObj.setting.async.otherParam;
+
+    // Handle case where other parameters is an object mapping parameters to
+    // their values.
+    if (!Array.isArray(otherParam)) {
+      return otherParam;
+    }
+
+    // Handle case where other parameters is an array alternating the keys and
+    // values.
+    /** @type {Record<string, unknown>} */
+    const payload = {};
+
+    for (let i = 0; i < otherParam.length; i += 2) {
+      payload[otherParam[i]] = otherParam[i + 1];
+    }
+
+    return payload;
+  }
+
+  /**
+   * Construct the payload needed for the descendants endpoint accounting for
+   * zTree's settings and pagination.
+   *
+   * @param {{}} treeObj
+   * @param {{}|null|undefined} treeNode zTree node object to get the
+   *  children of, may be null or undefined for the root node.
+   * @param {GFBatchAsyncPagination|null} pagination The current pagination
+   *  object to use. Defaults to the pagination stored on the tree node.
+   * @returns A payload object of parameter to value pairs.
+   */
+  const getNextBatchPayload = (treeObj, treeNode, pagination = treeNode?.gfPagination) => {
+    /** @type {Record<string, unknown>} */
+    const payload = {
+      // Handle configured automatic parameters.
+      ...getTreeAutoParamPayload(treeObj, treeNode),
+
+      // Support otherParam setting.
+      ...getTreeOtherParamPayload(treeObj),
+    };
+
+    // Update URL search parameters with pagination parameters:
+    // Always try to limit number of fetched items.
+    payload.max_items = maxItemsPerBatch;
+    // Only add skip parameter if available.
+    if (pagination?.lastSeen) {
+      payload.skip_until_after_path = pagination.lastSeen;
+    }
+
+    return payload;
+  };
+
+  /**
+   * Yields descendant batches.
+   *
+   * @param {{}} treeObj zTree instance.
+   * @param {GFAsyncBatchNode} treeNode Parent node of which we will get the descendants.
+   */
+  const getDescendantBatches = async function* (treeObj, treeNode) {
+    const zTreeSettings = treeObj.setting;
+    const zTreeTools = $.fn.zTree._z.tools;
+    const {
+      async: {
+        type: method,
+        url: urlSetting,
+        contentType,
+        dataType,
+        headers,
+        xhrFields,
+      },
+      treeId,
+    } = zTreeSettings;
+    // Only compute url once if getter is provided.
+    const url = zTreeTools.apply(urlSetting, [treeId, treeNode], urlSetting);
+
+    const doRequest = (data) => $.ajax({
+      method,
+      url,
+      contentType,
+      cache: false,
+      data: contentType.includes('application/json') ? JSON.stringify(data) : data,
+      dataType,
+      headers,
+      xhrFields,
+    });
+
+    /** @type {GFBatchAsyncPagination|null} */
+    let pagination = null;
+    let request = doRequest(getNextBatchPayload(treeObj, treeNode, pagination));
+    /** @type {GFBatchAsyncPagination} */
+    do {
+      const body = await request;
+
+      /** @type {GFBatchAsyncResponse|GFAsyncBatchNode[]} */
+      const responseRaw = JSON.parse(body);
+      const response = !Array.isArray(responseRaw)
+        ? responseRaw
+        : {
+            children: responseRaw,
+            pagination: null,
+          };
+      pagination = response.pagination;
+
+      // Eagerly start next request while we process current one.
+      if (pagination?.hasMore) {
+        request = doRequest(getNextBatchPayload(treeObj, treeNode, pagination));
+      }
+
+      yield response;
+      // Continue while there is still more items to load.
+    } while (pagination?.hasMore);
+  };
+
+  /**
+   * @typedef {object} GFBatchAsyncPagination Pagination data object for batch requests
+   * @property {boolean} hasMore True if more data to fetch exists, false
+   *  otherwise. In case the corresponding request hit an endpoint that does not
+   *  support pagination, this property is set to false.
+   * @property {string} [lastSeen] Path to the last seen element included in the request.
+   *  This may not be returned by the endpoint.
+   * @property {number} [fetchCount] Number of already fetched entries, can be
+   *  used to set skip count on subsequent requests. This mya not be returned by
+   *  the endpoint.
+   */
+  /**
+   * @typedef {object} GFAsyncBatchNode Object representing a tree node returned
+   *  by a batch request. This can contain more of itself to model the
+   *  folder/space hierarchy.
+   * @property {GFAsyncBatchNode[]} children Child nodes array
+   * @property {string} name Node file/folder name.
+   * @property {string} id Node id.
+   * @property {string} ename Node element (?) name, usually the full path.
+   * @property {boolean} last_depth Whether this node is a leaf node (has no
+   *  children) or not.
+   * @property {string} icon Path to the icon resource.
+   * @property {string} gid Group Id, either the Drupal node id for spaces/files,
+   *  or the path for folders.
+   * @property {boolean} is_template Whether the node is a template?
+   * @property {boolean} is_mirror Whether the node is mirrored?
+   * @property {boolean} non_member
+   * @property {boolean} isHidden
+   * @property {boolean} showLine
+   */
+  /**
+   * @typedef {object} GFBatchAsyncResponseFirstChildProperties
+   *  Extra properties that may appear on the first child of a batch response.
+   * @property {Record<string, string> | null} [path_warnings]
+   *  Object mapping a path to a warning message.
+   */
+  /**
+   * @typedef {object} GFBatchAsyncResponse Object returned by batch request.
+   * @property {[
+   *  (GFAsyncBatchNode & GFBatchAsyncResponseFirstChildProperties)?,
+   *  ...GFAsyncBatchNode[],
+   * ]} children
+   *  Batch of children, formatted as a hierarchy of nodes.
+   * @property {GFBatchAsyncPagination|null} pagination Current pagination information object.
+   *  Endpoint may not support pagination in which case it might be null.
+   */
+
+  /**
+   * @typedef {object} GFAggregateParent Type representing the minimum shape
+   *  expected within the ResponseBatchAggregator.
+   * @property {Map<string, GFAggregateParent>} children Child nodes keyed by
+   *  their element name (path).
+   */
+
+  /**
+   * Maintains an aggregate hierarchy combining multiple batch request responses
+   * into a single coherent object.
+   *
+   * For this, the children hierarchies are combined without adding duplicates
+   * while preserving the order of the items ate their respective levels in the
+   * responses. Additionally, the last pagination information object is kept.
+   */
+  class ResponseBatchAggregator {
+    /**
+     * aggregate object, storing a modified version of the response to allow
+     * efficient modification/inspection.
+     * @type {{
+     *  pagination: GFBatchAsyncPagination,
+     *  firstChildProperties: GFBatchAsyncResponseFirstChildProperties,
+     * } & GFAggregateParent}
+     */
+    responseAggregate = {
+      children: new Map(),
+      pagination: null,
+      firstChildProperties: {},
+    };
+
+    /**
+     * Merges the given parent aggregate item's children with a new set of
+     * children, making sure not to add duplicate entries.
+     *
+     * Recursively updates children as well.
+     *
+     * @param {GFAggregateParent} parent Parent object to update.
+     * @param {GFAsyncBatchNode[]} children Array of children to merge.
+     */
+    static aggregateResponseChildren(parent, children) {
+      for (const child of children) {
+        let childAggregate = parent.children.get(child.ename);
+        if (!childAggregate) {
+          childAggregate = {
+            ...child,
+            children: new Map(),
+          };
+          parent.children.set(child.ename, childAggregate);
+        }
+        this.aggregateResponseChildren(childAggregate, child.children);
+      }
+    }
+
+    /**
+     * Process a given batch request response object adding its contents to the
+     * internal aggregate hierarchy.
+     *
+     * @param {GFBatchAsyncResponse} response Batch request response object, its
+     *  children will be recursively added to the internal hierarchy.
+     */
+    processBatch(response) {
+      this.responseAggregate.pagination = response.pagination;
+
+      if (response.children[0].path_warnings) {
+        this.responseAggregate.firstChildProperties.path_warnings = {
+          ...this.responseAggregate.firstChildProperties.path_warnings ?? {},
+          ...response.children[0].path_warnings,
+        };
+        // Remove the warnings from the item here so restoration is simpler while
+        // guaranteeing only the first item in the restored response has the warnings.
+        response = structuredClone(response);
+        delete response.children[0].path_warnings;
+      }
+
+      ResponseBatchAggregator.aggregateResponseChildren(this.responseAggregate, response.children);
+    }
+
+    /**
+     * Transforms the internal hierarchy into a combined object which emulate a
+     * single unlimited request's response.
+     *
+     * @returns {GFBatchAsyncResponse} The emulated response.
+     */
+    restoreFullResponse() {
+      /** @param {GFAggregateParent} obj */
+      const restoreResponseObject = (obj) => ({
+        ...obj,
+        ...(!obj.children
+          ? {}
+          : {
+              children: Array.from(obj.children.values()).map(restoreResponseObject),
+            }),
+      });
+
+      /** @type {GFBatchAsyncResponse} */
+      const restoredResponse = restoreResponseObject(this.responseAggregate);
+
+      // Add back first child properties
+      restoredResponse.children[0] = {
+        ...restoredResponse.children[0],
+        ...this.responseAggregate.firstChildProperties,
+      };
+
+      return restoredResponse;
+    }
+  }
+
+  /**
+   * @callback GFAsyncBatchListener
+   * @param {GFBatchAsyncResponse} batchResponse
+   * @returns {void}
+   */
+
+  /**
+   * Create a function to add node children during the loading of a node's descendants.
+   *
+   * The returned closure adds children to the tree, where the children
+   * structure is already hierarchical, taking care not duplicate parent elements.
+   *
+   * @param {{}} treeObj Reference to the zTree object affected by the descendants loading request.
+   * @returns Closure that allows efficiently adding children to the given tree without adding duplicates.
+   */
+  function createAddNodeChildren(treeObj) {
+    /**
+     * Cache map to quickly access zTree nodes and their known children set
+     * given their paths. Used to deduplicate nodes without relying on the
+     * zTree node object's data.
+     * @type {Map<string,{node:GFAsyncBatchNode,knownChildren:Set<string>}>}
+     */
+    const nodeCache = new Map();
+
+    return function addNodeChildren(parentNode, children, isSilent = false) {
+      let cachedNode = nodeCache.get(parentNode?.ename);
+      if (!cachedNode) {
+        cachedNode = {
+          node: parentNode,
+          knownChildren: new Set(),
+        };
+        nodeCache.set(parentNode?.ename, cachedNode);
+      }
+
+      if (parentNode && children.length) {
+        // Pretend the child node is loaded by async otherwise ztree
+        // triggers async while calling addNodes. This could happen if the
+        // last batch stopped on a possible parent element.
+        parentNode.zAsync = true;
+      }
+
+      // We batch needed additions to the tree in a temporary array so that
+      // ztree can limit the amount of work it does as much as possible.
+      // Internally ztree uses concat on the parent node children array so it
+      // is better to add the children all in one call than individually.
+      const nodesToAdd = [];
+      for (const child of children) {
+        if (!cachedNode.knownChildren.has(child.ename)) {
+          nodesToAdd.push(child);
+          cachedNode.knownChildren.add(child.ename);
+        } else {
+          const childNode =
+            nodeCache.get(child.ename)?.node ??
+            treeObj.getNodeByParam("ename", child.ename, parentNode);
+          addNodeChildren(childNode, child.children, isSilent);
+        }
+      }
+
+      if (nodesToAdd.length) {
+        treeObj.addNodes(parentNode, -1, nodesToAdd, isSilent);
+      }
+    }
+  }
+
+  /**
+   * Factory function to create a function to load child nodes asynchronously in batches.
+   * @param {object} settings Setting object
+   * @param {string} settings.treeId ID of the zTree object/root DOM element.
+   * @param {{}|null} [settings.treeObj] Reference to the actual zTree object.
+   *  By default we get the instance from the id when null when calling this
+   *  function or the returned closure.
+   * @param {((treeNode:{}|undefined|null) => GFAsyncBatchListener|null|undefined)|null} [settings.getRequestBatchListener]
+   *  Function that returns a function to be used as a listener called after
+   *  each batch is received and internally processed.
+   * @returns
+   */
+  const zTreeCreateDescendantsLoader = ({
+    treeId,
+    treeObj = null,
+    getRequestBatchListener = null,
+  }) => {
+
+    /**
+     * A closure that can load the child hierarchy of a given tree node.
+     *  This closure will also try to dispatch the usual callbacks needed and
+     *  configured on the zTree object.
+     * @param {{}|undefined|null} treeNode zTree node to get the child hierarchy of.
+     *  May be null or undefined when getting the hierarchy of the tree root node.
+     */
+    return async (treeNode) => {
+      // Try to get ztree object in case it could not be obtained before.
+      if (treeObj == null) {
+        treeObj = $.fn.zTree.getZTreeObj(treeId);
+      }
+
+      const addNodeChildren = createAddNodeChildren(treeObj);
+
+      if (treeNode) {
+        // Pretend we are zTree starting the async loading process.
+        treeNode.isAjaxing = true;
+        // We also pretend the loading is actually done so ztree allows us to add
+        // nodes to the tree.
+        treeNode.zAsync = true;
+
+        // Set zTree loading icon
+        const zConsts = $.fn.zTree.consts;
+        const selector = "#" + treeNode.tId + zConsts.id.ICON;
+        const $nodeIcon = $(selector, treeObj.setting.treeObj);
+        $nodeIcon.attr({
+          style: "",
+          class: zConsts.className.BUTTON + " " + zConsts.className.ICO_LOADING,
+        });
+      }
+
+      /** Aggregator object used to recover a full response object for callbacks */
+      const responseAggregator = new ResponseBatchAggregator();
+      const onEachBatch = getRequestBatchListener?.(treeNode);
+
+      try {
+        // Load in batches.
+        for await (const batchResponse of getDescendantBatches(treeObj, treeNode)) {
+          if (treeNode) {
+            // We store the pagination data returned by the server on the
+            // relevant node.
+            treeNode.gfPagination = batchResponse.pagination;
+          }
+          // Process node children through dataFilter function if present.
+          const children =
+            treeObj.setting.async?.dataFilter?.(treeId, treeNode, batchResponse) ??
+            batchResponse.children;
+
+          if (children) {
+            addNodeChildren(treeNode, children, treeNode == null);
+          }
+
+          responseAggregator.processBatch(batchResponse);
+
+          onEachBatch?.(batchResponse);
+        }
+
+        // Restore a coherent response object including all loaded elements to
+        // respect the async success callback signature and invariants
+        const fullResponse = responseAggregator.restoreFullResponse();
+
+        // Call usual async success callback like batching never even existed.
+        // We don't exactly match the full zTree API, only the parts we know we
+        // use currently.
+        treeObj.setting.callback?.onAsyncSuccess?.(
+          null,
+          treeId,
+          treeNode,
+          JSON.stringify(fullResponse),
+        );
+      } catch (error) {
+        console.error("[GOFAST] Error while asynchronously loading tree widget", error);
+        treeObj.setting.callback?.onAsyncError?.(null, treeId, treeNode, null);
+      } finally {
+        if (treeNode) {
+          // Pretend we are zTree ending the async loading process.
+          treeNode.isAjaxing = null;
+
+          // Make sure node is up to date. (removes loader icon)
+          treeObj.updateNode(treeNode);
+        }
+      }
+    };
+  };
+
   Drupal.behaviors.gofast_ztree = {
     ztreeCallbacks: {
       /**
@@ -126,7 +731,67 @@
         var zTreeObj;
         var already_refresh = false;
 
-        function beforeAsync(event, treeId, treeNode, msg) {
+        // Force async configuration for given component id.
+        if (isZTreeComponentAsyncForced(ztree_component_id)) {
+          Drupal.settings[ztree_component_id].async = true;
+        }
+
+        const loadDescendants = zTreeCreateDescendantsLoader({
+          treeId: ztree_component_id,
+          treeObj: zTreeObj,
+          getRequestBatchListener: (treeNode) => {
+            // No listener needed when fetching root descendants.
+            if (treeNode == null) {
+              return;
+            }
+
+            // Only query this set of options once to reduce the number of costly DOM queries.
+            /** @type {HTMLOptionElement[]} Array of existing option elements */
+            const options = $(
+              ".form-selected-locations option, #edit-field-emplacement option",
+            ).toArray();
+
+            /** Set of element names for which a DOM Option element exists. */
+            const knownENames = new Set(options.map(o => o.innerText));
+
+            // Keep select elements in a single jQuery collection with one DOM
+            // selector query, so we don't multiply the queries for each
+            // children of each level for elements that should not change themselves
+            // during the whole process.
+            /** jQuery collection of select elements to which the EName options  would be added */
+            const $eNameSelects = $(".form-selected-locations, #edit-field-emplacement");
+
+            /**
+             * Adds children's ename option elements as needed.
+             *
+             * Children are iterated upon in depth-first order.
+             * @param {GFAsyncBatchNode[]} children Array of children node to add options for.
+             */
+            const addMissingOptions = (children) => {
+              for (const child of children) {
+                if (knownENames.has(child.ename)) {
+                  continue
+                }
+
+                // Add missing option.
+                const $option = $("<option>", {
+                  value: child.gid,
+                  text: child.ename,
+                });
+                $eNameSelects.append($option);
+                options.push($option[0]);
+                knownENames.add(child.ename);
+
+                // Recurse.
+                addMissingOptions(child.children);
+              }
+            }
+
+            return (response) => addMissingOptions(response.children);
+          }
+        });
+
+        function beforeAsync(treeId, treeNode) {
           if($('#is-from-mirror').length == 1){
             // Remove ztree
             $(".form-item-field-emplacement label").hide();
@@ -136,6 +801,10 @@
               $(".form-item-field-emplacement").append("<div id='ztree_async_loading' class='loader-blog'></div>");
             }
           }
+
+          // Manual loading of descendants using batches.
+          loadDescendants(treeNode);
+          return false;
         }
 
         function onAsyncError(event, treeId, treeNode, msg) {
@@ -149,31 +818,7 @@
 
         function onAsyncSuccess(event, treeId, treeNode, msg) {
           $("#ztree_async_loading").remove();
-          if (typeof treeNode !== 'undefined') {
-            var children = treeNode.children;
-            children.forEach(function (child, key) {
-              if ($('.form-selected-locations option, #edit-field-emplacement option').filter(function () {
-                return $(this).html() == child.ename;
-              }).length == 0) {
-                $('.form-selected-locations, #edit-field-emplacement').append($('<option>', {
-                  value: child.gid,
-                  text: child.ename
-                }));
-              }
-              var children = child.children;
-              if (typeof children == "undefined") children = [];
-              children.forEach(function (child, key) {
-                if ($('.form-selected-locations option, #edit-field-emplacement option').filter(function () {
-                  return $(this).html() == child.ename;
-                }).length == 0) {
-                  $('.form-selected-locations, #edit-field-emplacement').append($('<option>', {
-                    value: child.gid,
-                    text: child.ename
-                  }));
-                }
-              });
-            });
-          } else {
+          if (typeof treeNode === 'undefined') {
             //we check all selected location on the hiden select list, and check corresponding treenode if not the case
             $('.form-selected-locations option:selected, #edit-field-emplacement option:selected').each(function () {
               var node = zTreeObj.getNodeByParam("ename", $(this).text(), null);
@@ -186,11 +831,6 @@
                 html_insert_nodes(fake_node);
               }
             });
-          }
-
-          var ztreeAsyncResult = msg ? JSON.parse(msg) : null;
-          if (ztreeAsyncResult?.[0]?.path_warnings) {
-            Drupal.settings[ztree_component_id].path_warnings = ztreeAsyncResult[0].path_warnings;
           }
 
           // This selects the options in form fields (where applicable)
@@ -318,7 +958,38 @@
             case 'ztree_component_space':
               var select = $('#edit-og-group-ref-und-0-default');
               select.find('option[value="' + treeNode.gid + '"]').prop("selected", treeNode.checked);
+              // Check if we are in space creation form
+              const parentForm = $("#ztree_component_space").parents("form[id$=node-form]");
+
               select.change();
+              if(!parentForm.length){
+                break;
+              }
+              // Get metadata of selected space
+              $.get("/api/node/metadata", {nid: treeNode.gid}).done((metadata) => {
+                parentForm.find("#edit-space-metadata .form-control").each((index, element) => {
+                  var isProcessed = false;
+                  Object.entries(metadata).forEach(([name, value]) => {
+                    if(isProcessed){
+                      return;
+                    }
+                    // If the metadata exist in the form, fill inputs with parent metadata value
+                    if($(element).is(`[name^=${name}]`)){
+                      const metadataValue = value[0].value ?? value[0].tid;
+                      if($(element).hasClass("gofastDatepicker")){
+                        var datetime = new Date(metadataValue);
+                        $(element).datepicker("setDate", datetime);
+                      } else {
+                        $(element).val(metadataValue).change();
+                      }
+                      isProcessed = true;
+                    } else {
+                      // If parent metadata value is empty, clear input value or set default value if defined
+                      $(element).val($(element).data("default-value")).change();
+                    }
+                  })
+                })
+              })
               break;
             case 'ztree_component_user':
               var select = $('#edit-og-user-node-und-0-default');
@@ -584,7 +1255,7 @@
             var node_icone = node.icon;
             var node_tId = node.tId;
 
-            if(node_icone.indexOf("/sites/all/modules/") !== -1){
+            if(node_icone && node_icone.indexOf("/sites/all/modules/") !== -1){
                 //We got a path instead of a font awesome icon
                 node_icone = "fa-" + node_icone.split("/").last().split(".").shift();
             }
@@ -954,13 +1625,6 @@
             aObj.css('background', 'transparent');
           }
 
-          if (ztree_component_id == "ztree_component_locations"
-                  || ztree_component_id === "ztree_component_custom_space"
-                  || ztree_component_id === "ztree_component_custom_space_member"
-                  || ztree_component_id === "ztree_component_custom_space_chat"
-                  || ztree_component_id === "ztree_component_custom_space_all") {
-            Drupal.settings[ztree_component_id].async = true;
-          }
           if (Drupal.settings[ztree_component_id].async == false) {
             var setting = {
               check: {
@@ -987,70 +1651,12 @@
             }
 
             if (typeof zTreeObj === 'undefined') {
-              zTreeObj = $.fn.zTree.init(ztree_component, setting, data_tree);
+              zTreeObj = $.fn.zTree.init(ztree_component, setting, data_tree.children);
             }
 
           } else {
-            var url_async = "/ztree_location/async";
-            //Keep locations where Article belongs selected in ztree during edition, verifiy if doesnt create a problem
-            if (ztree_component_id == "ztree_component_content") {
-                var node_id = window.location.pathname.split('/')[2];
-                url_async = (isNaN(+node_id) || Gofast._settings.isEssential) ? url_async : url_async + "?node=" + node_id;
-            }
 
-            if (ztree_component_id == "ztree_component_content_templates"){
-              url_async = "/ztree_location/async?template=true";
-            }
-
-            if (ztree_component_id === "ztree_component_custom_space" || ztree_component_id === "ztree_component_custom_space_member") {
-              url_async = "/ztree_location_members/async?members=true";
-            }
-
-            if (ztree_component_id === "ztree_component_custom_space") {
-              url_async += "&chkDisabled=1";
-            }
-
-            if (ztree_component_id === "ztree_component_custom_space_chat") {
-              url_async = "/ztree_location_members/async?members=false&notmanaged=true";
-            }
-
-            if (ztree_component_id === "ztree_component_custom_space_all") {
-              url_async = "/ztree_location_members/async?members=false&notmanaged=true";
-            }
-
-            if (ztree_component_id === "ztree_component_locations") {
-              var param = [];
-              if($('#gofast-cmis-node-publish-form').length > 0){
-                param.push("publication=true");
-              }
-
-              if($('#gofast-dashboard-add-folder-form').length > 0 || $('#conference-node-form').length > 0){
-                param.push("disable_space_check=true");
-              }
-
-              if($('#gofast-taxonomy-manage-folder-locations-form').length) {
-                param.push("enable_mirror_check=true");
-              }
-
-              if ($('.gofast_is_internal_document_form').length > 0) {
-                param.push("is_internal=true");
-              }
-
-              if ($('.gofast_is_confidential_document_form').length > 0) {
-                param.push("is_confidential=true");
-              }
-
-              if (param && param.length > 0) {
-                $.each(param, function (key, value) {
-                  if(key == 0){
-                    url_async = "/ztree_location/async?" + value;
-                  } else if (key > 0){
-                    url_async = url_async + '&' + value;
-                  }
-                });
-              }
-            }
-
+            const asyncUrlBase = getAsyncUrlBase(ztree_component_id);
 
             var setting = {
               check: {
@@ -1059,7 +1665,7 @@
               },
               async: {
                 enable: true,
-                url: url_async,
+                url: asyncUrlBase,
                 autoParam: ["ename"],
                 dataFilter: filter_async
               },
@@ -1115,7 +1721,10 @@
               }
             }
 
-            function filter_async(treeId, parentNode, childNodes) {
+            function filter_async(treeId, parentNode, response) {
+
+              // Handle response's paginated results
+              let childNodes = response.children;
 
               if (!childNodes)
                 return null;
@@ -1227,6 +1836,11 @@
             }
           });
 
+          // A title typed by the user wins over the chosen file's name, an emptied one does not
+          $(document).on('input', '[id^=edit-title]', function () {
+            $(this).data('typed', this.value !== '');
+          });
+
           $(document).on('change', '[id^=edit-reference]', function (e) {
             e.preventDefault();
             if (this.files.length > 0) {
@@ -1248,7 +1862,7 @@
               var filename_parts = this.files[0].name.split('.');
               var extension = filename_parts.length > 1 ? filename_parts.pop() : '';
               var filename = this.files[0].name.replace("." + extension, "");
-              if ($('[id^=edit-title]').val() === '') {
+              if (!$('[id^=edit-title]').data('typed')) {
                 $('[id^=edit-title]').val(filename);
               }
               $('[id^=edit-extension]').val(extension);

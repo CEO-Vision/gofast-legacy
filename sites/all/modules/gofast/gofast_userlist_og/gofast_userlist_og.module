@@ -99,6 +99,7 @@ function gofast_userlist_og_entity_info_alter(&$entity_info){
  * Implements hook_og_membership_insert().
  */
 function gofast_userlist_og_og_membership_insert(OgMembership $og_membership) {
+  module_load_include('inc', 'gofast_og', 'gofast_og.admin');
 
   global $must_propagate;
   $timer_start = microtime(true);
@@ -751,7 +752,8 @@ function gofast_userlist_og_get_groups_by_user($account = NULL, $group_type = NU
     
     if($group_type == NULL){
       if(is_array($userlist_gids)){
-         $gids += $userlist_gids['node'];
+         // The userlist may be member of deleted spaces only, leaving no 'node' key.
+         $gids += $userlist_gids['node'] ?? array();
       }
     }else{
       if(is_array($userlist_gids)){
@@ -782,10 +784,13 @@ function gofast_userlist_og_get_groups_by_user($account = NULL, $group_type = NU
  * @param type $group_type
  *   (optional) The entity type of the groups to fetch. By default all group
  *   types will be fetched.
+ * @param bool $include_deleted_spaces
+ *   (optional) Flag to include deleted spaces in the result array.
+ *   Defaults to FALSE (soft-deleted spaces not included).
  * @return
  *    An array with the group IDs or an empty array.
  */
-function gofast_userlist_og_get_groups_by_userlist($userlist, $group_type = NULL, $exclude_root_space = FALSE) {
+function gofast_userlist_og_get_groups_by_userlist($userlist, $group_type = NULL, $exclude_root_space = FALSE, $include_deleted_spaces = FALSE) {
   $gids = array();
 
   if(is_numeric($userlist)){
@@ -800,14 +805,25 @@ function gofast_userlist_og_get_groups_by_userlist($userlist, $group_type = NULL
   }
 
   foreach ($og_memberships as $og_membership) {
-    if (!empty($og_membership)) {
-      if($exclude_root_space === FALSE){
-        $gids[$og_membership->group_type][$og_membership->gid] = $og_membership->gid;
-
-      }else if($exclude_root_space === TRUE && !gofast_og_is_root_space(node_load($og_membership->gid))){
-        $gids[$og_membership->group_type][$og_membership->gid] = $og_membership->gid;
-      }
+    if (empty($og_membership)) {
+      continue;
     }
+
+    $is_node_membership = $og_membership->group_type === 'node';
+    // Thunk to lazy-load the node as needed by next conditions. `node_load` should handle caching.
+    $get_membership_space_node = fn() => node_load($og_membership->gid);
+
+    // Skip root spaces if not needed to include them.
+    if ($exclude_root_space && $is_node_membership && !gofast_og_is_root_space($get_membership_space_node())) {
+      continue;
+    }
+
+    // Exclude soft-deleted space nodes.
+    if (!$include_deleted_spaces && $is_node_membership && $get_membership_space_node()->status != NODE_PUBLISHED) {
+      continue;
+    }
+
+    $gids[$og_membership->group_type][$og_membership->gid] = $og_membership->gid;
   }
 
   if (empty($group_type)) {
@@ -933,11 +949,7 @@ function gofast_userlist_og_add_membership($gid, $ulid, $rid){
   $og_membership->state = 1;
   $og_membership->save();
   
-  $old_og_role = gofast_userlist_og_get_userlist_roles('node', $gid, $ulid, FALSE, TRUE);
-  $old_rid = key($old_og_role);
-  if(isset($old_rid)){
-    gofast_userlist_og_role_revoke_userlist('node', $gid, $ulid, $old_rid);
-  }
+  gofast_userlist_og_role_revoke_userlist('node', $gid, $ulid);
   gofast_userlist_og_role_grant_userlist('node', $gid, $ulid, $rid);
 }
 
@@ -952,11 +964,7 @@ function gofast_userlist_og_update_membership($gid, $ulid, $role){
   $new_og_role = gofast_og_space_admin_get_node_role('node', $gid, $role);
   
   $new_rid = key($new_og_role);
-  $old_og_role = gofast_userlist_og_get_userlist_roles('node', $gid, $ulid, FALSE, TRUE);
-  $old_rid = key($old_og_role);
-  if(isset($old_rid)){
-     gofast_userlist_og_role_revoke_userlist('node', $gid, $ulid, $old_rid);
-  }
+  gofast_userlist_og_role_revoke_userlist('node', $gid, $ulid);
   gofast_userlist_og_role_grant_userlist('node', $gid, $ulid, $new_rid);
 }
 
@@ -967,13 +975,7 @@ function gofast_userlist_og_update_membership($gid, $ulid, $role){
  */
 function gofast_userlist_og_delete_membership($gid, $ulid){
 
-  $role =  gofast_userlist_og_get_userlist_roles('node', $gid, $ulid, FALSE, TRUE);
-  $rid = key($role);
-  if(isset($rid)){
-    gofast_userlist_og_role_revoke_userlist('node', $gid, $ulid, $rid);
-  }else{
-    gofast_userlist_og_role_revoke_userlist('node', $gid, $ulid, 'ALL');
-  }
+  gofast_userlist_og_role_revoke_userlist('node', $gid, $ulid);
   $membership = og_get_membership('node', $gid, 'userlist', $ulid);
   if($membership) $membership->delete();
 
@@ -1047,14 +1049,13 @@ function gofast_userlist_og_modal_delete_membership($js, $group_type, $gid, $og_
   );
 
   $commands = ctools_modal_form_wrapper('gofast_userlist_og_form_og_ui_delete_membership', $form_state);
-
-  if($form_state['last_admin']){
-    form_get_errors();
-    $commands = array(
-      ctools_modal_command_dismiss(),
-      gofast_command_toast_message(t("You can't remove the last administrator of a space", array(), array('context' => "gofast:gofast_og")), "error")
-    );
-  }else if ($form_state['submitted']) {
+  $errors = form_get_errors();
+  if (!empty($errors)) {
+    $commands = [ctools_modal_command_dismiss()];
+    foreach ($errors as $error) {
+      $commands[] = gofast_command_toast_message($error, "error");
+    }
+  } else if ($form_state['submitted']) {
     $commands = array(
       ctools_modal_command_dismiss(),
       gofast_command_processAjax("/node/{$gid}" . "#ogmembers")
@@ -1256,69 +1257,68 @@ function gofast_userlist_og_user_form_alter(&$form, &$form_state){
  * Synchronize Userlists with LDAP/AD
  */
 function gofast_userlist_og_cron(){
-    $userlists_sync_state = variable_get('userlists_sync_state', array(
-        'sync_in_progress' => FALSE,
-        'last_sync' => 0,
-        'userlists_to_synchronize' => array(),
-        'userlists_to_gofast_synchronize' => array()
-    ));
-    //Starts a sync each 3 hours
-    //if(time() > $userlists_sync_state['last_sync'] + 10800){
-      //if(!$userlists_sync_state['sync_in_progress']){
-        //Start a new synchronization
-        watchdog('gofast_userlist_og', "Starting a new Userlists synchronization");
-        $userlists_sync_state['sync_in_progress'] = TRUE;
-        
-        //Retrieve userlists to synchronize
-        $userlists = array_keys(db_query("select entity_id from field_data_field_is_ldap_sync WHERE field_is_ldap_sync_value=1")->fetchAllAssoc("entity_id"));
-        $userlists_sync_state['userlists_to_synchronize'] = $userlists;
-        
-        //Retrieve userlists to synchronize
-        $userlists_gofast_sync = array_keys(db_query("select entity_id from field_data_field_is_gofast_sync WHERE field_is_gofast_sync_value=1")->fetchAllAssoc("entity_id"));
-        $userlists_sync_state['userlists_to_gofast_synchronize'] = $userlists_gofast_sync;
-        
-      //}
-      
-      $start_time = time();
-      foreach($userlists_sync_state['userlists_to_synchronize'] as $key => $nid){
-        //Start sync
-        gofast_userlist_og_ldap_synchronize($nid);
-        unset($userlists_sync_state['userlists_to_synchronize'][$key]);
-        
-        //Prevent sync to take more than ~45 sec
-        if(time() > ($start_time+35)){
-          break;
-            }
-        }
+  $userlists_sync_state = variable_get('userlists_sync_state', array(
+    'sync_in_progress' => FALSE,
+    'last_sync' => 0,
+    'userlists_to_synchronize' => array(),
+    'userlists_to_gofast_synchronize' => array()
+  ));
+  //Starts a sync each 3 hours
+  //if(time() > $userlists_sync_state['last_sync'] + 10800){
+  if (!$userlists_sync_state['sync_in_progress']) {
+    //Start a new synchronization
+    watchdog('gofast_userlist_og', "Starting a new Userlists synchronization");
+    $userlists_sync_state['sync_in_progress'] = TRUE;
 
-        $start_time = time();
-        foreach($userlists_sync_state['userlists_to_gofast_synchronize'] as $key => $nid){
-          //Start sync
-          gofast_userlist_og_gofast_synchronize($nid);
-          unset($userlists_sync_state['userlists_to_gofast_synchronize'][$key]);
-          
-          //Prevent sync to take more than ~45 sec
-          if(time() > ($start_time+35)){
-            break;
-          }
-        }
-        
-        
-        $is_synchronisation_done =
-          count($userlists_sync_state['userlists_to_synchronize']) == 0
-          && count($userlists_sync_state['userlists_to_gofast_synchronize']) == 0;
-        if ($is_synchronisation_done) {
-          //End of synchronization
-          watchdog('gofast_userlist_og', "All userlists have been synchronized successfully");
-          $userlists_sync_state['sync_in_progress'] = FALSE;
-          $userlists_sync_state['last_sync'] = time();
-        } else {
-          watchdog('gofast_userlist_og', "Breaking sync, wait for next cron");
-        }
-        //    }
-        
-        variable_set('userlists_sync_state', $userlists_sync_state);
-      }
+    //Retrieve userlists to synchronize
+    $userlists = array_keys(db_query("select entity_id from field_data_field_is_ldap_sync WHERE field_is_ldap_sync_value=1")->fetchAllAssoc("entity_id"));
+    $userlists_sync_state['userlists_to_synchronize'] = $userlists;
+
+    //Retrieve userlists to synchronize
+    $userlists_gofast_sync = array_keys(db_query("select entity_id from field_data_field_is_gofast_sync WHERE field_is_gofast_sync_value=1")->fetchAllAssoc("entity_id"));
+    $userlists_sync_state['userlists_to_gofast_synchronize'] = $userlists_gofast_sync;
+
+  }
+
+  $start_time = time();
+  foreach ($userlists_sync_state['userlists_to_synchronize'] as $key => $nid) {
+    //Start sync
+    gofast_userlist_og_ldap_synchronize($nid);
+    unset($userlists_sync_state['userlists_to_synchronize'][$key]);
+
+    //Prevent sync to take more than ~45 sec
+    if (time() > ($start_time+35)) {
+      break;
+    }
+  }
+
+  $start_time = time();
+  foreach ($userlists_sync_state['userlists_to_gofast_synchronize'] as $key => $nid) {
+    //Start sync
+    gofast_userlist_og_gofast_synchronize($nid);
+    unset($userlists_sync_state['userlists_to_gofast_synchronize'][$key]);
+
+    //Prevent sync to take more than ~45 sec
+    if (time() > ($start_time+35)) {
+      break;
+    }
+  }
+
+  $is_synchronisation_done =
+    count($userlists_sync_state['userlists_to_synchronize']) == 0
+    && count($userlists_sync_state['userlists_to_gofast_synchronize']) == 0;
+  if ($is_synchronisation_done) {
+    //End of synchronization
+    watchdog('gofast_userlist_og', "All userlists have been synchronized successfully");
+    $userlists_sync_state['sync_in_progress'] = FALSE;
+    $userlists_sync_state['last_sync'] = time();
+  } else {
+    watchdog('gofast_userlist_og', "Breaking sync, wait for next cron");
+  }
+  //    }
+
+  variable_set('userlists_sync_state', $userlists_sync_state);
+}
       
       
 function gofast_userlist_og_synchronize($nid, $output = FALSE){
@@ -1347,7 +1347,7 @@ function gofast_userlist_og_ldap_synchronize($nid, $output = FALSE) {
    //Load this userlist node
    $node = node_load($nid);
    
-   if($node->field_is_ldap_sync[LANGUAGE_NONE][0]["value"] == 0){
+   if($node->field_is_ldap_sync[LANGUAGE_NONE][0]["value"] == 0 && !drupal_is_cli()){
     $commands = array();
     $commands[] = gofast_command_toast_message(t("Synchronisation is not enabled", array(), array('gofast:gofast_userlist')), "success");
     $commands[] = gofast_command_callback("Gofast.processAjax", "/node/" . $nid);
@@ -1534,7 +1534,7 @@ function gofast_userlist_og_gofast_synchronize($nid, $output = FALSE){
     $results = $query->execute()->fetchAllAssoc('uid');
   }
   
-  $userlist_entity = entity_load_single('userlist', $node->field_userlist_ulid['und'][0]['value']);
+  $userlist_entity = entity_load_single('userlist', $node->field_userlist_ulid[LANGUAGE_NONE][0]['value']);
   
   foreach($results as $result){
     if(!empty($result->uid)){
@@ -1548,9 +1548,17 @@ function gofast_userlist_og_gofast_synchronize($nid, $output = FALSE){
     }
   }
 
-  $userlist_entity->field_userlist_members['und'] = $new_userlist_members;
+  // Compare members to know if we need to save the userlist again or not
+  $old_ids = array_column($userlist_entity->field_userlist_members[LANGUAGE_NONE] ?? [], 'value');
+  $new_ids = array_column($new_userlist_members ?? [], 'value');
+  sort($old_ids);
+  sort($new_ids);
+  if ($old_ids == $new_ids) {
+    return;
+  }
+
+  $userlist_entity->field_userlist_members[LANGUAGE_NONE] = $new_userlist_members;
   $userlist_entity->save();
-  
 }
 
 /**
@@ -1637,34 +1645,6 @@ function gofast_userlist_og_get_last_sync_date_message($userlist_node) {
 }
 
 /**
- * Formats a list of strings to enumerate for display.
- *
- * The and conjunction is translated.
- *
- * input/output examples:
- * ```text
- * [] => ''
- * ['$a'] => '$a'
- * ['$a','$b'] => '$a and $b'
- * ['$a','$b','$c'] => '$a, $b and $c'
- * ```
- * @param array $values List of values to display in an enumerated list fashion
- * @return string Rendered text of list.
- */
-function gofast_userlist_og_format_enumerated_list($values) {
-  if (!isset($values) || count($values) === 0) {
-    return "";
-  }
-
-  $last = array_pop($values);
-  if (count($values) === 0) {
-    return $last;
-  }
-
-  return join(', ', $values) . t(' and ', [], ['context' => 'gofast']) . $last;
-}
-
-/**
  * Implements hook_preprocess_HOOK for gofast_node_userlist_members.
  */
 function gofast_userlist_og_preprocess_gofast_node_userlist_members(&$variables) {
@@ -1677,7 +1657,7 @@ function gofast_userlist_og_preprocess_gofast_node_userlist_members(&$variables)
         'This userlist is synchronised with @sync_sources'
         . ' (last synchronisation on @sync_datetime).',
         [
-          '@sync_sources' => gofast_userlist_og_format_enumerated_list(
+          '@sync_sources' => gofast_format_enumerated_list(
             gofast_userlist_og_list_synchronization_sources($variables['node']),
           ),
           '@sync_datetime' => gofast_userlist_og_get_last_sync_formatted_datetime(),
@@ -1945,4 +1925,42 @@ function gofast_userlist_og_can_preadd_user_to_userlist(): bool|String {
     }
   }
   return t('Only business administrators can preadd users to user lists', array(), array('context' => 'gofast:gofast_userlist'));
+}
+
+/**
+ * Retrieves all memberships (direct user and userlist) for a given user
+ * in a specified Organic Group (space).
+ *
+ * @param int $gid
+ * The Group ID (NID of the space node).
+ * @param int $uid
+ * The User ID (UID) whose memberships are being retrieved.
+ *
+ * @return array
+ * An array of OG membership objects (og_membership) where the entity is the
+ * user (directly) or a userlist containing the user.
+ * Returns an empty array if the user has no active memberships in the space.
+ */
+function gofast_userlist_get_user_memberships($gid, $uid) {
+  $target_uid = $uid;
+  $user_memberships = [];
+
+  $direct_memberships = gofast_og_get_memberships($gid, "user");
+  foreach ($direct_memberships as $membership) {
+    if ($membership->etid == $target_uid) {
+      $user_memberships[] = $membership;
+      break;
+    }
+  }
+
+  $userlist_memberships = gofast_og_get_memberships($gid, "userlist");
+  foreach ($userlist_memberships as $membership) {
+      $members = gofast_userlist_get_members($membership->etid);
+      if (isset($members[$target_uid])) {
+          $user_memberships[] = $membership;
+          continue;
+      }
+  }
+
+  return $user_memberships;
 }

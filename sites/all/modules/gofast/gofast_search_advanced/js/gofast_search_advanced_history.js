@@ -6,6 +6,7 @@
       let queryColumn = row.find('td[data-field="query"]');
       let nameColumn = row.find('td[data-field="name"]');
       let fieldColumn = row.find('td[data-field="filters"]');
+      let globalOperatorColumn = row.find('td[data-field="globalOperator"]');
 
       // Get value of data-field="query" via aria-label
       let query = queryColumn.attr('aria-label');
@@ -16,6 +17,9 @@
       // Get value of data-field="filters" via aria-label
       let filters = fieldColumn.attr('aria-label');
 
+      // Get search global operator value
+      let globalOperator = globalOperatorColumn.attr('aria-label');
+
       // JSON decode filters
       filters = JSON.parse(filters);
       
@@ -24,11 +28,12 @@
 
       queryParams.set("query", query);
       queryParams.set("name", searchName);
+      queryParams.set("globalOperator", globalOperator);
 
       for (let key in filters) {
           queryParams.set(key, JSON.stringify(filters[key]));
       }
-      return "/search/advanced?" + decodeURIComponent(queryParams.toString())
+      return "/search/advanced?" + queryParams.toString()
     }
 
     Drupal.behaviors.gofastSearchAdvancedHistory = {
@@ -179,6 +184,16 @@
                                 width: 0,
                                 template: function (data) {
                                     return "<span class='text-nowrap'>" + data.query + "</span>"
+                                },
+                            },
+                            {
+                                field: 'globalOperator',
+                                title: "",
+                                autoHide: false,
+                                sortable: false,
+                                width: 0,
+                                template: function (data) {
+                                    return "<span class='text-nowrap'>" + data.globalOperator + "</span>"
                                 },
                             },
 

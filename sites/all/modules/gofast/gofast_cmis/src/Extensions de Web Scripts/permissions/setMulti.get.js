@@ -79,6 +79,11 @@ if(node.getProperties().description == "homepage"){
 	} else {
 		for each (g in array_spaces)
 		{
+			if(g === "PUBLIC_SPACE"){
+				node.setPermission("Consumer", "GROUP_EVERYONE_EXCEPT_EXTRANET");
+				node.setPermission("Coordinator", "GROUP_PUBLIC_ADMINS");
+				continue;
+			}
 			//MODIF READONLY
 			//node.setPermission(role,"GROUP_"+g);
 			if(role == "Consumer"){

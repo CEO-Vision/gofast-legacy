@@ -366,10 +366,200 @@ function gofast_ldap_update_7405() {
   }
 }
 
+function gofast_ldap_update_7406() { 
+  // get all users with standby = 1 but also status = 1
+   $query = "select * from field_data_field_standby s inner join users u on s.entity_id = u.uid where u.status = 1 and s.field_standby_value = 1;";
+      $results = db_query( $query)->fetchAll();
+      if(count( $results) > 0){
+          foreach( $results as $result){
+            $account = user_load( $result->uid);
+            $edit = array('field_standby' => 0);
+            user_save($account, $edit);
+          }
+      }
+}
+
 /**
  * Set again ldap fields default values to make sure they are not null.
  */
-function gofast_ldap_update_7406() {
+function gofast_ldap_update_7407() {
   module_load_include('inc', 'gofast_ldap', 'gofast_ldap.fields');
   gofast_ldap_fields_set_default_values();
+}
+
+/**
+ * GOFAST-12927 - resync all spaces following LDAP groupOfNames update
+ */
+function gofast_ldap_update_7408() {
+  set_time_limit(0);
+  $root_spaces = array_values(gofast_og_get_root_spaces(FALSE, TRUE));
+  $gids = db_select("node", "n")
+    ->fields("n", ["nid"])
+    ->condition('n.status', 1)
+    ->condition('n.type', ["group", "extranet", "organisation"], "IN")
+    ->condition('n.nid', $root_spaces, 'NOT IN')
+    ->execute()->fetchCol();
+  foreach ($gids as $gid) {
+    $space = node_load($gid);
+    gofast_resynchro_ldap_membership_one_space($space);
+  }
+  $pnid = variable_get("public_userlist", NULL);
+  $unids = db_select("node", "n")
+    ->fields("n", ["nid"])
+    ->condition('n.status', 1)
+    ->condition('n.type', "userlist")
+    ->condition('n.nid', $pnid, '<>')
+    ->execute()->fetchCol();
+  foreach($unids as $unid) {
+    gofast_userlist_og_ldap_synchronize($unid);
+  }
+}
+
+/** GOFAST-11608 - Rework public spaces membership mecanism */
+function gofast_ldap_update_7410() {
+
+  // Add empoyeeType attributes to each users to know if they are external or not
+  $LdapServer = gofast_ldap_server_load(GOFAST_LDAP_INT_SERVER);
+  $LdapServer->connectAndBindIfNotAlready();
+  $query = db_select("users", "u");
+  $query->fields("u", array("name"));
+  $query->condition("u.uid", 0, "!=");
+  $query->leftJoin("field_data_is_extranet", "fdie", "fdie.entity_id = u.uid");
+  $query->fields("fdie", array("is_extranet_value"));
+  $results = $query->execute()->fetchAll();
+
+  foreach($results as $result){
+    $dn = 'uid=' . $result->name . ',' . GOFAST_LDAP_INT_REALM_USERS;
+    if($result->is_extranet_value){
+      $LdapServer->modifyLdapEntry($dn, array('employeeType' => "external"));
+    } else {
+      $LdapServer->modifyLdapEntry($dn, array('employeeType' => "internal"));
+    }
+  }
+
+  // Add group for Public space administrators
+  $attributes = array();
+  $attributes['objectclass'] = array('groupOfNames');
+  $attributes['description'] = GOFAST_LDAP_PUBLIC_ADMINS_CN;
+  $public_ul = node_load(variable_get("public_userlist", NULL));
+  $attributes['cn'] = GOFAST_LDAP_PUBLIC_ADMINS_CN;
+  $ldap_userlist_basedn = variable_get('gofast_ldap_userlist_base_dn', 'ou=' . UserListEntityController::USERLIST_LDAP_ROOTDN . ',ou=Groups,' . variable_get('gofast_ldap_int_base_dn'));
+  $userlist_dn = 'cn=UserList_'.$public_ul->field_userlist_ulid[LANGUAGE_NONE][0]["value"] . ',' . $ldap_userlist_basedn;
+  $attributes["member"] = $userlist_dn;
+  $group_dn = GOFAST_LDAP_PUBLIC_ADMINS_DN;
+
+  $LdapServer->groupAddGroup($group_dn, $attributes);
+  
+  // Add dynamic group to get all not external users
+  $attributes = array();
+  $attributes['objectclass'] = array('groupOfURLs');
+  $attributes['memberURL'] = "ldap:///ou=People," . GOFAST_LDAP_INT_BASE_DN . "??one?(&(objectClass=InetOrgPerson)(!(employeeType=external)))";
+  $attributes['description'] = GOFAST_LDAP_EVERYONE_EXCEPT_EXTRANET_CN;
+  $attributes['cn'] = GOFAST_LDAP_EVERYONE_EXCEPT_EXTRANET_CN;
+  $group_dn = GOFAST_LDAP_EVERYONE_EXCEPT_EXTRANET_DN;
+
+  $LdapServer->groupAddGroup($group_dn, $attributes);
+
+  // Remove all memberships on public spaces
+  $public_space_ids = db_select("node", "n");
+  $public_space_ids->fields("n", array("nid"));
+  $public_space_ids->condition("n.type", "public", "=");
+  $public_space_ids = $public_space_ids->execute()->fetchCol();
+
+  db_delete("og_membership")
+    ->condition('entity_type', ["user", "userlist"], "IN")
+    ->condition("gid", $public_space_ids, 'IN')
+    ->execute();
+
+  // Refresh permissions on all public spaces
+  $public_spaces = node_load_multiple($public_space_ids);
+  foreach($public_spaces as $space) {
+    gofast_cmis_webservice_space_assign_permissions($space);
+    //Remove all useless group (e.g. _#7_ADMIN) and remove all members of all public ldap groups
+    $dn = gofast_ldap_space_dn($space);
+    $cn = gofast_ldap_space_cn($space);
+    $LdapServer->groupRemoveGroup("cn={$cn}_STANDARD,{$dn}", false);
+    $LdapServer->groupRemoveGroup("cn={$cn}_ADMIN,{$dn}", false);
+    $admin_dn = gofast_ldap_user_dn(1);
+    $LdapServer->modifyLdapEntry($dn, array("member" => $admin_dn), true);
+    
+    // Fix Public userlist memberships on all public spaces
+    $admin_rid = gofast_get_rid_from_role_name_and_bundle('administrator member', $space->type);
+    $ulid = $public_ul->field_userlist_ulid[LANGUAGE_NONE][0]['value'];
+    gofast_userlist_og_delete_membership($space->nid, $ulid);
+    gofast_userlist_og_add_membership($space->nid, $ulid, $admin_rid);
+  }
+  
+  // Clear cache of all og related field on user and userlist
+  cache_clear_all("*", "cache_field", true);
+  // Synchronize alfresco with new ldap group
+  gofast_cmis_webservice_force_alfresco_ldap_synch(true);
+}
+
+/** GOFAST-11608 - Update Drupal/LDAP mappings as handled natively by the LDAP module */
+function gofast_ldap_update_7411() {
+  $ldap_user_conf = variable_get("ldap_user_conf");
+  $ldap_user_conf["ldapUserSynchMappings"][2]["[employeeType]"] = array(
+    'ldap_attr' => '[employeeType]',
+    'user_attr' => '[field.is_extranet]',
+    'convert' => 0,
+    'direction' => '2',
+    'user_tokens' => '',
+    'config_module' => 'ldap_user',
+    'enabled' => 1,
+    'prov_events' => array(
+      0 => 4,
+      1 => 3,
+    ),
+  );
+  variable_set("ldap_user_conf", $ldap_user_conf);
+}
+
+/** GOFAST-13637 - Add the saslAccounts password policy to all accounts with SASL authentication enabled 
+ * to prevent passwords from expiring on these accounts. */
+function gofast_ldap_update_7412() {
+  module_load_include('inc', 'gofast_ldap', 'gofast_ldap.admin');
+  $query = db_select('field_data_sasl_auth', 'fdsa')->fields('fdsa', array('entity_id'));
+  $query->condition('fdsa.sasl_auth_value', 1, '=');
+  $user_ids = $query->execute()->fetchCol();
+  foreach($user_ids as $uid) {
+    $user_dn = gofast_ldap_user_dn($uid);
+    gofast_ldap_add_password_policy_without_expiration($user_dn);
+  }
+}
+
+/** GOFAST-14339 - Reapply public spaces permissions: update 7410 ran before the matching Alfresco webscript was deployed */
+function gofast_ldap_update_7413(&$sandbox) {
+  if (!isset($sandbox['nids'])) {
+    $sandbox['nids'] = db_select("node", "n")
+      ->fields("n", array("nid"))
+      ->condition("n.type", "public")
+      ->orderBy("n.nid")
+      ->execute()->fetchCol();
+    $sandbox['total'] = count($sandbox['nids']);
+    $sandbox['done'] = 0;
+    $sandbox['failed'] = array();
+  }
+
+  // Batches keep memory flat on platforms with many public spaces
+  $batch = array_splice($sandbox['nids'], 0, 50);
+  foreach (node_load_multiple($batch) as $space) {
+    $result = gofast_cmis_webservice_space_assign_permissions($space);
+    if (empty($result->permissions->consumer) || empty($result->permissions->coordinator)) {
+      $sandbox['failed'][] = $space->nid;
+    }
+  }
+  entity_get_controller("node")->resetCache($batch);
+  $sandbox['done'] += count($batch);
+  $sandbox['#finished'] = empty($sandbox['nids']) ? 1 : $sandbox['done'] / $sandbox['total'];
+  if ($sandbox['#finished'] < 1) {
+    return;
+  }
+
+  gofast_cmis_webservice_force_alfresco_ldap_synch(true);
+  if (!empty($sandbox['failed'])) {
+    watchdog("gofast_ldap", "Public spaces permissions could not be reapplied on nodes: @nids", array("@nids" => implode(", ", $sandbox['failed'])), WATCHDOG_ERROR);
+    return "Public spaces permissions could not be reapplied on nodes: " . implode(", ", $sandbox['failed']);
+  }
+  return "Permissions reapplied on " . $sandbox['total'] . " public spaces";
 }

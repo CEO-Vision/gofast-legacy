@@ -10,6 +10,18 @@ function gofast_request_is_ajax() {
 }
 
 /** 
+ * Check if the form is submitted programmatically, through drupal_form_submit().
+ *
+ * Validation handlers must not print ajax commands nor exit in that case :
+ * there is no browser to receive them and the exit would abort the caller (cron, drush, api...).
+ *
+ * @return TRUE if the form submission is programmatic, FALSE otherwise.
+ */
+function gofast_form_is_programmed($form_state) {
+  return !empty($form_state['programmed']);
+}
+
+/** 
  * Handler called by gofast_update_field_database to write fields.
  */
 function gofast_update_field_database_write($entities, $field_name, $table, $columns, $entity_type = "node", $id_key = "nid") {
@@ -369,7 +381,7 @@ function _gofast_ldap_clone_subtree($dn, $new_dn, &$debug = array()) {
   $new_rdn = gofast_ldap_get_rdn($parent_dn);
 
   foreach ($entries as $i => $entry) {
-    if (isset($entry['ou'][0]) && in_array($entry['ou'][0], array('ROLE_ADMIN', 'ROLE_STANDARD'))) {
+    if (isset($entry['ou'][0]) && in_array($entry['ou'][0], array('ROLE_ADMIN', 'ROLE_STANDARD', 'ROLE_GROUPMANAGER'))) {
       // This is a subentry for group role managment, rdn depends on the parent.
       $group_role = substr($entry['ou'][0], 5);
       $new_dn = "{$new_rdn}_{$group_role},{$parent_dn}";
@@ -1532,26 +1544,385 @@ function gofast_get_node_title_multiple($nids, $bundles=array(), $rename_private
  * function which return true if the group receive in parameter is archived, false otherwhise
  */
 function gofast_group_is_archive($node){
-    if(isset($node->field_archive[LANGUAGE_NONE])){
-            if($node->field_archive[LANGUAGE_NONE][0]["value"] == 0){
-               return false;
-            }else{
-                return true;
-            }
-    }elseif(!isset($node->field_archive) || count($node->field_archive) == 0){
-        return false;
-    }else{
-        return false;
-    }
-    $array_object["tags"] = $string_tags;
-    $array_object["target_link"] = $node->field_target_link[LANGUAGE_NONE][0]['target_id'];
-    $array_object["comment_count"] = $node->comment_count;
+  if(isset($node->field_archive[LANGUAGE_NONE]) && $node->field_archive[LANGUAGE_NONE][0]["value"] != 0) {
+    return TRUE;
+  }
 
-
-    if($full == true){
-        //TODO get cmis infos
+  return FALSE;
 }
-    return drupal_json_encode($array_object);
+
+/**
+ * Checks if a space node is confidential or not.
+ *
+ * @param object|numeric|EntityDrupalWrapper $node The node object, id or
+ *  wrapper to check for confidentiality.
+ * @return bool True if the space is confidential, false otherwise.
+ */
+function gofast_group_is_confidential($node) {
+  /** @var EntityDrupalWrapper */
+  $node_w = entity_metadata_wrapper('node', $node);
+  // Node classification does not have confidentiality field, defaults to not being confidential.
+  if (!isset($node_w->field_classification->{GOFAST_TAXONOMY_CONFIDENTIALITY_FIELD})) {
+    return FALSE;
+  }
+  // Need to check if node has classification before getting value of
+  // confidentiality otherwise the entity wrapper throws an exception.
+  $classification = $node_w->field_classification;
+  if ($classification->value() === NULL) {
+    return FALSE;
+  }
+  return (bool) $classification->{GOFAST_TAXONOMY_CONFIDENTIALITY_FIELD}->value();
+}
+
+/**
+ * Checks if any of given space node ID is confidential.
+ *
+ * @param array<int> an array of space node IDs.
+ * @return bool True any space is confidential, false otherwise.
+ */
+function gofast_any_provided_group_is_confidential($gids) {
+  $confidentiality_field_table_name = 'field_data_' . GOFAST_TAXONOMY_CONFIDENTIALITY_FIELD;
+  $confidentiality_field_value_column_name = GOFAST_TAXONOMY_CONFIDENTIALITY_FIELD . '_value';
+
+  $space_bundles = array_keys(gofast_og_node_types());
+
+  $query = db_select($confidentiality_field_table_name, "fc");
+  $query->join('field_data_field_classification', 'fdfcl', 'fdfcl.field_classification_tid = fc.entity_id');
+  $query->condition("fdfcl.entity_id", $gids, "IN")
+    ->where("fc.deleted = 0")
+    ->where("fc.entity_type = 'taxonomy_term'")
+    ->where("fc.bundle = 'classification'")
+    ->where("fdfcl.entity_type = 'node'")
+    ->where("fdfcl.deleted = 0")
+    ->condition("fdfcl.bundle", $space_bundles, "IN")
+    ->condition("fc.$confidentiality_field_value_column_name", 0, ">");
+
+  /** @var SelectQuery */
+  $count_query = $query->countQuery();
+  $count = $count_query->execute()->fetchField();
+  return (bool) $count;
+}
+
+/**
+ * Checks if there exists any confidential space.
+ *
+ * Caches its result for the current HTTP request.
+ *
+ * @param bool $reset_cache Whether to reset cached result.
+ * @return bool True if a confidential space exists, false otherwise.
+ */
+function gofast_any_confidential_group_exists($reset_cache = FALSE) {
+  // Drupal fast static pattern
+  static $statics;
+  if (!isset($statics['cache'])) {
+    $statics['cache'] = &drupal_static(__FUNCTION__);
+  }
+  $cache = &$statics['cache'];
+
+  if (!$reset_cache && isset($cache)) {
+    return $cache;
+  }
+
+  $confidentiality_field_table_name = 'field_data_' . GOFAST_TAXONOMY_CONFIDENTIALITY_FIELD;
+  $confidentiality_field_value_column_name = GOFAST_TAXONOMY_CONFIDENTIALITY_FIELD . '_value';
+  /** @var DatabaseStatementBase */
+  $query = db_query(
+    <<<SQL
+    SELECT EXISTS (
+      SELECT 1
+      FROM `$confidentiality_field_table_name` AS fdfc
+      JOIN `field_data_field_classification` AS fdfcl ON fdfcl.field_classification_tid = fdfc.entity_id
+      WHERE
+        fdfc.deleted = 0
+        AND fdfc.entity_type = 'taxonomy_term'
+        AND fdfc.bundle = 'classification'
+        AND fdfc.$confidentiality_field_value_column_name > 0
+        AND fdfcl.deleted = 0
+        AND fdfcl.entity_type = 'node'
+        AND fdfcl.bundle IN (:space_bundles)
+    ) AS any_confidential;
+    SQL,
+    [':space_bundles' => array_keys(gofast_og_node_types())],
+  );
+
+  return $cache = (bool) $query->fetch()->any_confidential;
+}
+
+/**
+ * Check if a space node can be set as confidential.
+ *
+ * @param numeric|object|EntityDrupalWrapper $node Node's id, object of wrapper.
+ * @return ?array{code:string,message:string} An error array or NULL.
+ */
+function gofast_space_can_become_confidential($node) {
+  /** @var EntityDrupalWrapper */
+  $wrapper = entity_metadata_wrapper('node', $node);
+  // Node type without confidentiality field can never become confidential.
+  if (!isset($wrapper->field_classification->{GOFAST_TAXONOMY_CONFIDENTIALITY_FIELD})) {
+    return [
+      'code' => 'no_classification',
+      // Message intentionally left untranslated as this is likely an internal
+      // logic error and not a user error.
+      'message' => 'Entity has no classification.',
+    ];
+  }
+  // If for some reason this function is called on confidential spaces, early-return null.
+  if (gofast_group_is_confidential($wrapper)) {
+    return NULL;
+  }
+
+  // Check member-related constraints.
+  if (!gofast_space_will_have_members_after_becoming_confidential($wrapper)) {
+    return [
+      'code' => 'member_missing',
+      'message' => t(
+        'Cannot set space to confidential, space will end up without an administrator member or responsible.',
+        [],
+        ['context' => 'gofast'],
+      ),
+    ];
+  }
+
+  // Confidential space subspace validation:
+  // To make a space confidential, ALL its subspaces must be confidential
+  if (!gofast_space_are_all_subspaces_confidential($wrapper)) {
+    return [
+      'code' => 'some_subspace_not_confidential',
+      'message' => t(
+        'Cannot set space to confidential, some subspace is not confidential.',
+        [],
+        ['context' => 'gofast']
+      )
+    ];
+  }
+
+  return NULL;
+}
+
+/**
+ * Checks if a space will have the required members after becoming confidential
+ *
+ * @param numeric|object|EntityDrupalWrapper $node
+ * @return bool True if the required members constraints are upheld, false otherwise.
+ */
+function gofast_space_will_have_members_after_becoming_confidential($node) {
+  /** @var EntityDrupalWrapper */
+  $wrapper = entity_metadata_wrapper('node', $node);
+
+  // Get confidential members.
+  $node_id = $wrapper->getIdentifier();
+  $user_memberships = gofast_og_get_memberships($node_id, 'user');
+  /** @var EntityDrupalWrapper[] */
+  $user_members = array_map(fn($m) => entity_metadata_wrapper('user', $m->etid), $user_memberships);
+  $confidential_members = array_filter(
+    $user_members,
+    fn($u) => (bool) $u->{GOFAST_USER_HAS_CONFIDENTIAL_ACCESS_FIELD}->value(),
+  );
+
+  // There will be no confidential members, which means the space would have no
+  // members, which violates rules on spaces members.
+  if (empty($confidential_members)) {
+    return FALSE;
+  }
+
+  // Check that at least one of the end members will be admin.
+  $has_any_admin = gofast_iterable_any(
+    $confidential_members,
+    fn($m) => in_array(GOFAST_OG_ROLE_ADMIN, og_get_user_roles('node', $node_id, $m->getIdentifier(), FALSE)),
+  );
+  if (!$has_any_admin) {
+    return FALSE;
+  }
+
+  $person_in_charge = $wrapper->{"field_person_in_charge"}->value();
+  $has_person_in_charge = gofast_iterable_any(
+    $confidential_members,
+    fn($m) => $m->getIdentifier() == $person_in_charge->uid,
+  );
+  if (!$has_person_in_charge) {
+    return FALSE;
+  }
+
+  // Space will have at least one admin member and its person in charge.
+  return TRUE;
+}
+
+/**
+ * Check if a space's subspaces are all confidential
+ *
+ * @param numeric|object|EntityDrupalWrapper $node
+ * @return bool True if all subspaces are confidential, false otherwise
+ */
+function gofast_space_are_all_subspaces_confidential($node) {
+  /** @var EntityDrupalWrapper */
+  $wrapper = entity_metadata_wrapper('node', $node);
+
+  $children_space_ids = gofast_og_get_children($wrapper->getIdentifier());
+  $is_any_subspace_not_confidential = gofast_iterable_any(
+    $children_space_ids,
+    fn($nid) => !gofast_group_is_confidential($nid),
+  );
+
+  return !$is_any_subspace_not_confidential;
+}
+
+/**
+ * Checks if a space's parent space is confidential
+ *
+ * @param numeric|object|EntityDrupalWrapper $node
+ * @return bool True if the parent space is confidential, false otherwise
+ */
+function gofast_space_is_parent_space_confidential($node) {
+  /** @var EntityDrupalWrapper */
+  $wrapper = entity_metadata_wrapper('node', $node);
+
+  $parent = gofast_og_get_parent($wrapper->value());
+
+  return gofast_group_is_confidential($parent);
+}
+
+/**
+ * Check if a space node can be set as non-confidential.
+ *
+ * @param numeric|object|EntityDrupalWrapper $node Node's id, object or wrapper.
+ * @return ?array{code:string,message:string} An error array or NULL.
+ */
+function gofast_space_can_become_non_confidential($node) {
+  /** @var EntityDrupalWrapper */
+  $wrapper = entity_metadata_wrapper('node', $node);
+  // Node type without confidentiality field can never become non-confidential.
+  // (couldn't have been confidential in the first place)
+  if (!isset($wrapper->field_classification->{GOFAST_TAXONOMY_CONFIDENTIALITY_FIELD})) {
+    return [
+      'code' => 'no_classification',
+      // Message intentionally left untranslated as this is likely an internal
+      // logic error and not a user error.
+      'message' => 'Entity has no classification.',
+    ];
+  }
+
+  // If for some reason this function is called on non-confidential spaces, early-return null.
+  if (!gofast_group_is_confidential($wrapper)) {
+    return NULL;
+  }
+
+  if (gofast_space_is_parent_space_confidential($wrapper)) {
+    return [
+      'code' => 'parent_is_confidential',
+      'message' => t(
+        'Cannot remove space confidentiality, its parent space is confidential.',
+        [],
+        ['context' => 'gofast'],
+      ),
+    ];
+  }
+
+  return NULL;
+}
+
+/**
+ * Removes all members without confidential clearance of a space.
+ *
+ * This means it removes:
+ * - All user members without confidential clearance
+ * - All user list members.
+ *
+ * @param numeric|object|EntityDrupalWrapper $node Node object, id or wrapper of
+ *  the space node from which all non-confidential members will be removed.
+ * @return void
+ */
+function gofast_space_remove_non_confidential_members($node) {
+  /** @var EntityDrupalWrapper */
+  $node_w = entity_metadata_wrapper('node', $node);
+
+  $node_id = $node_w->getIdentifier();
+  // 1. Remove all userlists.
+  $userlist_memberships = gofast_og_get_memberships($node_id, 'userlist');
+  $userlist_memberships = og_membership_load_multiple(array_map(fn($m) => $m->id, $userlist_memberships));
+  // Remove the memberships of userlists.
+  foreach ($userlist_memberships as $userlist_membership) {
+    $userlist_membership->delete();
+  }
+
+  // 2. Remove non-confidential users
+  $user_memberships = gofast_og_get_memberships($node_id, 'user');
+  // Add user entity wrapper next to membership entity wrapper.
+  $user_membership_pairs = array_map(fn($m) => (object)[
+    'user' => entity_metadata_wrapper('user', $m->etid),
+    'membership' => entity_metadata_wrapper('og_membership', $m->id),
+  ], $user_memberships);
+  // Filter to keep only users WITHOUT confidential clearance.
+  $user_memberships_to_remove = array_filter(
+    $user_membership_pairs,
+    fn($m) => !gofast_user_can_user_access_confidential_content($m->user),
+  );
+  // Remove the memberships of users without confidential clearance.
+  foreach ($user_memberships_to_remove as $user_membership_to_remove) {
+    // Need to unwrap the membership to use the OgMembership entity's delete
+    // method instead of the wrapper's because of additional cache clearing in
+    // the entity's method.
+    $user_membership_to_remove->membership->value()->delete();
+  }
+}
+
+/**
+ * Lists the confidential spaces left without an administrator holding the
+ * confidential clearance.
+ *
+ * None of their administrators is allowed to enter them any more, so they
+ * cannot be managed. Deleted spaces are left out.
+ *
+ * @return (array{nid: int, title: string, type: string, administrators: (array{uid: int, login: string})[]})[]
+ *   One entry per space, ordered by title, each holding the administrators
+ *   left without the clearance
+ */
+function gofast_get_confidential_spaces_without_confidential_administrator() {
+  $confidentiality_table = 'field_data_' . GOFAST_TAXONOMY_CONFIDENTIALITY_FIELD;
+  $confidentiality_column = GOFAST_TAXONOMY_CONFIDENTIALITY_FIELD . '_value';
+
+  $query = db_select('node', 'n');
+  $query->join(
+    'field_data_field_classification',
+    'fdfcl',
+    "fdfcl.entity_id = n.nid AND fdfcl.entity_type = 'node' AND fdfcl.deleted = 0",
+  );
+  $query->join(
+    $confidentiality_table,
+    'fdfc',
+    "fdfc.entity_id = fdfcl.field_classification_tid AND fdfc.entity_type = 'taxonomy_term'
+      AND fdfc.bundle = 'classification' AND fdfc.deleted = 0",
+  );
+  $query->fields('n', ['nid', 'title', 'type']);
+  $query->condition('n.status', 1)
+    ->condition('fdfcl.bundle', array_keys(gofast_og_node_types()), 'IN')
+    ->condition("fdfc.$confidentiality_column", 0, '>');
+  $query->orderBy('n.title');
+
+  $spaces = [];
+  foreach ($query->execute() as $space) {
+    // Userlists cannot be members of a confidential space, ignore them.
+    $administrators = array_filter(
+      gofast_userlist_og_get_node_members_by_role($space->nid, [OG_STATE_ACTIVE], GOFAST_OG_ROLE_ADMIN),
+      fn($administrator) => $administrator->entity_type === 'user',
+    );
+    $accounts = user_load_multiple(array_map(fn($administrator) => $administrator->etid, $administrators));
+
+    if (gofast_iterable_any($accounts, fn($account) => gofast_user_can_user_access_confidential_content($account))) {
+      continue;
+    }
+
+    $spaces[] = [
+      'nid' => (int) $space->nid,
+      'title' => $space->title,
+      'type' => $space->type,
+      'administrators' => array_values(array_map(
+        fn($account) => ['uid' => (int) $account->uid, 'login' => $account->name],
+        $accounts,
+      )),
+    ];
+  }
+
+  return $spaces;
 }
 
 function gofast_get_json_object_from_node($node, $full = false){
@@ -1607,12 +1978,12 @@ function gofast_get_json_object_from_node($node, $full = false){
                 $role_string = reset($role);
                 $array_object[$role_string][$uid] = $uid;
             }
-            sort($array_object["group contributor"]);
-            $array_object["group contributor"] = implode(",", $array_object["group contributor"]);
-            sort($array_object["administrator member"]);
-            $array_object["administrator member"] = implode(",", $array_object["administrator member"]);
-            sort($array_object["read only member"]);
-            $array_object["read only member"] = implode(",", $array_object["read only member"]);
+            foreach (array("group contributor", "group manager", "administrator member", "read only member") as $role_key) {
+              if (isset($array_object[$role_key]) && is_array($array_object[$role_key])) {
+                sort($array_object[$role_key]);
+                $array_object[$role_key] = implode(",", $array_object[$role_key]);
+              }
+            }
         }
 
     }
@@ -1890,9 +2261,9 @@ function gofast_resynchro_ldap_membership_one_user($account){
     $all_groups = gofast_og_get_spaces_by_user($account, TRUE, FALSE, FALSE,FALSE);
     $must_be_site_manager = false;
     $member_cn = gofast_ldap_user_dn($account);
-    $count_public = 0;
     foreach($all_groups as $key=>$space){
         $gid = $key;
+        // Don't add membership for public spaces
         if($gid == 0){
             continue;
         }
@@ -1902,11 +2273,10 @@ function gofast_resynchro_ldap_membership_one_user($account){
 
     $space = node_load($gid);
 
-    //if it's a public space, increment counter
+    // Don't add membership for public spaces
     if($space->type == "public"){
-        $count_public = $count_public + 1;
+      continue;
     }
-
     $dn = gofast_ldap_space_dn($space);
     $members = (array) $LdapServer->groupAllMembers($dn);
      if(array_search(strtolower($member_cn), array_map('strtolower', $members)) === false){
@@ -1944,41 +2314,32 @@ function gofast_resynchro_ldap_membership_one_user($account){
                 watchdog("GOFAST REBUILD MEMBERSHIP ONE USER ON SPACE", "Standard role of user ".$account->uid." added on space ".$space->nid);
                 gofast_ldap_og_role_grant('node', $gid, $uid, $rid);
                }
+         }elseif($role_suffix === "GROUPMANAGER"){
+              $dn = gofast_ldap_space_dn($space);
+               $cn = gofast_ldap_space_cn($space);
+              $members = (array) $LdapServer->groupAllMembers("cn={$cn}_GROUPMANAGER,{$dn}");
+               if(array_search($member_cn, $members) === false){
+                watchdog("GOFAST REBUILD MEMBERSHIP ONE USER ON SPACE", "Group manager role of user ".$account->uid." added on space ".$space->nid);
+                gofast_ldap_og_role_grant('node', $gid, $uid, $rid);
+               }
          }
-
     }
 
     //check if user is correctly set into LDAP for userlists
-     $userlists = gofast_userlist_get_userlists_by_user($account);
+    $userlists = gofast_userlist_get_userlists_by_user($account);
 
-        if(count($userlists)){
-            foreach($userlists as $key=>$userlist){
-                $ulid = $userlist->ulid;
-                $userlist = entity_load_single('userlist', $ulid);
-                $dn_userlist = array('dn' => array(UserListEntity::getDn($userlist)));
-                $members_userlist_ldap = (array) $LdapServer->groupAllMembers($dn_userlist["dn"][0]);
-                if($members_userlist_ldap && array_search(strtolower($member_cn), array_map('strtolower', $members_userlist_ldap)) === false){
-                    watchdog("GOFAST REBUILD MEMBERSHIP ONE USER ON USERLIST", "Membership of user ".$account->uid." added on userlist ".$userlist->ulid);
-                    $member = array('dn' => array(gofast_ldap_user_dn($account)));
-                    $LdapServer->groupAddMember($dn_userlist["dn"][0], $member_cn);
-                }
-            }
-        }
-
-    //check if the user is not into Public spaces ( it can happened sometime )
-    //get all public spaces
-     $root_spaces = gofast_og_get_root_spaces(FALSE, TRUE);
-      foreach($root_spaces as $nid){ //We fetch into the root spaces (excluding private spaces)
-        $node = node_load($nid);
-        $bundle = $node->type;
-        if($bundle == 'public'){
-          $public = $node;
+    if(count($userlists)){
+      foreach($userlists as $key=>$userlist){
+        $ulid = $userlist->ulid;
+        $userlist = entity_load_single('userlist', $ulid);
+        $dn_userlist = array('dn' => array(UserListEntity::getDn($userlist)));
+        $members_userlist_ldap = (array) $LdapServer->groupAllMembers($dn_userlist["dn"][0]);
+        if($members_userlist_ldap && array_search(strtolower($member_cn), array_map('strtolower', $members_userlist_ldap)) === false){
+            watchdog("GOFAST REBUILD MEMBERSHIP ONE USER ON USERLIST", "Membership of user ".$account->uid." added on userlist ".$userlist->ulid);
+            $member = array('dn' => array(gofast_ldap_user_dn($account)));
+            $LdapServer->groupAddMember($dn_userlist["dn"][0], $member_cn);
         }
       }
-    $public_ids = gofast_og_get_children($public->nid, TRUE, FALSE, TRUE);
-    if(!gofast_user_is_extranet($account) && $count_public != count($public_ids)+1 && count($public_ids) !== 0){
-         watchdog("GOFAST REBUILD MEMBERSHIP ONE USER ON PUBLIC SPACES", "user ".$account->uid);
-         gofast_og_user_rebuild_base_memberships($account);
     }
 
     //check if user is on a space on LDAP but not on Drupal
@@ -2011,7 +2372,9 @@ function gofast_resynchro_ldap_remove_bad_ldap($account){
  $addFolderTemplate = false;
  $addBusinessAdmin = false;
  foreach($ldap_spaces as $mydn){
-      if (strpos($mydn, 'cn=ADMIN_GOFAST') !== false){
+      if (strpos($mydn, 'ou=public') !== false){
+        continue;
+      } else if (strpos($mydn, 'cn=ADMIN_GOFAST') !== false){
         if($isAdmin){
           if($addFolderTemplate === false){
             continue;
@@ -2073,6 +2436,7 @@ function gofast_resynchro_ldap_remove_bad_ldap($account){
                      $dn = gofast_ldap_space_dn($space);
 
                      $LdapServer->groupRemoveMember("cn={$cn}_ADMIN,{$dn}", $member);
+                     $LdapServer->groupRemoveMember("cn={$cn}_GROUPMANAGER,{$dn}", $member);
                      $LdapServer->groupRemoveMember("cn={$cn}_STANDARD,{$dn}", $member);
                      watchdog("GOFAST REBUILD MEMBERSHIP ONE USER ON SPACE", "Remove user ".$account->uid." from LDAP entry ".$mydn);
             }
@@ -2120,6 +2484,7 @@ function gofast_resynchro_ldap_membership_one_space($space){
    $members = gofast_og_get_members($space);
      $theorically_ro = array();
      $theorically_standard = array();
+     $theorically_groupmanager = array();
      $theorically_admin = array();
      foreach($members as $uid){
         if($uid == 1){continue;}
@@ -2132,6 +2497,9 @@ function gofast_resynchro_ldap_membership_one_space($space){
               $theorically_ro[] =  $member_cn;
          }elseif($role == "group contributor"){
               $theorically_standard[] =  $member_cn;
+              $theorically_ro[] =  $member_cn;
+         }elseif($role == "group manager"){
+              $theorically_groupmanager[] =  $member_cn;
               $theorically_ro[] =  $member_cn;
          }elseif($role == "administrator member"){
               $theorically_admin[] =  $member_cn;
@@ -2154,10 +2522,11 @@ function gofast_resynchro_ldap_membership_one_space($space){
         $ldap_ro = (array) _gofast_remove_admin_and_userslists_ldap_members_integrity_check($LdapServer->groupAllMembers($dn));
         $ldap_admin = (array) _gofast_remove_admin_and_userslists_ldap_members_integrity_check($LdapServer->groupAllMembers("cn={$cn}_ADMIN,{$dn}"));
         $ldap_standard = (array) _gofast_remove_admin_and_userslists_ldap_members_integrity_check($LdapServer->groupAllMembers("cn={$cn}_STANDARD,{$dn}"));
+        $ldap_groupmanager = (array) _gofast_remove_admin_and_userslists_ldap_members_integrity_check($LdapServer->groupAllMembers("cn={$cn}_GROUPMANAGER,{$dn}"));
 
        //compare each arrays
-       if(count(array_udiff($ldap_ro,$theorically_ro, 'strcasecmp')) > 0 || count(array_udiff($ldap_admin,$theorically_admin, 'strcasecmp')) > 0 || count(array_udiff($ldap_standard,$theorically_standard, 'strcasecmp')) > 0
-          || count(array_udiff($theorically_ro, $ldap_ro, 'strcasecmp')) > 0 || count(array_udiff($theorically_admin, $ldap_admin, 'strcasecmp')) > 0 || count(array_udiff($theorically_standard, $ldap_standard, 'strcasecmp')) > 0  ){
+       if(count(array_udiff($ldap_ro,$theorically_ro, 'strcasecmp')) > 0 || count(array_udiff($ldap_admin,$theorically_admin, 'strcasecmp')) > 0 || count(array_udiff($ldap_standard,$theorically_standard, 'strcasecmp')) > 0 || count(array_udiff($ldap_groupmanager,$theorically_groupmanager, 'strcasecmp')) > 0
+          || count(array_udiff($theorically_ro, $ldap_ro, 'strcasecmp')) > 0 || count(array_udiff($theorically_admin, $ldap_admin, 'strcasecmp')) > 0 || count(array_udiff($theorically_standard, $ldap_standard, 'strcasecmp')) > 0 || count(array_udiff($theorically_groupmanager, $ldap_groupmanager, 'strcasecmp')) > 0  ){
            watchdog("GOFAST REBUILD MEMBERSHIP SPACE", $space->nid);
 
             $LdapServer = gofast_ldap_server_load(GOFAST_LDAP_INT_SERVER);
@@ -2206,6 +2575,22 @@ function gofast_resynchro_ldap_membership_one_space($space){
                 if(count($not_in_ldap) > 0){
                     foreach($not_in_ldap as $entry){
                         $LdapServer->groupAddMember("cn={$cn}_STANDARD,{$dn}",  $entry);
+                    }
+                }
+
+           }
+
+            if(count(array_udiff($theorically_groupmanager, $ldap_groupmanager, 'strcasecmp')) > 0 || count(array_udiff($ldap_groupmanager, $theorically_groupmanager, 'strcasecmp' )) > 0){
+                $not_in_drupal = array_udiff($ldap_groupmanager, $theorically_groupmanager, 'strcasecmp');
+                $not_in_ldap = array_udiff($theorically_groupmanager, $ldap_groupmanager, 'strcasecmp');
+                if(count($not_in_drupal) > 0){
+                    foreach($not_in_drupal as $entry){
+                       $LdapServer->groupRemoveMember("cn={$cn}_GROUPMANAGER,{$dn}",  $entry);
+                    }
+                }
+                if(count($not_in_ldap) > 0){
+                    foreach($not_in_ldap as $entry){
+                        $LdapServer->groupAddMember("cn={$cn}_GROUPMANAGER,{$dn}",  $entry);
                     }
                 }
 
@@ -2497,25 +2882,25 @@ function gofast_dashboard_restart_service($called_manually = false){
     $service_name = $_GET["service"];
      switch ($service_name) {
           case 'alfresco':
-            $file = fopen("/var/www/d7/sites/default/files/restart_alfresco.txt", "w+");
+            $file = fopen(GOFAST_CONTROL_DIR . "/restart_alfresco.txt", "w+");
             fwrite($file, "restart");
             fclose($file);
             $return = array("OK");
           break;
           case 'bonita':
-            $file = fopen("/var/www/d7/sites/default/files/restart_bonita.txt", "w+");
+            $file = fopen(GOFAST_CONTROL_DIR . "/restart_bonita.txt", "w+");
             fwrite($file, "restart");
             fclose($file);
             $return = array("OK");
           break;
           case 'solr':
-            $file = fopen("/var/www/d7/sites/default/files/restart_solr.txt", "w+");
+            $file = fopen(GOFAST_CONTROL_DIR . "/restart_solr.txt", "w+");
             fwrite($file, "restart");
             fclose($file);
             $return = array("OK");
           break;
           case 'soffice':
-            $file = fopen("/var/www/d7/sites/default/files/restart_soffice.txt", "w+");
+            $file = fopen(GOFAST_CONTROL_DIR . "/restart_soffice.txt", "w+");
             fwrite($file, "restart");
             fclose($file);
             $return = array("OK");
@@ -2554,25 +2939,25 @@ function gofast_dashboard_stop_service(){
     $service_name = $_GET["service"];
      switch ($service_name) {
           case 'alfresco':
-            $file = fopen("/var/www/d7/sites/default/files/stop_alfresco.txt", "w+");
+            $file = fopen(GOFAST_CONTROL_DIR . "/stop_alfresco.txt", "w+");
             fwrite($file, "stop");
             fclose($file);
             $return = array("OK");
           break;
           case 'bonita':
-            $file = fopen("/var/www/d7/sites/default/files/stop_bonita.txt", "w+");
+            $file = fopen(GOFAST_CONTROL_DIR . "/stop_bonita.txt", "w+");
             fwrite($file, "stop");
             fclose($file);
             $return = array("OK");
           break;
           case 'solr':
-            $file = fopen("/var/www/d7/sites/default/files/stop_solr.txt", "w+");
+            $file = fopen(GOFAST_CONTROL_DIR . "/stop_solr.txt", "w+");
             fwrite($file, "stop");
             fclose($file);
             $return = array("OK");
           break;
           case 'soffice':
-            $file = fopen("/var/www/d7/sites/default/files/stop_soffice.txt", "w+");
+            $file = fopen(GOFAST_CONTROL_DIR . "/stop_soffice.txt", "w+");
             fwrite($file, "stop");
             fclose($file);
             $return = array("OK");
@@ -2585,7 +2970,7 @@ function gofast_dashboard_stop_service(){
 }
 
 function gofast_get_soffice_status(){
-  $filename = "/var/www/d7/sites/default/files/soffice_status.txt";
+  $filename = GOFAST_CONTROL_DIR . "/soffice_status.txt";
   if (file_exists($filename)){
     $file = fopen($filename, "r");
     $status = fread($file, filesize($filename));
@@ -2869,6 +3254,27 @@ function gofast_get_node_type($nid, $machine_type = FALSE){
   return $return_type;
 }
 
+/**
+ * Fetches the status of multiple nodes by their node IDs
+ *
+ * This function fetches directly for the database which may reduce the overhead
+ * of loading complete node objects
+ * @param numeric[] $nids Array of node IDs to fetch the status of.
+ * @return array<int,int> Array of node ID to status value.
+ */
+function gofast_get_node_status_multiple($nids) {
+  $query = db_select('node', 'n')
+    ->fields('n', array('nid', 'status'))
+    ->condition('nid', (array) $nids, "IN")
+    ->execute();
+  $results = $query->fetchAll();
+  $node_status = [];
+  foreach($results as $result) {
+    $nid = $result->nid;
+    $node_status[$nid] = $result->status;
+  }
+  return $node_status;
+}
 
 function gofast_get_node_type_multiple($nids, $machine_type = false){
   $query = db_select('node', 'n')
@@ -3207,7 +3613,7 @@ function gofast_xss_clean($str, $is_image = FALSE, $forbidden_tags = array("ifra
 	 */
   if (is_array($str)) {
     foreach ($str as $key => $value) {
-      $str[$key] = gofast_xss_clean($str[$key]);
+      $str[$key] = gofast_xss_clean($str[$key], $is_image, $forbidden_tags);
     }
 
     return $str;
@@ -3245,7 +3651,10 @@ function gofast_xss_clean($str, $is_image = FALSE, $forbidden_tags = array("ifra
   $str = preg_replace('#(&\#x?)([0-9A-F]+);?#i', "\\1\\2;", $str);
   $str = str_replace($hash, '&', $str);
 
-  $str = rawurldecode($str);
+  // Decode until stable, otherwise a doubly-encoded payload survives the filters
+  do {
+    $str = rawurldecode($str);
+  } while (preg_match('/%[0-9a-f]{2}/i', $str));
 
   /*
 	 * Convert character entities to ASCII
@@ -3381,9 +3790,8 @@ function gofast_xss_clean($str, $is_image = FALSE, $forbidden_tags = array("ifra
   unset($original);
 
   // Remove evil attributes such as style, onclick and xmlns
-  $js_events = ["onclick", "onblur", "oncanplay", "onafterprint", "onbeforeprint", "onbeforeunload", "oncanplaythrough", "oncontextmenu", "onchange", "ondblclick", "ondragover", "ondragleave", "ondragenter", "ondragend", "ondrag", "onended", "onemptied", "ondurationchange", "ondragstart", "ondrop", "onerror", "onformchange", "onfocus", "onforminput", "oninvalid", "oninput", "onhashchange", "onkeypress", "onkeydown", "onkeyup", "onloadeddata", "onmouseout", "onmouseover", "onmousedown", "onmousemove", "onmouseleave", "onmessage", "onloadstart", "onmouseup", "onplaying", "onplay", "onpopstate", "onratechange", "onprogress", "onreadystatechange", "onstorage", "onstalled", "onseeking", "onscroll", "onseeked", "onresize", "onredo", "onsuspend", "onundo", "onwaiting", "ontimeupdate", "onvolumechange", "onsubmit", "onreset", "onselect", "ontouchstart", "ontouchmove", "ontouchend", "ontouchcancel", "onload", "onloadend", "onmouseenter", "oncopy", "onpaste"];
-  // All javascript event handlers (e.g. onload, onclick, onmouseover), style, and xmlns
-  $evil_attributes = array(...$js_events, 'xmlns', 'formaction');
+  // Any on* attribute: a fixed list of event handlers always misses some (e.g. SVG onbegin)
+  $evil_attributes = array('(?<![\w-])on\w+', 'xmlns', 'formaction');
   if ($is_image === TRUE) {
     /*
 		 * Adobe Photoshop puts XML metadata into JFIF images,
@@ -3396,18 +3804,26 @@ function gofast_xss_clean($str, $is_image = FALSE, $forbidden_tags = array("ifra
     $count = 0;
     $attribs = array();
 
-    // find occurrences of illegal attribute strings with quotes (042 and 047 are octal quotes)
-    preg_match_all('/(' . implode('|', $evil_attributes) . ')\s*=\s*(\042|\047)([^\\2]*?)(\\2)/is', $str, $matches, PREG_SET_ORDER);
+    // Only look inside tags: plain text such as "one=two" is not an attribute.
+    // Quoted values are skipped whole, as a ">" inside them does not end the tag.
+    // The group repeats only on "=" and quotes, a long tag would exhaust the PCRE stack.
+    $in_tag = '<[a-z!\/](?:[^>="\']*?(?:=\s*"[^"]*"|=\s*\'[^\']*\'|[="\']))*?[^>="\']*?(?<=[\s"\'\/])';
 
-    foreach ($matches as $attr) {
-      $attribs[] = preg_quote($attr[0], '/');
-    }
+    foreach (array(
+      // with quotes (042 and 047 are octal quotes)
+      '((' . implode('|', $evil_attributes) . ')\s*=\s*(\042|\047)([^\\3]*?)(\\3))',
+      // without quotes
+      '((' . implode('|', $evil_attributes) . ')\s*=\s*([^\s>]*))',
+    ) as $evil_pattern) {
+      // On a PCRE failure, look everywhere rather than nowhere, for the attribute name only:
+      // an unquoted value read outside a tag could swallow the attribute of the next tag
+      if (preg_match_all('/' . $in_tag . $evil_pattern . '/is', $str, $matches, PREG_SET_ORDER) === FALSE) {
+        preg_match_all('/((' . implode('|', $evil_attributes) . ')\s*=)/is', $str, $matches, PREG_SET_ORDER);
+      }
 
-    // find occurrences of illegal attribute strings without quotes
-    preg_match_all('/(' . implode('|', $evil_attributes) . ')\s*=\s*([^\s>]*)/is', $str, $matches, PREG_SET_ORDER);
-
-    foreach ($matches as $attr) {
-      $attribs[] = preg_quote($attr[0], '/');
+      foreach ($matches as $attr) {
+        $attribs[] = preg_quote($attr[1], '/');
+      }
     }
 
     // replace illegal attribute strings that are inside an html tag
@@ -3743,6 +4159,146 @@ function gofast_iterable_any($iterable, $predicate = null) {
 }
 
 /**
+ * Generator that applies the given callback on each element of the input
+ * iterator and then flattens the result.
+ *
+ * This can be thought as combining a map operation and then a flatten by 1 level.
+ *
+ * # Examples
+ * ## basic example
+ * ```php
+ * gofast_iterable_flat_map([1, 2, 3], fn($it) => [$it, $it]);
+ * ```
+ *
+ * The process can be thought as `[1, 2, 3]`
+ *  => `iter([1, 1], [2, 2], [3, 3])`
+ *  => `iter(1, 1, 2, 2, 3, 3)`
+ *
+ * ## Flat iterator on multi-level collection
+ * This can be useful to create a flat iterator for items of objects in a collection:
+ * ```php
+ * $list = [
+ *   ['items' => ['1.1', '1.2']],
+ *   ['items' => ['2.1']],
+ *   ['items' => []],
+ *   ['items' => ['4.1', '4.2', '4.3']],
+ * ];
+ *
+ * // yields iter('1.1', '1.2', '2.1', '4.1', '4.2', '4.3')
+ * gofast_iterable_flat_map($list, fn($it) => $it['items']);
+ * ```
+ * ## Modifying key and value
+ * Flat map also allows modifying both key and value of an iterator at the same time.
+ * ```php
+ * // flip key and value on iterable
+ * gofast_iterable_flat_map(['a','b','c'], fn($value, $key) => [$value => $key]);
+ * ```
+ *
+ * ## Modifying length of iterable
+ * Flat map is also useful in any case where having an output iterator of different
+ * length from the input is needed.
+ *
+ * # Properties/Miscellanous information
+ *
+ * The returned iterable is lazy-evaluating.
+ *
+ * WARNING: This function does not alter the yielded keys, be mindful of overwrites
+ * when collecting the returned iterator to an array (like when using
+ * [`iterator_to_array`](https://www.php.net/manual/en/function.iterator-to-array.php)).
+ *
+ * NOTE: This function is a monad on iterables, its neutral element is:
+ * ```php
+ * fn($item, $key) => [$key => $item]
+ * ```
+ * It also has a "zero" element, using it as the second parameter will always
+ * lead to an empty iterator:
+ * ```php
+ * fn($_item, $_key) => []
+ * ```
+ *
+ * NOTE: `iter()` in the examples above represents a non-specific iterator,
+ * in practice, it is a Generator.
+ *
+ * @template TKey Input iterable key type
+ * @template TValue Input iterable value type
+ * @template TYieldKey Output/callback returned iterable key type
+ * @template TYieldValue Output/callback returned iterable value type
+ * @param iterable<TKey,TValue> $iterable Input iterable to flat map over
+ * @param callable(TValue $value,TKey $key):iterable<TYieldKey,TYieldValue> $callback
+ *  Callback to apply to each element
+ * @return iterable<TYieldKey,TYieldValue> An iterable yielding the values and
+ *  keys yielded by the iterables returned by the callback.
+ */
+function gofast_iterable_flat_map($iterable, $callback) {
+  foreach ($iterable as $key => $value) {
+    yield from $callback($value, $key);
+  }
+}
+
+/**
+ * Transform an array into another by mapping individual values to a sequence of
+ * corresponding new entries for the final array.
+ *
+ * This can be viewed as a map followed by a single level flatten operation.
+ *
+ * Flat map operations can be used to implement operations that might modify the
+ * array in multiple ways, such as changing keys and values at once, modifying
+ * the length, such as filtering out elements while possibly mapping their value,
+ * etc.
+ *
+ * Unlike `gofast_iterable_flat_map`, this operation is eagerly executed.
+ *
+ * @see gofast_iterable_flat_map() For more information on general flat map operation.
+ *
+ * @template TKey Input iterable key type
+ * @template TValue Input iterable value type
+ * @template TResultKey Output/callback returned array key type
+ * @template TResultValue Output/callback returned arry value type
+ * @param (array<TKey, TValue>) $array
+ *    The array to transform.
+ * @param (callable(TValue $value, TKey $key): iterable<TResultKey, TResultValue>) $callback
+ *    The transformer function called for each element of `$array` returning the
+ *    new sequence of elements to replace it in the new array.
+ * @param ('merge' | 'replace') $collect
+ *    How the transform sequences are collected together into a single array.
+ *
+ *    The available options are currently:
+ *    - `'merge'` (default): Similar to `array_merge`, numeric keys are renumbered,
+ *      non-numeric keys are kept as-is. Note that a duplicate string key-value
+ *      pair returned from a transform will overwrite a previous key-value pair.
+ *
+ *    - `'replace'`: Similar to `array_replace`, all keys of the returned sequences
+ *      are preserved as-is. If a key is returned twice, the latest value is kept.
+ * @return (array<TResultKey, TResultValue>)
+ */
+function gofast_array_flat_map(array $array, callable $callback, string $collect = 'merge'): array {
+  // Select how the key-value pairs are inserted into the result array.
+  $collector = match ($collect) {
+    // Similar to `array_merge`, keep string keys, concatenate/renumber numeric keys.
+    'merge' => function (&$result, $key, $value) {
+      if (is_numeric($key)) {
+        $result[] = $value;
+      } else {
+        $result[$key] = $value;
+      }
+    },
+
+    // Similar to `array_replace`, replace key if it has already been set.
+    'replace' => function(&$result, $key, $value) {
+      $result[$key] = $value;
+    }
+  };
+
+  // Flat map array and collect into new array
+  $result = [];
+  foreach (gofast_iterable_flat_map($array, $callback) as $key => $value) {
+    $collector($result, $key, $value);
+  }
+
+  return $result;
+}
+
+/**
  * @var string Max date time value according to MySQL's documentation as of 2024-05-24
  * @see https://dev.mysql.com/doc/refman/8.0/en/datetime.html
  */
@@ -3826,6 +4382,66 @@ function gofast_get_node_bundle_label($node_type, $prevent_translation = TRUE) {
 }
 
 /**
+ * Formats a list of strings to enumerate for display.
+ *
+ * The "and" conjunction is translated, as well as the separator as needed.
+ *
+ * input/output examples:
+ * ```php
+ * assert(gofast_format_enumerated_list([]) === '');
+ * assert(gofast_format_enumerated_list(['$a']) === '$a');
+ * assert(gofast_format_enumerated_list(['$a','$b']) === '$a and $b');
+ * assert(gofast_format_enumerated_list(['$a','$b','$c']) === '$a, $b and $c');
+ * assert(
+ *   gofast_format_enumerated_list(['<span>a</span>','<span>b</span>','<span>c</span>'])
+ *   === '<span>a</span>, <span>b</span> and <span>c</span>',
+ * );
+ * ```
+ *
+ * @param array $values List of values to display in an enumerated list fashion
+ * @return string Rendered text of list.
+ */
+function gofast_format_enumerated_list($values) {
+  if (!isset($values) || count($values) === 0) {
+    return "";
+  }
+
+  $values = array_map(strval(...), $values);
+  $last = array_pop($values);
+  if (count($values) === 0) {
+    return $last;
+  }
+
+  // Format list in a localised manner:
+  // Take first value to initialise reduction.
+  $first = array_shift($values);
+
+  // Join all elements but last (popped earlier) using localised separator format.
+  $head = array_reduce(
+    $values,
+    fn($head, $tail) => t(
+      '!head, !tail',
+      [
+        '!head' => $head,
+        '!tail' => $tail,
+      ],
+      ['context' => 'gofast:list_enumeration'],
+    ),
+    $first,
+  );
+
+  // Add last element with localised end separator.
+  return t(
+    '!head and !last',
+    [
+      '!head' => $head,
+      '!last' => $last,
+    ],
+    ['context' => 'gofast:list_enumeration'],
+  );
+}
+
+/**
  * Get templated explorer tree
  * @param array $tree
  * @return string HTML string of templated explorer tree
@@ -3848,4 +4464,136 @@ function gofast_get_allowed_no_cors_requests(){
   return [
     '/api/webform/get_image',
   ];
+}
+
+/**
+ * Get the role id from role name and specific bundle
+ *
+ * @param string $role_name The role name (e.g. 'group contributor')
+ * @param string $bundle The node bundle type (e.g. 'userlist')
+ * @return string The space path of the folder
+ */
+function gofast_get_rid_from_role_name_and_bundle($role_name, $bundle) {
+  
+    $roles = og_roles('node', $bundle, 0, FALSE, FALSE);
+
+    $roles = array_flip($roles);
+
+    return $roles[$role_name] ?? null;
+}
+
+/**
+ * Get the space path from subfolder path
+ *
+ * @param string $folder_path
+ * @return string The space path of the folder
+ */
+function gofast_get_space_path_from_folder_path($folder_path) {
+
+  $segments = explode("/", $folder_path);
+  $removed_segments = [];
+
+  // remove path segments until there is one starting with an underscore (a
+  // space name) or until there are none left
+  while (
+    ($last_segment = end($segments)) !== false
+    && !str_starts_with($last_segment, "_")
+  ) {
+    array_unshift($removed_segments, array_pop($segments));
+  }
+
+  // no segment left, means there was no space, should not happen unless
+  // $folder_path is not a valid GoFAST path
+  if (empty($segments)) {
+    return $folder_path;
+  }
+
+  $space_path = implode("/", $segments);
+  return $space_path;
+}
+
+/**
+ * Replace a portion of a string with another string using multibyte-safe functions.
+ *
+ * This function behaves similarly to substr_replace() but is safe for UTF-8
+ * and other multibyte encodings by relying on mb_substr().
+ *
+ * Examples:
+ * mb_substr_replace('Héllo World', 'PHP', 6, 5); // "Héllo PHP"
+ * mb_substr_replace('HelloWorld', ' ', 5, 0);    // "Hello World"
+ * mb_substr_replace('Hello World', 'PHP', 6);    // "Hello PHP"
+ *
+ * @param string      $string      The input string.
+ * @param string      $replacement The replacement string.
+ * @param int         $start       Position at which to begin replacing (0-based).
+ *                                 Negative values count from the end of the string.
+ * @param int|null    $length      Number of characters to replace. If null, replaces
+ *                                 everything from $start to the end of the string.
+ *                                 If 0, the replacement is inserted without removing characters.
+ * @param string|null $encoding    Character encoding (default: UTF-8).
+ *
+ * @return string The resulting string after replacement.
+ *
+ * @throws \ValueError If an invalid encoding is provided (PHP 8+).
+ */
+function gofast_mb_substr_replace($string, $replacement, $start, $length = null, $encoding = 'UTF-8') {
+    $prefix = mb_substr($string, 0, $start, $encoding);
+    $suffix = $length === null
+        ? ''
+        : mb_substr($string, $start + $length, null, $encoding);
+
+    return $prefix . $replacement . $suffix;
+}
+
+/**
+ * Menu access callback: the current user may view node $nid.
+ */
+function gofast_node_view_access($nid) {
+  if (!user_access('access content') || !is_numeric($nid)) {
+    return FALSE;
+  }
+  $node = node_load($nid);
+  return $node && node_access('view', $node);
+}
+
+/**
+ * Menu access callback: The current user may view the contents of node $nid.
+ *
+ * This is different from gofast_node_view_access for spaces where, depending on
+ * partitionning, users may view the space and some basic informations, but not
+ * everything unless they are a member of said space.
+ *
+ * @param numeric $nid
+ *   Node ID for which to check access.
+ *
+ * @return bool
+ *   Whether the user can view the node as a member/access its content.
+ *
+ * @see gofast_node_view_access()
+ *   To simply check if a user can view simple informations about a node, or if
+ *   the user can see that a node exists.
+ */
+function gofast_node_member_view_access($nid) {
+  // Cannot know about node and basic informations? Deny access.
+  if (!gofast_node_view_access($nid)) {
+    return FALSE;
+  }
+
+  $node = node_load($nid);
+
+  // Not a space? Cannot check if user is a member, just reflect view access by
+  // allowing access.
+  // FIXME? Make it work with other group-like entities such as user lists?
+  if (!gofast_og_is_space($node)) {
+    return TRUE;
+  }
+
+  // Public spaces and the shared root spaces are open to non-members; personal
+  // spaces count as roots but stay restricted.
+  if ($node->type === 'public' || ($node->type !== 'private_space' && gofast_og_is_root_space($node))) {
+    return TRUE;
+  }
+
+  // User must be a member.
+  return gofast_og_is_space_member($nid);
 }

@@ -25,39 +25,43 @@
         
         //Process the request
         $.post(location.origin + "/taxonomy/add_locations/process", {process_nid : nid, process_locations : locations, broadcast : is_broadcast}).done(function(data){
-          var locations_output = JSON.parse(data);
-          var success = true;
-          
-          //Fetch into the locations array
-          locations_output.forEach(function(location){
-            var found = false;
-            //Fetch into all supposed locations
-            $.each($(panel).find('.panel-body').find('ul').find('li'), function(i, slocation){
-              if($(slocation).text().trim() == location){
-                $(slocation).html($(slocation).text() + " <i class='fa fa-check' style='color:green' aria-hidden='true'></i>");
-                found = true;
-                return true;
+          if(data?.error) {
+            $(panel).find('.panel-body').find(".add-locations-info").html("<i class='fa fa-times' style='color:red' aria-hidden='true'></i> " + data.error);
+          } else {
+            var locations_output = JSON.parse(data);
+            var success = true;
+            
+            //Fetch into the locations array
+            locations_output.forEach(function(location){
+              var found = false;
+              //Fetch into all supposed locations
+              $.each($(panel).find('.panel-body').find('ul').find('li'), function(i, slocation){
+                if($(slocation).text().trim() == location){
+                  $(slocation).html($(slocation).text() + " <i class='fa fa-check' style='color:green' aria-hidden='true'></i>");
+                  found = true;
+                  return true;
+                }
+              });
+              if(!found){
+                //Not found in the original expected locations
+                $(panel).find('.panel-body').find('ul').append("<li>" + location + " <i class='fa fa-plus' style='color:red' aria-hidden='true'></i></li>");
+                success = false;
               }
             });
-            if(!found){
-              //Not found in the original expected locations
-              $(panel).find('.panel-body').find('ul').append("<li>" + location + " <i class='fa fa-plus' style='color:red' aria-hidden='true'></i></li>");
-              success = false;
+            //Check if all locations was applied
+            $.each($(panel).find('.panel-body').find('ul').find('li'), function(i, plocation){
+              if($(plocation).html().indexOf("fa-plus") != -1){
+                success = false;
+              }else if($(plocation).html().indexOf("fa-check") == -1){
+                $(plocation).html($(plocation).text() + " <i class='fa fa-times' style='color:red' aria-hidden='true'></i>");
+                success = false;
+              }
+            });
+            if(success){
+              $(panel).find('.panel-body').find(".add-locations-info").html("<i class='fa fa-check' style='color:green' aria-hidden='true'></i> " + Drupal.t("Processed !", {}, {context: 'gofast:taxonomy'}));
+            }else{
+              $(panel).find('.panel-body').find(".add-locations-info").html("<i class='fa fa-times' style='color:red' aria-hidden='true'></i> " + Drupal.t("Processed but you might not have some necessary rights.", {}, {context: 'gofast:taxonomy'}));
             }
-          });
-          //Check if all locations was applied
-          $.each($(panel).find('.panel-body').find('ul').find('li'), function(i, plocation){
-            if($(plocation).html().indexOf("fa-plus") != -1){
-              success = false;
-            }else if($(plocation).html().indexOf("fa-check") == -1){
-              $(plocation).html($(plocation).text() + " <i class='fa fa-times' style='color:red' aria-hidden='true'></i>");
-              success = false;
-            }
-          });
-          if(success){
-            $(panel).find('.panel-body').find(".add-locations-info").html("<i class='fa fa-check' style='color:green' aria-hidden='true'></i> " + Drupal.t("Processed !", {}, {context: 'gofast:taxonomy'}));
-          }else{
-            $(panel).find('.panel-body').find(".add-locations-info").html("<i class='fa fa-times' style='color:red' aria-hidden='true'></i> " + Drupal.t("Processed but you might not have some necessary rights.", {}, {context: 'gofast:taxonomy'}));
           }
           var barProgressValue = ($('#modal-content .progress-bar').width()-1) / barWidth * 100;
           var progressBarPartValue = progressBarPart / barWidth * 100;
@@ -119,7 +123,7 @@
               if($(slocation).text().replace(/\\n/g, "").trim() == location){
                 $(slocation).html($(slocation).text() + " <i class='fa fa-check' style='color:green' aria-hidden='true'></i>");
                 found = true;
-                return true;
+                return false;
               }
             });
             if(!found){
@@ -138,9 +142,25 @@
             }
           });
           if(success){
-            $(panel).find('.panel-body').find(".manage-locations-info").html("<i class='fa fa-check' style='color:green' aria-hidden='true'></i> " + Drupal.t("Processed !", {}, {context: 'gofast:taxonomy'}));
+            $(panel)
+              .find(".panel-body")
+              .find(".manage-locations-info")
+              .html(
+                "<i class='fa fa-check' style='color:green' aria-hidden='true'></i> " +
+                  Drupal.t("Processed !", {}, { context: "gofast:taxonomy" }),
+              );
           }else{
-            $(panel).find('.panel-body').find(".manage-locations-info").html("<i class='fa fa-times' style='color:red' aria-hidden='true'></i> " + Drupal.t("Processed but you might not have some necessary rights.", {}, {context: 'gofast:taxonomy'}));
+            $(panel)
+              .find(".panel-body")
+              .find(".manage-locations-info")
+              .html(
+                "<i class='fa fa-times' style='color:red' aria-hidden='true'></i> " +
+                  Drupal.t(
+                    "Processed but you might not have some necessary rights or a file with the same name exists in at least one of the destinations.",
+                    {},
+                    { context: "gofast:taxonomy" },
+                  ),
+              );
           }
           var barProgressValue = ($('#modal-content .progress-bar').width()-1) / barWidth * 100;
           var progressBarPartValue = progressBarPart / barWidth * 100;
@@ -239,7 +259,8 @@
               
                 // Replace spinner by check icon
                 $('#permission-synchro-docs').find('.spinner').replaceWith("<i class='fa fa-check ml-5' style='color:green' aria-hidden='true'></i>");
-                
+                // Reload file browser
+                Gofast.ITHit.reload();
               }
             });
 
@@ -258,13 +279,37 @@
   };
 
 
+  /*
+   * Refresh the file browser listing and its tree, so that the changes brought by a mass processing
+   * (renaming triggered by the naming rules, modification date...) show up without a manual reload of the page
+   */
+  Gofast.taxonomy_refresh_explorer = function(){
+    //The mass processing can also be run from the cart or a view, where there is no file browser to refresh
+    if(typeof Gofast.ITHit !== "undefined" && $("#file_browser_full_files_table").length){
+      Gofast.ITHit.reload();
+    }
+    //The mobile browser ignores the call by itself when it is not the displayed panel
+    if(typeof Gofast.ITHitMobile !== "undefined"){
+      Gofast.ITHitMobile.reload();
+    }
+  };
+
   Gofast.taxonomy_manage_taxonomy_process = function(){
     var panels = $(".manage-locations-panel");
     var panelsProgressBar = $("#locations-panels-progress .progress-bar");
     var numberOfPanels = panels.length;
     var processedPanels = 0;
+    var settledPanels = 0;
     var timeout = 0;
-    
+
+    //Refresh the explorer once every panel has been handled, whatever its outcome
+    var panelSettled = function(){
+      settledPanels++;
+      if(settledPanels >= numberOfPanels){
+        Gofast.taxonomy_refresh_explorer();
+      }
+    };
+
     //For each panel, process the request and check the result
     $.each(panels, function(i, panel){
       setTimeout(function(){
@@ -272,6 +317,7 @@
         var nid = $(panel).find('#nid').text();
         if(nid > 0){}else{
           $(panel).find('.panel-body').find(".manage-locations-info").html("<i class='fa fa-times' style='color:red' aria-hidden='true'></i> " + Drupal.t("This modification cannot be done currently. Please try again later.", {}, {context: 'gofast:taxonomy'}));
+          panelSettled();
           return true;
         }
         //Retrieve vid
@@ -313,7 +359,7 @@
               $(panel).find('.panel-body').find(".manage-locations-info").html("<i class='fa fa-times' style='color:red' aria-hidden='true'></i> " + Drupal.t("Error, you might not have some necessary rights.", {}, {context: 'gofast:taxonomy'}));
             }
           }
-        });
+        }).always(panelSettled);
       }, timeout);
       timeout = timeout+1000;
     });

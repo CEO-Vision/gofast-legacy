@@ -180,6 +180,31 @@ function gofast_features_taxonomy_field_default_field_bases() {
     'type' => 'taxonomy_term_reference',
     );
 
+  // Exported field_base: 'field_state_has_og'.
+  $field_bases['field_state_has_og'] = [
+    'field_name' => 'field_state_has_og',
+    'active' => 1,
+    'cardinality' => 1,
+    'deleted' => 0,
+    'entity_id_type' => NULL,
+    'entity_types' => [],
+    'indexes' => [
+      'value' => [
+        0 => 'value',
+      ],
+    ],
+    'locked' => 0,
+    'module' => 'list',
+    'type' => 'list_boolean',
+    'settings' => [
+      'allowed_values' => [
+        0 => '',
+        1 => '',
+      ],
+    ],
+    'translatable' => 0,
+  ];
+
   // Exported field_base: 'field_tags_bundle'.
   $field_bases['field_tags_bundle'] = array(
     'active' => 1,
@@ -217,6 +242,30 @@ function gofast_features_taxonomy_field_default_field_bases() {
     'translatable' => 0,
     'type' => 'number_integer',
   );
+
+  $field_bases['field_confidentiality'] = [
+    'field_name' => 'field_confidentiality',
+    'active' => 1,
+    'cardinality' => 1,
+    'deleted' => 0,
+    'entity_id_type' => NULL,
+    'entity_types' => [],
+    'indexes' => [
+      'value' => [
+        0 => 'value',
+      ],
+    ],
+    'locked' => 0,
+    'module' => 'list',
+    'type' => 'list_boolean',
+    'settings' => [
+      'allowed_values' => [
+        0 => '',
+        1 => '',
+      ],
+    ],
+    'translatable' => 0,
+  ];
 
   return $field_bases;
 }

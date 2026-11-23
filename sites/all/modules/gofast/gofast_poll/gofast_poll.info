@@ -5,4 +5,4 @@ core = 7.x
 
 dependencies[] = gofast
 
-version = "7.x-4.4.0"
+version = "7.x-4.5.9"

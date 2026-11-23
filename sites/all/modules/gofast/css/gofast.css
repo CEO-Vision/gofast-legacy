@@ -516,6 +516,28 @@ a.level0[title="Sites"]{
   flex-direction: column;
 }
 
+.card-body .gofastDashboardCard {
+  height: 100%;
+}
+
+.calendar-table-wrapper {
+  overflow-y: auto;
+  flex-grow: 1;
+  flex-shrink: 1;
+  flex-basis: 0;
+  min-height: 20%;
+}
+
+@media screen and (max-width: 767px) {
+  .calendar-table-wrapper {
+    /*
+    Allow items in table to take as much space as needed vertically in mobile
+    mode since the cards are stacked vertically instead of in a grid.
+    */
+    flex-basis: auto;
+  }
+}
+
 /************************************
 * MODAL override theme
 *************************************/
@@ -1090,20 +1112,7 @@ div #revision-list {
 }
 
 input.xAC + li.xAC-label {
-  position: absolute;
-  top: 6px;
-  left: 2px;
-  z-index: 10;
-  overflow: hidden;
-  background: #fff;
-  list-style: none;
-  padding: 0 12px;
-  white-space: nowrap;
-  width: max-content;
-}
-
-.xAC-label a {
-  color: #333;
+  display: none;
 }
 
 #backdrop {
@@ -1725,7 +1734,7 @@ nav#gofast_nav>div>ul.menu>li.last {
   color:#3498DB !important;
 }
 
-.fa-folder:not(.n-color){
+:is(.fa-folder, .fa-folders):not(.n-color) {
   color:#3498DB !important;
 }
 
@@ -2336,7 +2345,7 @@ body.gf-full-page.navbar-is-fixed-top{
       height:100%;
   }
 
-  .col-xs-1, .col-2xl-1, .col-sm-1, .col-md-1, .col-lg-1, .col-xs-2, .col-2xl-2, .col-sm-2, .col-md-2, .col-lg-2, .col-xs-3, .col-2xl-3, .col-sm-3, .col-md-3, .col-lg-3, .col-xs-4, .col-2xl-4, .col-sm-4, .col-md-4, .col-lg-4, .col-xs-5, .col-2xl-5, .col-sm-5, .col-md-5, .col-lg-5, .col-xs-6, .col-2xl-6, .col-sm-6, .col-md-6, .col-lg-6, .col-xs-7, .col-2xl-7, .col-sm-7, .col-md-7, .col-lg-7, .col-xs-8, .col-2xl-8, .col-sm-8, .col-md-8, .col-lg-8, .col-xs-9, .col-2xl-9, .col-sm-9, .col-md-9, .col-lg-9, .col-xs-10 .col-2xl-10, .col-sm-10, .col-md-10, .col-lg-10, .col-xs-11 .col-2xl-11, .col-sm-11, .col-md-11, .col-lg-11, .col-xs-12 .col-2xl-12, .col-sm-12, .col-md-12, .col-lg-12 {
+.col, .col-xs-1, .col-2xl-1, .col-sm-1, .col-md-1, .col-lg-1, .col-xs-2, .col-2xl-2, .col-sm-2, .col-md-2, .col-lg-2, .col-xs-3, .col-2xl-3, .col-sm-3, .col-md-3, .col-lg-3, .col-xs-4, .col-2xl-4, .col-sm-4, .col-md-4, .col-lg-4, .col-xs-5, .col-2xl-5, .col-sm-5, .col-md-5, .col-lg-5, .col-xs-6, .col-2xl-6, .col-sm-6, .col-md-6, .col-lg-6, .col-xs-7, .col-2xl-7, .col-sm-7, .col-md-7, .col-lg-7, .col-xs-8, .col-2xl-8, .col-sm-8, .col-md-8, .col-lg-8, .col-xs-9, .col-2xl-9, .col-sm-9, .col-md-9, .col-lg-9, .col-xs-10 .col-2xl-10, .col-sm-10, .col-md-10, .col-lg-10, .col-xs-11 .col-2xl-11, .col-sm-11, .col-md-11, .col-lg-11, .col-xs-12 .col-2xl-12, .col-sm-12, .col-md-12, .col-lg-12 {
   position: relative;
   min-height: 1px;
   padding-left: 6px !important;
@@ -2634,7 +2643,7 @@ a.username{
     display: none;
 }
 
-.gofast-node-actions.close{
+.gofast-node-actions.closed{
     float: none;
     opacity: 1;
 }
@@ -3176,43 +3185,6 @@ a.cke_dialog_ui_button_ok {
 #unzip > span.navi-icon > i, #Compress > span.navi-icon > i{
   color:#b5b5c3!important;
 }
-/**
-* Responsive Fixes in lower resolution devices on common parts of the platform
- */
-@media screen and (max-width: 768px) {
-
-  #gofastBrowserNavTabs{
-    flex-wrap: wrap!important;
-  }
-
-  #file_browser_full_toolbar > div > div:nth-child(1), #file_browser_full_toolbar > div > div:nth-child(2){
-    flex-wrap: wrap!important;
-  }
-
-
-  #gofastKanbanModal > div > div > div.modal-taskDetail.overflow-auto.modal-body > div > div > div.col-lg-8.KanbanCard_leftCol > div:nth-child(9) > div > div > div > div.GofastTodoList__list{
-    overflow-x: scroll!important;
-  }
-
-  #gofastKanbanModal > div > div > div.modal-taskDetail.overflow-auto.modal-body > div > div > div.col-lg-8.KanbanCard_leftCol > div:nth-child(9) > div > div > div > div.GofastTodoList__list > div{
-    display: flex;
-    grid-template-columns: 20px 1fr 95px 95px 61px;
-    grid-column-gap: 1rem;
-    min-height: 33px;
-    margin: 1.3rem 0;
-    flex-wrap: nowrap;
-    word-break: normal;
-  }
-
-  #gofastKanbanModal > div > div > div.modal-taskDetail.overflow-auto.modal-body > div > div > div.col-lg-8.KanbanCard_leftCol > div:nth-child(9) > div > div > div > button > font > font{
-    display: block!important;
-  }
-
-}
-
-#gofastKanbanModal > div > div > div.modal-taskDetail.overflow-auto.modal-body > div > div > div.col-lg-4.KanbanCard_rightCol > div > div > div{
-  margin-top: 15px!important;
-}
 
 #gofastAdminTabContent #edit-archivists .form-item-ac-list-tags-list-recipients{
   margin-bottom: 0rem;
@@ -3290,6 +3262,34 @@ a.cke_dialog_ui_button_ok {
   background-color:  #F5F5F5;
 }
 
+/*
+ * polyfill Bootstrap 5's gap-* classes
+ * :where has 0 specificity so normally written rules should override it in the future
+ */
+:where(.gap-0) {
+  gap: 0 !important;
+}
+
+:where(.gap-1) {
+  gap: 0.25rem !important;
+}
+
+:where(.gap-2) {
+  gap: 0.5rem !important;
+}
+
+:where(.gap-3) {
+  gap: 1rem !important;
+}
+
+:where(.gap-4) {
+  gap: 1.5rem !important;
+}
+
+:where(.gap-5) {
+  gap: 3rem !important;
+}
+
 /* Fix tagify read-only inputs' hatching leaving a gap not covering some of the tag */
 .tagify[readonly]:not(.tagify--mix) .tagify__tag::before {
   background: linear-gradient(45deg, var(--tag-bg) 25%, transparent 25%, transparent 50%, var(--tag-bg) 50%, var(--tag-bg) 75%, transparent 75%, transparent) 0/5px 5px;
@@ -3307,6 +3307,33 @@ a.cke_dialog_ui_button_ok {
 /* Remove Keen's readonly tag hatching */
 .tagify[readonly]:not(.tagify--mix) .tagify__tag > div::before {
   content: unset;
+}
+
+/*
+ * Allow large rounded corners on input groups
+ *
+ * WARNING: Due to how bootstrap handles rounded corners in input groups, the
+ * following CSS rules and selectors might suck a lot to understand.
+ */
+
+:scope {
+  --rounded-lg-radius: 0.85rem;
+}
+
+/* First child element if it is not an input-group-prepend */
+.gf-input-group-rounded-lg > :first-child:not(.input-group-prepend),
+/* First child of the input-group-prepend element */
+.gf-input-group-rounded-lg > .input-group-prepend:first-child > :first-child {
+  border-top-left-radius: var(--rounded-lg-radius, 0.85rem);
+  border-bottom-left-radius: var(--rounded-lg-radius, 0.85rem);
+}
+
+/* Last child element if it is not an input-group-append */
+.gf-input-group-rounded-lg > :last-child:not(.input-group-append),
+/* Last child of the input-group-append element */
+.gf-input-group-rounded-lg > .input-group-append:last-child > :last-child {
+  border-top-right-radius: var(--rounded-lg-radius, 0.85rem);
+  border-bottom-right-radius: var(--rounded-lg-radius, 0.85rem);
 }
 
 /*
@@ -3346,4 +3373,61 @@ a.cke_dialog_ui_button_ok {
   bottom: 0;
   right: 0;
   transform: translate(30%, 40%);
+}
+
+/*
+Allow selectively enabling overflow for datatable cells by adding the
+.gf-datatable-allow-overflow class to the first element in the cell. This is
+useful to position elements in the blank space left in-between the cells that
+happens for some reason (either Keen or our fault).
+
+The selector is based on the one used by Keen, so we can avoid !important.
+*/
+.datatable.datatable-default
+  > .datatable-table
+  > :is(.datatable-head, .datatable-body, .datatable-foot)
+  .datatable-row
+  > .datatable-cell
+  > span:has(> .gf-datatable-allow-overflow) {
+    overflow: visible;
+}
+
+.join-request-message-icon-badge {
+  position: absolute;
+  top: 0;
+  right: 0;
+  transform: translate(50%, -50%);
+}
+
+/*
+ * Override image cropper modal transparency that was set by "Keen"
+ * theme when the container div has the `cropper-transparent-modal`
+ * class.
+ */
+.cropper-transparent-modal .cropper-modal {
+  opacity: 0.5;
+}
+
+/* Preview element container */
+.gofast-preview-container {
+  /*
+   * Force first (hopefully single) displayed element to stretch over the
+   * entirety of the preview container
+   */
+  display: grid;
+  grid-template: 100% / 100%;
+  align-items: stretch;
+  justify-items: stretch;
+
+  /* Ensure the element takes the entirety of the remaining space, no more no less. */
+  flex: 1 1 0;
+  /*
+   * We do have to set the height to a smaller value thant what it should be
+   * otherwise the element does not grow properly to fill the container's
+   * remaining space.
+   *
+   * Leave a visible bit in case the element is too small for easier diagnosis
+   * and debugging (hopefully).
+   */
+  height: 25px;
 }

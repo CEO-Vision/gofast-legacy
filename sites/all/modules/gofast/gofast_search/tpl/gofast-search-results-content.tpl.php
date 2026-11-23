@@ -17,24 +17,41 @@ if (!empty($block_array)) {
     <?php endif; ?>
     <div class="card-body d-flex flex-column h-100 px-0 pb-0 pt-3">
         <?php
-            if (!empty($suggestions)):
+        // A keyword starting with a wildcard forces Solr to enumerate the whole term
+        // dictionary of every searched field. Tell the user upfront rather than let
+        // him wonder why the search is slow or came back without its filters.
+        $solr_query = apachesolr_current_query(GOFAST_SEARCH_ENV_ID);
+        if ($solr_query && gofast_search_has_leading_wildcard($solr_query->getParam('q'))) : ?>
+            <div class="alert alert-custom alert-light-warning fade show mb-5 mx-6" role="alert">
+                <div class="alert-icon"><i class="fas fa-info-circle"></i></div>
+                <div class="alert-text"><?= t("Your search starts with a wildcard (* or ?). This kind of search is much slower and its results and filters may be incomplete. Place the wildcard at the end of the word instead, or use the advanced search to look into a specific field.", array(), array('context' => 'gofast:gofast_search')) ?></div>
+            </div>
+        <?php endif; ?>
+        <?php
+          if (!empty($suggestions)):
             // we'll build the suggestion link from the current link not to lose activated search facets
             $actual_link = "https://$_SERVER[HTTP_HOST]$_SERVER[REQUEST_URI]";
+            $search_query = $response->responseHeader->params->q;
+            $suggestLinkParsed = $search_query;
             foreach ($suggestions as $keyword => $suggestion):
-                $suggestLinkParsed = "/search/solr/" . $suggestion->suggestion[0]->word;
-                if (!empty($_SERVER["QUERY_STRING"])) {
-                    // don't keep the ajaxification "url" query param in the suggestion link (just keep the filters)
-                    $queryString = preg_replace('/url=[^&?]*/', '', rawurldecode($_SERVER["QUERY_STRING"]));
-                    if (!str_starts_with($queryString, "?")) {
-                        $queryString = "?" . $queryString;
-                    }
-                    $suggestLinkParsed .= $queryString;
+              $word_length = $suggestion->endOffset - $suggestion->startOffset;
+              $suggestLinkParsed = gofast_mb_substr_replace($search_query, $suggestion->suggestion[0]->word, $suggestion->startOffset, $word_length);
+              // Remove all wildcard from query
+              $suggestLinkParsed = str_replace('*', '', $suggestLinkParsed);
+              $queryString = preg_replace('/url=[^&?]*/', '', rawurldecode($_SERVER["QUERY_STRING"]));
+              if (!empty($queryString)) {
+                // don't keep the ajaxification "url" query param in the suggestion link (just keep the filters)
+                if (!str_starts_with($queryString, "?")) {
+                    $queryString = "?" . $queryString;
                 }
-                ?>
-            <div class="px-6 card-text"><?= t('Did you mean') . " <a href='" . $suggestLinkParsed . "'>" . $suggestion->suggestion[0]->word . "</a> " . t('instead of @keyword ?', array("@keyword" => $keyword), array("context" => "gofast:gofast_search")) ?></div>
+                $suggestLinkParsed .= $queryString;
+              }
+              $suggestLinkParsed = "/search/solr/".$suggestLinkParsed;
+        ?>
+              <div class="px-6 card-text"><?= t('Did you mean') . " <a href='" . $suggestLinkParsed . "'>" . $suggestion->suggestion[0]->word . "</a> " . t('instead of @keyword ?', array("@keyword" => $keyword), array("context" => "gofast:gofast_search")) ?></div>
         <?php
             endforeach;
-            endif;
+          endif;
         ?>
         <div id="gofastSearchSortBy" class="px-6 d-flex flex-column justify-content-center align-items-start">
             <div class="my-2 d-flex flex-lg-row align-items-lg-center flex-column align-items-start" style="gap: .5rem;">

@@ -492,7 +492,32 @@
 
     }
 
-    function handleAddSpaceFilter(data){
+    /**
+     * Adds a space to activity feed filters.
+     *
+     * Updates filter display and filter cookies.
+     *
+     * @param {Readonly<{
+     *  id: string,
+     *  text: string,
+     *  node: null | Readonly<{
+     *      isRoot?: boolean
+     *  }>,
+     * }>} data jsTree node object of the space to add to filters.
+     */
+    function handleAddSpaceFilter(node){
+        // Prevent adding root space as filter, notify user with toast message.
+        if (node.data?.isRoot) {
+            Gofast.toast(
+                Drupal.t(
+                    "You cannot filter by root spaces in the activity feed.",
+                    {},
+                    { context: "gofast:gofast_activity_feed" },
+                ),
+                "error",
+            );
+            return;
+        }
 
         const filter = getFiltersFromCookies();
         const { space_filters } = filter;
@@ -506,7 +531,7 @@
         if (space_filters.length > 0){
 
             var result = space_filters.find(function(e) {
-                return e.id === data.id; //Change 3 to what you want to search for
+                return e.id === node.id; //Change 3 to what you want to search for
               });
 
             if(!result){
@@ -514,8 +539,8 @@
                 newSpaceFilter = [
                     ...space_filters,
                     {
-                        id: data.id,
-                        label: data.text
+                        id: node.id,
+                        label: node.text
                     }
                 ];
 
@@ -531,8 +556,8 @@
             newSpaceFilter = [
                 ...space_filters,
                 {
-                    id: data.id,
-                    label: data.text
+                    id: node.id,
+                    label: node.text
                 }
             ];
 
@@ -708,7 +733,7 @@
             "state": {
                 "key": "demo2"
             },
-            "plugins": ["contextmenu", "state", "types"]
+            "plugins": ["state", "types"]
         });
 
         jsTree.on('select_node.jstree', function(e, data) {

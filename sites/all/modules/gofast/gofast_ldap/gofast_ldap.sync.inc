@@ -25,7 +25,7 @@ function gofast_ldap_sync_block_accounts($remote_accounts){
   $sync_settings = variable_get('gofast_directory_sync_config', array());
   //Key remote accounts by username
   foreach($remote_accounts as $k => $account){
-    $remote_account_uname = strtolower($account[strtolower($sync_settings['mapping']['uid'])][0]);
+    $remote_account_uname = strtolower($account[$sync_settings['mapping']['uid']][0]);
     $remote_account_by_uname[$remote_account_uname] = $account;
   }
 
@@ -57,9 +57,13 @@ function gofast_ldap_sync_block_accounts($remote_accounts){
       
       //unblock the user
       gofast_user_unleave_user($uid);
-      //$my_user = user_load($uid);
-      //$edit = array('status' => 1);
-      //user_save($my_user, $edit);
+     
+      // check if user is standby. If yes, unstanby it, to prevent having user enabled but standby
+      $my_user = user_load($uid);
+      if($my_user->field_standby[LANGUAGE_NONE][0]["value"] == 1){
+        $edit = array('field_standby' => 0);
+        user_save($my_user, $edit);
+      }
     }
   }
 }
@@ -80,43 +84,16 @@ function gofast_ldap_synchronize_accounts($remote_accounts){
   
   $count = 0;
   $sync_settings = variable_get('gofast_directory_sync_config', array());
+  $mapping = $sync_settings['mapping'];
   unset($remote_accounts['count']);
   
   foreach($remote_accounts as $k => $account){
-    $uname = $account[strtolower($sync_settings['mapping']['uid'])][0];
-    $umail = $account[$sync_settings['mapping']['email']][0];
-    if(empty($uname)){
+    $success = _gofast_ldap_try_synchronize_single_account($account, $mapping);
+
+    unset($remote_accounts[$k]);
+    if (!$success) {
       continue;
     }
-    $user = user_load_by_name($uname);
-    
-    if($user == FALSE){
-      $mail_exists = (bool) count(db_select('users')->fields('users', array('uid'))->condition('mail', $umail, '=')->execute()->fetchAll());
-      if ($mail_exists) {
-        watchdog('Directory Synchronization', "Can't create user @user because of duplicate email @mail", array("@user" => $uname, "@umail" => $umail), WATCHDOG_WARNING);
-        continue;
-      }
-      //We need to create the user as it's not registered yet
-      watchdog('Directory Synchronization', "Creating user " . $uname, array(), WATCHDOG_NOTICE);
-      gofast_ldap_synchronize_create_account($account);
-    }else{
-      //User is registered on the platform and we got it's informations from the 
-      //remote Directory, we can synchronize it.
-      $mail_taken_by_other_user = (bool) count(db_select('users')->fields('users', array('uid'))->condition('mail', $umail, '=')->condition('name', $uname, '<>')->execute()->fetchAll());
-      if ($mail_taken_by_other_user) {
-        watchdog('Directory Synchronization', "Can't update user @user because of duplicate email @mail", array("@user" => $uname, "@umail" => $umail), WATCHDOG_WARNING);
-        continue;
-      }
-
-      watchdog('Directory Synchronization', "Updating user " . $uname, array(), WATCHDOG_NOTICE);
-      try {
-        gofast_ldap_synchronize_update_account($account);
-      }catch (Throwable $t){
-        watchdog('Directory Synchronization', "Error Updating user ".json_encode($t));
-      }
-    }
-    
-    unset($remote_accounts[$k]);
     
     if($count == GOFAST_LDAP_MAX_SYNC_PER_CRON){
       break;
@@ -137,16 +114,85 @@ function gofast_ldap_synchronize_accounts($remote_accounts){
   return;
 }
 
+/**
+ * Internal function to attempt to synchronize a single LDAP account.
+ *
+ * Under normal circumstances, this function must return and not throw or let
+ * handled error bubble up the stack.
+ *
+ * Meant to be used as part of {@see gofast_ldap_synchronize_accounts()}.
+ *
+ * @param array $account
+ *   LDAP account to try to synchronize.
+ * @param array $mapping
+ *   Account property mapping.
+ *
+ * @return bool
+ *   Whether the synchronization was successful or not.
+ */
+function _gofast_ldap_try_synchronize_single_account($account, $mapping) {
+  $uname = $account[$mapping['uid']][0];
+  $umail = $account[$mapping['email']][0];
+  if (empty($uname)) {
+    return FALSE;
+  }
+  $user = user_load_by_name($uname);
+
+  if ($user == FALSE) {
+    $mail_exists = (bool) count(
+      db_select('users')
+        ->fields('users', array('uid'))
+        ->condition('mail', $umail, '=')
+        ->execute()
+        ->fetchAll(),
+    );
+    if ($mail_exists) {
+      watchdog('Directory Synchronization', "Can't create user @user because of duplicate email @umail", array("@user" => $uname, "@umail" => $umail), WATCHDOG_WARNING);
+      return FALSE;
+    }
+    //We need to create the user as it's not registered yet
+    watchdog('Directory Synchronization', "Creating user " . $uname, array(), WATCHDOG_NOTICE);
+    gofast_ldap_synchronize_create_account($account);
+  }
+  else {
+    //User is registered on the platform and we got it's informations from the
+    //remote Directory, we can synchronize it.
+    $mail_taken_by_other_user = (bool) count(
+      db_select('users')
+        ->fields('users', array('uid'))
+        ->condition('mail', $umail, '=')
+        ->condition('name', $uname, '<>')
+        ->execute()
+        ->fetchAll(),
+    );
+    if ($mail_taken_by_other_user) {
+      watchdog('Directory Synchronization', "Can't update user @user because of duplicate email @umail", array("@user" => $uname, "@umail" => $umail), WATCHDOG_WARNING);
+      return FALSE;
+    }
+
+    watchdog('Directory Synchronization', "Updating user " . $uname, array(), WATCHDOG_NOTICE);
+    try {
+      gofast_ldap_synchronize_update_account($account);
+    }
+    catch (Throwable $t) {
+      watchdog('Directory Synchronization', "Error Updating user " . json_encode($t));
+      return FALSE;
+    }
+  }
+
+  return TRUE;
+}
+
 /*
  * This function will create an account retrieved from the distant directory
  */
 function gofast_ldap_synchronize_create_account($account){
   $sasl = variable_get('gofast_sasl_auth', 0);
   $sync_settings = variable_get('gofast_directory_sync_config', array());
-  // Lowercase is important since keys are lowercased in the actual ldap result
-  $uname = $account[strtolower($sync_settings['mapping']['uid'])][0];
   //Prepare account fields
   $mapping = $sync_settings['mapping'];
+  $uname = $account[$mapping['uid']][0];
+  $fullname_field = $mapping['fullname'];
   $options = array();
   foreach($mapping as $field => $remote_field){
     if(empty($remote_field)){
@@ -183,8 +229,8 @@ function gofast_ldap_synchronize_create_account($account){
   }
   
   //Getting name
-  if($mapping['fullname'] && !empty($account[$mapping['fullname']][0])){
-    $name_exploded = explode(' ', $account[$mapping['fullname']][0]);
+  if(!empty($mapping['fullname']) && !empty($account[$fullname_field][0])) {
+    $name_exploded = explode(' ', $account[$fullname_field][0]);
     if(count($name_exploded) <= 1){
       $options['ldap_user_givenname'] = $name_exploded[0];
       $options['ldap_user_sn'] = $name_exploded[0];
@@ -199,8 +245,9 @@ function gofast_ldap_synchronize_create_account($account){
   }
   
   //Getting main organization
-  if(!empty($account[$mapping['main_orga']][0])){
-    $main_orga = $account[$mapping['main_orga']][0];
+  $main_orga_field = $mapping['main_orga'];
+  if(!empty($account[$main_orga_field][0])){
+    $main_orga = $account[$main_orga_field][0];
     $nodes = node_load_multiple(NULL, array('title' => $main_orga, "type" => "organisation"));
     
     if(count($nodes) != 1){
@@ -224,7 +271,7 @@ function gofast_ldap_synchronize_create_account($account){
  */
 function gofast_ldap_synchronize_update_account($account){
   $sync_settings = variable_get('gofast_directory_sync_config', array());
-  $uname = $account[strtolower($sync_settings['mapping']['uid'])][0];
+  $uname = $account[$sync_settings['mapping']['uid']][0];
   $need_sync = false;
   $user = user_load_by_name($uname);
   
@@ -234,6 +281,10 @@ function gofast_ldap_synchronize_update_account($account){
   
   //Compare fields to update them if needed
   $mapping = $sync_settings['mapping'];
+  $fullname_field = $mapping['fullname'];
+  $firstname_field = $mapping['firstname'];
+  $lastname_field = $mapping['lastname'];
+
   foreach($mapping as $field => $remote_field){
     if(empty($remote_field)){
       continue;
@@ -282,8 +333,8 @@ function gofast_ldap_synchronize_update_account($account){
   }
   
   //Getting name
-  if(!empty($mapping['fullname']) && !empty($account[$mapping['fullname']][0])){
-    $name_exploded = explode(' ', $account[$mapping['fullname']][0]);
+ if(!empty($mapping['fullname']) && !empty($account[$fullname_field][0])) {
+  $name_exploded = explode(' ', $account[$fullname_field][0]);
     if(count($name_exploded) <= 1){
       $ldap_user_givenname = $name_exploded[0];
       $ldap_user_sn = $name_exploded[0];
@@ -292,11 +343,11 @@ function gofast_ldap_synchronize_update_account($account){
       $sn = implode(" ", $name_exploded);
       $ldap_user_sn = $sn;
     }
-  }else if (!empty($account[$mapping['firstname']][0]) && !empty($account[$mapping['lastname']][0])){
-    $ldap_user_givenname = $account[$mapping['firstname']][0];
-    $ldap_user_sn = $account[$mapping['lastname']][0];
+  }else if (!empty($account[$firstname_field][0]) && !empty($account[$lastname_field][0])){
+    $ldap_user_givenname = $account[$firstname_field][0];
+    $ldap_user_sn = $account[$lastname_field][0];
   }
-  
+
   if($user->ldap_user_givenname[LANGUAGE_NONE][0]['value'] != $ldap_user_givenname){
     watchdog('Directory Synchronization', "Updating first name", array(), WATCHDOG_NOTICE);
     $user->ldap_user_givenname[LANGUAGE_NONE][0]['value']=$ldap_user_givenname;
@@ -309,9 +360,9 @@ function gofast_ldap_synchronize_update_account($account){
   }
   
   //Getting main organization
-  $ldap_user_ou = $account[$mapping['main_orga']][0];
-  if(!empty($account[$mapping['main_orga']][0])){
-    $main_orga = $account[$mapping['main_orga']][0];
+  $main_orga_field = $mapping['main_orga'];
+  if(!empty($account[$main_orga_field][0])){
+    $main_orga = $account[$main_orga_field][0];
     $nodes = node_load_multiple(NULL, array('title' => $main_orga, "type" => "organisation"));
 
     if(count($nodes) != 1){
@@ -350,9 +401,12 @@ function gofast_ldap_ppolicy_get_password_expiration($uid, $format = true, $with
 
   $ppolicy_ldap_infos = gofast_ldap_get_ppolicy_infos_from_account($dn,$LdapServer);
   $timestamp_password_changed =  strtotime($ppolicy_ldap_infos["pwdChangedTime"]);
-  $ldap_password_settings = gofast_ldap_get_password_policy_settings();
+
+  $account = user_load($uid);
+  $ldap_password_settings = gofast_ldap_get_user_password_policy_settings($account);
 
   $timestamp_password_expire = $timestamp_password_changed + $ldap_password_settings["max_password_lifetime"];
+
   if($format){
     return format_date($timestamp_password_expire, 'custom', "d/m/Y H:i");
   } else if ($with_settings) {

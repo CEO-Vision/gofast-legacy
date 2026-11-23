@@ -45,6 +45,16 @@ var last_reconnect_session = d.getTime();
              $("#tabs_wf_tasks, #tabs_wf_processes, #tabs_wf_processes_archived").click(function(){
                  selected_tab_wf = $(this).attr("fragment");
              });
+
+             // Opened from a workflow notification email ("Execute Task" link):
+             // auto-open the task form in a modal over the dashboard.
+             if(typeof Drupal.settings.gofast_workflows !== "undefined" && typeof Drupal.settings.gofast_workflows.execute_task !== "undefined"){
+                 var execute_task = Drupal.settings.gofast_workflows.execute_task;
+                 Drupal.gofast_workflows.ceo_vision_js_task_doit(execute_task.task_id, execute_task.process, "", execute_task.task_name, execute_task.force_assign);
+             }else if(typeof Drupal.settings.gofast_workflows !== "undefined" && Drupal.settings.gofast_workflows.execute_task_unavailable === true){
+                 // The task from the email link no longer exists (already completed, deleted...)
+                 Gofast.toast(Drupal.t("This task is no longer available. It may have already been completed.", {}, {'context' : 'gofast:gofast_workflows'}), "warning");
+             }
         });
 
 
@@ -59,6 +69,17 @@ Drupal.gofast_workflows.showWFDocs = function(elt){
 Drupal.gofast_workflows.hideWFDocs = function(elt){
    var nid = jQuery(elt).data('nid');
    $(elt).parent().find('#wf_multiple_docs_'+nid).css('display', "none");
+ }
+ Drupal.gofast_workflows.hideTooltip = function(e, elt){
+  // When mouse leave the multiple documents icon, don't hide tooltip if mouse is still over it
+  if(e.relatedTarget){
+    const tooltipId = $(elt).attr("data-nid");
+    const tooltip = e.relatedTarget.ownerDocument.querySelector(`#wf_multiple_docs_${tooltipId}`)
+    if($(tooltip).find($(e.relatedTarget)).length){
+      return;
+    }
+  }
+  $(elt).parent().find('#wf_multiple_docs_'+$(elt).data('nid')).css('display', 'none');
  }
 
 
@@ -294,6 +315,11 @@ Drupal.behaviors.changeWfButonHref = {
     }
 
 Drupal.gofast_workflows.ceo_vision_js_check_login = function(callback){
+    const locale = new Intl.Locale(GofastLocale);
+    const mLocale = locale.maximize();
+    const bosLocaleString = mLocale.language + "-" + mLocale.region;
+    Gofast.setCookie('BOS_Locale', bosLocaleString)
+    
     if(Gofast.already_check_login === true){
         if(typeof callback === "function"){
             var executeCallbackAfterParallelLogin = setInterval(function() {
@@ -348,12 +374,21 @@ Gofast.get_bonita_token = function () {
           });
 };
 
-Drupal.gofast_workflows.ceo_vision_js_login = function(myusername, mypassword, callback){
+Drupal.gofast_workflows.ceo_vision_js_login = function(myusername, mypassword, callback, retried){
+        // Release the lock even on failure, otherwise no later check can log in again
+        var release = function(){
+            Gofast.already_check_login = false;
+            if(typeof callback === "function"){
+                callback();
+            }
+        };
         if(typeof Drupal.settings.pass_reset != "undefined" || typeof Drupal.settings.bonita_authentification_problem != "undefined"){
+           Gofast.already_check_login = false;
            return;
          }
 
        if(myusername === null){
+           Gofast.already_check_login = false;
            return;
        }
 
@@ -363,8 +398,16 @@ Drupal.gofast_workflows.ceo_vision_js_login = function(myusername, mypassword, c
         var bonita_cookie = Gofast.getCookie("bonita_sess_timestamp");
         var now = Math.floor(Date.now() / 1000);
             if(mypassword == null){
+               // Wait for a fresh token: the one in memory may have been renewed server side
+               Gofast.bonita_token = "";
                Gofast.get_bonita_token();
+               var tokenChecks = 0;
                var checkExistPassword = setInterval(function() {
+                   if (++tokenChecks > 40) {
+                       clearInterval(checkExistPassword);
+                       release();
+                       return;
+                   }
                    if (Gofast.bonita_token !== "" && Gofast.bonita_token !== "undefined" && Gofast.bonita_token !== undefined) {
                    mypassword = Gofast.bonita_token;
                    clearInterval(checkExistPassword);
@@ -385,6 +428,13 @@ Drupal.gofast_workflows.ceo_vision_js_login = function(myusername, mypassword, c
                                        Gofast.setCookie("bonita_sess_timestamp",Math.floor(Date.now() / 1000));
                                        $("#bonita_light_dashboard_placeholder").replaceWith('<iframe src="/bonita/portal/resource/app/GoFAST/lightDashboard/content/?app=GoFAST&locale='+ Gofast.get("user").language +'" id="bonita_form_process" style="width:100%;height:100%;min-height:550px;border:none;"></iframe>');
                                    }
+                              },
+                              error:function(){
+                                  if(!retried){
+                                      Drupal.gofast_workflows.ceo_vision_js_login(myusername, null, callback, true);
+                                  }else{
+                                      release();
+                                  }
                               }
                             });
                   }
@@ -1243,5 +1293,8 @@ Drupal.gofast_workflows.hideWorkflowForm = function(task_id) {
 //Init hooks
 Gofast.hooks.gofast_workflows = [];
 Gofast.hooks.gofast_workflows.hook_after_display_search_details = [];
+
+ // Add Bonita translation strings to enable Drupal to detect them.
+ Drupal.t("Your process model has been saved.", {}, {context: "gofast:gofast_workflows"});
 
 })(jQuery, Gofast, Drupal);

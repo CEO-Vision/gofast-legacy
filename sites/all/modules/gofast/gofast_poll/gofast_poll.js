@@ -178,40 +178,43 @@
   /**
    * Poll behavior.
    */
-  $(document).ready(function () {
-    if (!Gofast.Poll.status && !Gofast.ajaxingNav) {
-      // Init default once to make sure both the polling ajax object and the
-      // DOM object are created before the first poll run.
-      Gofast.Poll.init();
+  Drupal.behaviors.initPolling = {
+    attach: function(context) {
+      if (!Gofast.Poll.status && !Gofast.ajaxingNav) {
+        // Init default once to make sure both the polling ajax object and the
+        // DOM object are created before the first poll run.
+        Gofast.Poll.init();
+      }
+
+      $('#' + Gofast.Poll.elementId).once('poll', function () {
+        var $poll = $(this);
+
+        //
+        Gofast.Poll.run();
+        $poll.on('pollEnd', Gofast.Poll.run);
+    
+        // Polling may interrupt itself when the tab goes idle. In this case we
+        // need to trigger the event when the tab wakes up.
+        tab.on('wakeup', function () {
+          var base = Gofast.Poll.elementId;
+          if (base && Drupal.ajax[base] && Drupal.ajax[base].ajaxing === false) {
+            $poll.trigger('polling');
+          }
+        });
+      });
     }
+  }
 
-    $('#' + Gofast.Poll.elementId).once('poll', function () {
-      var $poll = $(this);
-
-      //
-      Gofast.Poll.run();
-      $poll.on('pollEnd', Gofast.Poll.run);
-   
-      // Polling may interrupt itself when the tab goes idle. In this case we
-      // need to trigger the event when the tab wakes up.
-      tab.on('wakeup', function () {
-        var base = Gofast.Poll.elementId;
-        if (base && Drupal.ajax[base] && Drupal.ajax[base].ajaxing === false) {
-          $poll.trigger('polling');
-        }
-    });
-    });
-
-    $(this).on('ajax-navigate', function () {
+  $(document).ready(function () {
+    $(document).on('ajax-navigate', function () {
       // When navigating in ajax, cancel the current polling request if any.
       Gofast.Poll.abort();
     });
 
-    $(this).on('ajax-nav-success', function () {
+    $(document).on('ajax-nav-success', function () {
       Gofast.Poll.update();
       Gofast.Poll.run();
     });
-
-  });
+  })
 
 })(jQuery, ifvisible, Gofast, Drupal);

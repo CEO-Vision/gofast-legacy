@@ -181,7 +181,14 @@
     function showIframeRiot(){
       if (document.getElementById("DivRiot")){
         jQuery('#DivRiot').remove();
-        jQuery('#ogconversation').append('<iframe src="/sites/all/libraries/riot/index.html#/room/<?php echo $node->field_riot_identifier[LANGUAGE_NONE][0]['value']; ?>" id="gf_conversation" style="width:100%;height: calc(100vh - 180px);border:none;"></iframe>');
+        const waitForSessionIdInterval = setInterval(() => {
+          if (!Gofast.Riot?.sessionId) {
+            return;
+          }
+          clearInterval(waitForSessionIdInterval);
+          jQuery('#ogconversation').append('<iframe src="/sites/all/libraries/riot/index.html#/room/<?= $node->field_riot_identifier[LANGUAGE_NONE][0]['value']; ?>?id=gf_conversation' + Gofast.Riot.sessionId + '" id="gf_conversation" style="width:100%;height: calc(100vh - 180px);border:none;"></iframe>');
+          jQuery('#gf_conversation').attr("data-room", "<?= $node->field_riot_identifier[LANGUAGE_NONE][0]['value'] ?>");
+        }, 100);
       }
     }
   });

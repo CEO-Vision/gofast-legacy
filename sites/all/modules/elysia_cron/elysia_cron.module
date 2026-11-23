@@ -1466,6 +1466,144 @@ function elysia_cron_internal_execute_channel($channel, $jobs, $ignore_running =
 function elysia_cron_internal_execute_job($job) {
   global $_elysia_cron_settings;
 
+  // ===========================================================================
+  // @CEO-VISION PATCH: Temporarily block jobs that repeatedly fail while running.
+  // ---------------------------------------------------------------------------
+
+  /** @var int Current Unix timestamp */
+  $now = time();
+
+  /**
+   * @var int
+   * Time in seconds for which the cache entry is set before being allowed to be
+   * emptied.
+   *
+   * This also means that cron jobs with an interval between runs greater than
+   * this delay (runs less often than once a week, e.g.: once every two weeks,
+   * once a month) most likely will never be blocked due to the tracking status
+   * being reset. This shouldn't be an issue since these jobs would rarely block
+   * others, the fix applies mostly to jobs executed each run.
+   */
+  $cache_timeout /* seconds */ = 7 /* days */ * 24 /* hours/day */ * 60 /* minutes/hour */ * 60 /* seconds/minutes */;
+  $cache_expiration = $now + $cache_timeout;
+
+  /**
+   * @var int
+   * Duration in seconds for which a specific job is disabled for after many
+   * consecutive failed runs.
+   */
+  $disabled_time /* seconds */ = 60 /* minutes */ * 60 /* seconds/minutes */;
+
+  /** @var int Number of unfinished consecutive runs before a job's execution is temporarily blocked */
+  $block_threshold = 5;
+
+  /**
+   * @var string Key storing array of jobs in a failure state.
+   *
+   * The failure state starts when a job gets disabled dure to interruptions.
+   * It ends when the jobs runs without interruption (but may still end with an error).
+   */
+  $gf_failing_jobs_cache_key = 'gf_cron:jobs:failing';
+  $gf_failing_jobs = cache_get($gf_failing_jobs_cache_key);
+  /** @var (array<string, string>) */
+  $gf_failing_jobs = $gf_failing_jobs !== FALSE ? $gf_failing_jobs->data : [];
+  // Refresh expiration for failing job list.
+  cache_set($gf_failing_jobs_cache_key, $gf_failing_jobs, 'cache', $cache_expiration);
+
+  /** @var string Key storing array of job names that have executed before. */
+  $gf_jobs_cache_key = 'gf_cron:jobs:keys';
+
+  /** @var string Key storing object with execution status of the current job. */
+  $gf_status_cache_key = "gf_cron:job:$job:status";
+
+  // Register job as known job for enumeration.
+  $gf_jobs = cache_get($gf_jobs_cache_key);
+  /** @var (array<string, string>) */
+  $gf_jobs = $gf_jobs !== FALSE ? $gf_jobs->data : [];
+
+  // Assigning job name as key and value should ensure uniqueness, possibly
+  // doubles the serialized value used storage however.
+  $gf_jobs[$job] = $job;
+
+  cache_set($gf_jobs_cache_key, $gf_jobs);
+
+  // Process job status before execution:
+  // - Reenable after delay
+  // - Abort if disabled
+  // - Track failed run count
+  $gf_status = cache_get($gf_status_cache_key);
+
+  /**
+   * @var (object{
+   *  consecutive_unfinished_run_count: int,
+   *  disabled_until: int | null,
+   * })
+   */
+  $gf_status = $gf_status !== FALSE ? $gf_status->data : (object)[
+    'consecutive_unfinished_run_count' => 0,
+    'disabled_until' => NULL,
+  ];
+
+  // Does job have disabled status set?
+  if ($gf_status->disabled_until !== NULL) {
+    // Is currently before disabled status expiration time?
+    if ($gf_status->disabled_until >= $now) {
+      // Job is currently disabled, skip all execution.
+      elysia_cron_debug(
+        'Cron job %job skipped, it is disabled until %disable_expiration due to too many consecutive failures.',
+        [
+          '%job' => $job,
+          '%disable_expiration' => format_date($gf_status->disabled_until, 'short'),
+        ],
+      );
+
+      // Refresh cache expiration.
+      cache_set($gf_status_cache_key, $gf_status, 'cache', $cache_expiration);
+
+      return;
+    }
+
+    // Disabled status has expired, reset status data.
+    $gf_status->consecutive_unfinished_run_count = 0;
+    $gf_status->disabled_until = NULL;
+  }
+
+  // Has job failed more times in a row than allowed?
+  // This should always be false when the job was just re-enabled.
+  if ($gf_status->consecutive_unfinished_run_count >= $block_threshold) {
+    // Temporarily disable job.
+    $gf_status->disabled_until = $now + $disabled_time;
+
+    elysia_cron_debug('Cron job %job disabled for %duration due to too many consecutive failure.', [
+      '%job' => $job,
+      '%duration' => format_interval($disabled_time, granularity: 3),
+    ]);
+
+    cache_set($gf_status_cache_key, $gf_status, 'cache', $cache_expiration);
+
+    // Register as failing job.
+    $gf_failing_jobs[$job] = $job;
+    cache_set($gf_failing_jobs_cache_key, $gf_failing_jobs, 'cache', $cache_expiration);
+
+    return;
+  }
+
+  // Increase run count, marking the run as started.
+  // This is reset to 0 when a job finishes successfully. Therefore if it got
+  // interrupted (e.g.: exit) or had an error/exception the count persisted and
+  // is increased again. This should then count the number of consecutive
+  // unfinished runs.
+  $gf_status->consecutive_unfinished_run_count++;
+
+  // Store status now in case of error.
+  cache_set($gf_status_cache_key, $gf_status, 'cache', $cache_expiration);
+
+  // Let normal execution begin.
+
+  // ---------------------------------------------------------------------------
+  // @CEO-VISION PATCH END: Temporarily block jobs that repeatedly fail while running.
+  // ===========================================================================
+
   elysia_cron_debug('Cron job %job started.', array('%job' => $job));
 
   $time = time();
@@ -1498,10 +1636,39 @@ function elysia_cron_internal_execute_job($job) {
         elysia_cron_error('Execution of ' . $job . ' failed, can\'t find function!', array(), TRUE);
       }
     }
+
+    // ===========================================================================
+    // @CEO-VISION PATCH: Unfinished run count management for job blocking.
+    // ---------------------------------------------------------------------------
+    // Reset unfinished run count after successful run.
+    $gf_status->consecutive_unfinished_run_count = 0;
+    cache_set($gf_status_cache_key, $gf_status, 'cache', $cache_expiration);
+
+    // Remove from failing job list if present.
+    unset($gf_failing_jobs[$job]);
+    cache_set($gf_failing_jobs_cache_key, $gf_failing_jobs, 'cache', $cache_expiration);
+    // ---------------------------------------------------------------------------
+    // @CEO-VISION PATCH END: Unfinished run count management for job blocking.
+    // ===========================================================================
   }
   catch (Exception $e) {
     watchdog_exception('cron', $e);
   }
+  // ===========================================================================
+  // @CEO-VISION PATCH: Prevent `Error`s in one cron from preventing another from running.
+  // ---------------------------------------------------------------------------
+  // NOTE: Catching and handling PHP's Errors like this MAY create worse bugs than letting it crash
+  // Also, bugs that cause Errors should be fixed, this only allows delaying the inevitable, which is not ideal.
+  catch (\Error $e) {
+    // NB: we can't call watchdog_exception as the exception argument is typed with \Exception, calling it with \Error would throw a \TypeError.
+    // The following code is somewhat equivalent.
+    require_once DRUPAL_ROOT . '/includes/errors.inc';
+    watchdog('cron', '%type: !message in %function (line %line of %file).', _drupal_decode_exception($e), WATCHDOG_ERROR);
+  }
+  // ---------------------------------------------------------------------------
+  // @CEO-VISION PATCH END: Prevent `Error`s in one cron from preventing another from running.
+  // ===========================================================================
+
 
   $stats = elysia_cron_get_job_stats($job);
   $time = time() - $time;

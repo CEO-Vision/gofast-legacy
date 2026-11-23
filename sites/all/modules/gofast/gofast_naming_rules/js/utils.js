@@ -38,7 +38,7 @@
     events: {
       toggleWarningOnSelect: (selector) => {
         $(selector).on("select2:select", function () {
-          const value = parseInt($(this).val());
+          const value = $(this).val();
           if (value <= 0) {
             $("#gofast_naming_rules_warning").removeClass("d-block").addClass("d-none");
             return;
@@ -55,7 +55,7 @@
           }
           tags = JSON.parse(tags);
           for (const tag of tags) {
-            const value = parseInt(tag.value);
+            const value = tag.value;
             const hasNamingRule =
               Gofast.namingRules.handlers.toggleWarning(value);
             if (hasNamingRule) {

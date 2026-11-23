@@ -13,7 +13,7 @@ define('DOC_SERV_CONVERTER_URL', 'https://'.$conf['gofast-comm_domain'].'/Conver
 define('DOC_SERV_API_URL', 'https://'.$conf['gofast-comm_domain'].'/web-apps/apps/api/documents/api.js');
 define('DOC_SERV_PRELOADER_URL', 'https://'.$conf['gofast-comm_domain'].'/web-apps/apps/api/documents/cache-scripts.html');
 define('DOC_SERV_COMMAND_SERVICE', 'https://internal-'.$conf['gofast-comm_domain'].'/coauthoring/CommandService.ashx');
-define('OO_GOFAST_AI_PLUGIN_ID', '{9DC93CDB-B576-4F0C-B55E-FCC9C48DD008}');
+define('OO_GOFAST_AI_PLUGIN_ID', '{9DC93CDB-B576-4F0C-B55E-FCC9C48DD007}');
 
 function gofast_onlyoffice_rtl_languages() {
   return array("ar", "he", "fa", "ur");
@@ -48,7 +48,7 @@ function gofast_manual_previewable_document_extensions() {
 }
 
 function gofast_onlyoffice_previewable_document_extensions() {
-  return array("docx", "dotx", "pptx", "ppsx", "docm");
+  return array("docx", "dotx", "ppt", "pptx", "ppsx", "docm", "vsdx", "xlsx");
 }
 
 function gofast_onlyoffice_spreadsheet_extensions() {
@@ -84,6 +84,7 @@ function gofast_onlyoffice_get_conversion_table() {
     "csv" => ["xlsx"],
     "docx" => ["pdf"],
     "pptx" => ["pdf"],
+    "md" => ["pdf"],
   );
 }
 
@@ -111,7 +112,7 @@ if (!defined('ServiceConverterMaxTry')) {
 function gofast_onlyoffice_sign_config_ajax() {
   global $conf;
   $payload = json_decode(file_get_contents("php://input"), TRUE);
-  $config = gofast_xss_clean($payload["config"]);
+  $config = $payload["config"];
   $token = JWT::encode($config, $conf['oo_jwt_secret'], "HS256");
   return drupal_json_output(["config" => $config, "token" => $token]);
 }
@@ -159,6 +160,7 @@ function gofast_onlyoffice_get_config($node, $doc_id, $doc_uri_to_document_serve
   $user_permission_of_node = 'Deny Access';
   $editor_mode = 'view';
   $doc_edit_permission = true;
+  $is_doc_confidential = gofast_taxonomy_is_node_confidential_or_internal($node);
   if (node_access('update', $node, $user)) {
     $user_permission_of_node = 'Full Access';
     $editor_mode = 'edit';
@@ -195,7 +197,7 @@ function gofast_onlyoffice_get_config($node, $doc_id, $doc_uri_to_document_serve
           ],
           "permissions" => [
             "edit" => $doc_edit_permission,
-            "print" => true,
+            "print" => !$is_doc_confidential,
             "download" => false,
           ],
           "referenceData" => [
@@ -235,8 +237,13 @@ function gofast_onlyoffice_get_config($node, $doc_id, $doc_uri_to_document_serve
           "plugins" => [
             "autostart" => [],
             "pluginsData" => [],
-          ]
-        ]
+            "options" => [
+              "all" => [
+                "nid" => $node->nid,
+              ],
+            ],
+          ],
+        ],
       ];
       if (module_exists("gofast_mistral")) {
         global $conf;

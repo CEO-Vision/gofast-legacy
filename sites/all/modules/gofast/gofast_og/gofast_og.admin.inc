@@ -278,14 +278,13 @@ function gofast_og_delete_membership($js, $group_type, $gid, $og_membership) {
   );
 
   $commands = ctools_modal_form_wrapper('gofast_og_ui_delete_membership', $form_state);
-
-  if($form_state['last_admin']){
-    form_get_errors();
-    $commands = array(
-      ctools_modal_command_dismiss(),
-      gofast_command_toast_message(t("You can't remove the last administrator of a space", array(), array('context' => "gofast:gofast_og")), "error")
-    );
-  }else if ($form_state['submitted']) {
+  $errors = form_get_errors();
+  if (!empty($errors)) {
+    $commands = [ctools_modal_command_dismiss()];
+    foreach ($errors as $error) {
+      $commands[] = gofast_command_toast_message($error, "error");
+    }
+  } elseif ($form_state['submitted']) {
     $commands = array(
       ctools_modal_command_dismiss(),
       gofast_command_processAjax("/node/{$gid}" . "#gofastSpaceMembers")
@@ -409,11 +408,18 @@ function gofast_og_ui_delete_membership_validate($form, &$form_state) {
         //Check cound of administrators in this space
         $users_admins = gofast_userlist_og_get_node_members_by_role($node->nid, array(OG_STATE_ACTIVE), "administrator member");
         if(count($users_admins) < 2){
-            $form_state['last_admin'] = TRUE;
             form_set_error("last_admin", t("You can't remove the last administrator of a space", array(), array('context' => "gofast:gofast_og")));
         }
     }
 
+    $deleted_person_in_charge = 0;
+    if (isset($node->field_person_in_charge[LANGUAGE_NONE][0]["target_id"]) && $node->field_person_in_charge[LANGUAGE_NONE][0]["target_id"] == $member_uid) {
+      $deleted_person_in_charge++;
+    }
+    $person_in_charge_memberships = gofast_userlist_get_user_memberships($node->nid, $node->field_person_in_charge[LANGUAGE_NONE][0]["target_id"]);
+    if ($deleted_person_in_charge >= count($person_in_charge_memberships)) {
+      form_set_error("person_in_charge", t("You can't remove the responsible of a space", array(), array('context' => "gofast:gofast_og")));
+    }
 }
 
 
@@ -616,12 +622,13 @@ function gofast_og_delete_bulk_membership($js, $group_type, $gid, $og_membership
     )
   );
   $commands = ctools_modal_form_wrapper('gofast_og_ui_delete_bulk_membership', $form_state, $group_type, $gid, $og_membership_ids);
-  if($form_state['last_admin']){
-    $commands = array(
-      ctools_modal_command_dismiss(),
-      gofast_command_toast_message(t("A space must have at least two administrators", array(), array('context' => "gofast:gofast_og")), "error")
-    );
-  }else if ($form_state['submitted']) {
+  $errors = form_get_errors();
+  if (!empty($errors)) {
+    $commands = [ctools_modal_command_dismiss()];
+    foreach ($errors as $error) {
+      $commands[] = gofast_command_toast_message($error, "error");
+    }
+  } elseif ($form_state['submitted']) {
     $commands = array(
       ctools_modal_command_dismiss(),
       gofast_command_processAjax("/node/{$gid}" . "#gofastSpaceMembers")
@@ -661,7 +668,6 @@ function gofast_og_ui_delete_bulk_membership($form, &$form_state, $group_type, $
   //first, iterate into userlist memberships
   foreach ($og_memberships as $og_membership) {
     if ($og_membership->entity_type == "userlist"){
-      $form_state['og_memberships'][] = $og_membership;
       $at_least_one_userlist = true;
     
       $ul = entity_load_single('userlist', $og_membership->etid);
@@ -678,7 +684,6 @@ function gofast_og_ui_delete_bulk_membership($form, &$form_state, $group_type, $
    //then, iterate into user memberships, to be sure to have a correct remaining userlists list
    foreach ($og_memberships as $og_membership) {
     if ($og_membership->entity_type == "user"){
-      $form_state['og_memberships'][] = $og_membership;
       $check = false; 
       $rids = array();
       $account = user_load($og_membership->etid);
@@ -802,6 +807,7 @@ function gofast_og_ui_delete_bulk_membership($form, &$form_state, $group_type, $
 function gofast_og_ui_delete_bulk_membership_validate($form, &$form_state) {
   $og_memberships = $form_state['og_memberships'];
   $remaining_admins = gofast_userlist_og_get_node_members_by_role($form_state['gid'], array(OG_STATE_ACTIVE), "administrator member");
+  $deleted_person_in_charge = 0;
 
   foreach ($og_memberships as $membership) {
     $member_uid = $membership->etid;
@@ -811,6 +817,12 @@ function gofast_og_ui_delete_bulk_membership_validate($form, &$form_state) {
       $roles = og_get_user_roles("node", $node->nid, $member_uid);
     }else if($membership->entity_type == "userlist"){
       $roles = gofast_userlist_og_get_userlist_roles("node", $node->nid, $member_uid);
+      $members = gofast_userlist_get_members($member_uid);
+      foreach ($members as $uid => $member) {
+        if($node->field_person_in_charge[LANGUAGE_NONE][0]["target_id"] == $uid) {
+          $deleted_person_in_charge++;
+        }
+      }
     }
    
     if(in_array("administrator member", $roles, TRUE)){
@@ -822,12 +834,19 @@ function gofast_og_ui_delete_bulk_membership_validate($form, &$form_state) {
       
       //Check count of administrators in this space without entities we will remove from this space
       if(count($remaining_admins) < 2){
-        $form_state['last_admin'] = TRUE;
         form_set_error("last_admin", t("A space must have at least two administrators", array(), array('context' => "gofast:gofast_og")));
       }
     }
+
+    if ($membership->entity_type == "user" && isset($node->field_person_in_charge[LANGUAGE_NONE][0]["target_id"]) && $node->field_person_in_charge[LANGUAGE_NONE][0]["target_id"] == $member_uid) {
+      $deleted_person_in_charge++;
+    }
   }
-  
+
+  $person_in_charge_memberships = gofast_userlist_get_user_memberships($node->nid, $node->field_person_in_charge[LANGUAGE_NONE][0]["target_id"]);
+  if ($deleted_person_in_charge >= count($person_in_charge_memberships)) {
+    form_set_error("person_in_charge", t("You can't remove the responsible of a space", array(), array('context' => "gofast:gofast_og")));
+  }
 }
 
 /**

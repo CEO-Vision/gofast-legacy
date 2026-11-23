@@ -265,3 +265,36 @@ function gofast_workflows_update_7308() {
     gofast_workflows_create_user($admin_account);
   }
 }
+
+/**
+ * GOFAST-13618 - Sync firstname/lastname from Drupal to Bonita for all existing users
+ */
+function gofast_workflows_update_7309() {
+  gofast_workflows_get_cookie(true);
+  $cookie_name = "cookie_bonita".BONITA_TECHNICAL_LOGIN.".txt";
+
+  // Load all active users (exclude anonymous uid=0)
+  $result = db_query("SELECT uid FROM {users} WHERE status = 1 AND uid > 0");
+  foreach ($result as $record) {
+    $account = user_load($record->uid);
+    if (!$account) {
+      continue;
+    }
+
+    $bonita_id = gofast_workflows_get_user_id($account);
+    if (!$bonita_id) {
+      continue;
+    }
+
+    $bonita_user_data = gofast_workflows_curl_get_user($account, $cookie_name);
+    if (empty($bonita_user_data[0])) {
+      continue;
+    }
+
+    $drupal_data = gofast_workflows_prepare_firstname_lastname($account);
+    if ($bonita_user_data[0]['firstname'] != $drupal_data['firstname'] || $bonita_user_data[0]['lastname'] != $drupal_data['lastname']) {
+      gofast_workflows_update_user($drupal_data, $bonita_id, $cookie_name);
+      watchdog("gofast_workflows", "GOFAST-13618: Synced firstname/lastname to Bonita for user @uid", array('@uid' => $account->uid));
+    }
+  }
+}

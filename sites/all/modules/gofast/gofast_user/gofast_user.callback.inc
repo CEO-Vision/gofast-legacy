@@ -428,7 +428,8 @@ function gofast_user_profile_popup($uid = 0)
 {
   $output = '';
 
-  if (!user_view_access($uid)) {
+  // Allow displaying admin profil popup for everyone
+  if ($uid != 1 && !user_view_access($uid)) {
     return $output;
   }
 
@@ -548,6 +549,12 @@ function gofast_crop_save_avatar_ajax()
     }
 
     $image = imagecreatefromstring($data);
+    // to preserve transparency on formats that supports it
+    if(in_array($ext, ['png', 'gif'])) {
+      imagesavealpha($image, true);
+      imagealphablending($image, true);
+    }
+
     $func = $ext === 'jpg' ? 'imagejpeg' : 'image' . $ext;
 
     if ($image === FALSE) {
@@ -601,12 +608,20 @@ function gofast_crop_save_avatar_ajax()
  * "whoami" endpoint for front-end to be able to quickly check if the current
  * user is still logged-in (async).
  *
- * Sends json representation of ['uid' => $user->uid] to client.
+ * Sends json representation of ['uid' => $account->uid, 'login' => $account->name, ...] to client.
  */
 function gofast_user_whoami()
 {
   global $user;
-  drupal_json_output(array('uid' => $user->uid));
+  $account = user_load($user->uid);
+
+  drupal_json_output(
+    array(
+      'uid' => $account->uid, 
+      "login" => $account->name, 
+      'atatus_tracking' => ($account->field_atatus_tracking[LANGUAGE_NONE][0]['value'] == ATATUS_TRACKING_ENABLED)
+    )
+  );
   exit();
 }
 
@@ -717,6 +732,13 @@ function gofast_user_unblock($uid)
   // 3 steps for unblock the user
   $my_user = user_load($uid);
   $edit = array('status' => 1);
+
+  // Reset fail attempt count on login
+  $fake_username_array = variable_get('login_security_user_wrong_fake_username_array', []);
+  if(isset($fake_username_array[$my_user->name])){
+    unset($fake_username_array[$my_user->name]);
+    variable_set('login_security_user_wrong_fake_username_array', $fake_username_array);
+  }
 
   //is the user is also disabled, re-enable it
   if (gofast_user_is_left($my_user)) {
@@ -829,7 +851,7 @@ function gofast_user_get_spaces_by_user($account, $section){
         asort($spaces['path']);
         $result .= '<ul style="margin-left: 0;padding-left:0;list-style: none;">';
         foreach ($spaces['path'] as $gid => $webdav_path) {
-          $result .= gofast_breadcrumb_get_simplified_breadcrumb($gid,$account->uid,$webdav_path);
+          $result .= "<li>" . gofast_breadcrumb_get_simplified_breadcrumb($gid, $account->uid, $webdav_path) . "</li>";
         }
         $result .= '<ul>';
       }

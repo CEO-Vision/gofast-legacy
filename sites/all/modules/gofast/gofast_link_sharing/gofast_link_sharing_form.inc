@@ -38,6 +38,7 @@ function gofast_link_sharing_form($form, &$form_state, $node){
  * @return mixed
  */
 function gofast_link_sharing_get_form_fields($current_user_fullname, $form, $user, $node = null, ?string $file_sharing_link = null, $link_element = [], $attributes = []){
+  $human_readable_node_type = gofast_get_human_readable_node_type($node->type);
   if (empty($attributes)) {
   $attributes = [
     'class' => [' form-control-tags js-tagify'],
@@ -54,7 +55,11 @@ function gofast_link_sharing_get_form_fields($current_user_fullname, $form, $use
     '#title' => t('Recipient(s)', [], ['context' => 'gofast']) . ' *',
     '#maxlength' => '',
     '#name' => 'ac-list-tags-to',
-    '#description' => t('Email of the person to whom the document will be shared', [], ['context' => 'gofast:gofast_link_sharing']),
+    '#description' => t(
+      'Email of the person to whom the @node_type will be shared', 
+      ['@node_type' => $human_readable_node_type], 
+      ['context' => 'gofast:gofast_link_sharing'],
+    ),
     '#required' => FALSE,
     '#attributes' => $attributes
   ];
@@ -73,7 +78,11 @@ function gofast_link_sharing_get_form_fields($current_user_fullname, $form, $use
   if(empty($link_element) && $file_sharing_link !== null) {
     $form['link'] = array(
       '#markup' => '<div class="form-item form-item-link form-group">'
-        . '<label class="control-label" for="edit-link">'.t('Link to the document %title', array('%title' => $node->title ), array('context' => 'gofast:gofast_link_sharing')).'</label>'
+        . '<label class="control-label" for="edit-link">'.t(
+          'Link to the @node_type %title', 
+          array('@node_type' => $human_readable_node_type, '%title' => $node->title), 
+          array('context' => 'gofast:gofast_link_sharing')
+        ).'</label>'
         . '<div><a id="linksharing_link" class="clipboard gofast-non-ajax" data-clipboard-target="#linksharing_link" title="' .t('Copy the link') . '">'.$file_sharing_link.'</a><a title="'.t('Copy the link') .'" style="padding: 2px 7px; vertical-align: middle; color:#3498db; margin-left:10px;" class="btn-sm btn btn-default btn-outline-secondary btn-icon no-footer clipboard" data-clipboard-target="#linksharing_link"><i class="fa fa-files-o"></i></a></div>'
         . '</div>',
     );
@@ -93,6 +102,28 @@ function gofast_link_sharing_get_form_fields($current_user_fullname, $form, $use
     '#type' => 'hidden',
     '#value' => $user->mail,
   ];
+
+  $default_subject = $current_user_fullname . ' ' . t(
+    'shared with you a @node_type on ', 
+    ['@node_type' => $human_readable_node_type], 
+    ['context' => 'gofast:gofast_link_sharing', 'langcode' => $user->language]
+  ) . variable_get('site_name', 'GoFAST');
+  if(isset($form['data'])){
+    $data = json_decode($form['data']['#value'], true);
+    $folder_data = [
+        $data['cmis_item']['id'] => $data['folder'],
+    ];
+    $form['folder_data'] = [
+      '#type' => 'hidden',
+      '#value' => $folder_data,
+    ];
+  }
+  if(isset($form['data']) && json_decode($form['data']['#value'], true)){
+    $default_subject = $current_user_fullname . ' ' . t('shared with you a folder on ', [], [
+      'context' => 'gofast:gofast_link_sharing',
+      'langcode' => $user->language
+    ]) . variable_get('site_name', 'GoFAST');
+  }
   
   $form['subject'] = [
     '#type' => 'textfield',
@@ -101,10 +132,7 @@ function gofast_link_sharing_get_form_fields($current_user_fullname, $form, $use
     '#maxlength' => 128,
     '#description' => t('Subject for the email that will be sent', [], ['context' => 'gofast:gofast_link_sharing']),
     '#required' => TRUE,
-    '#default_value' => $current_user_fullname . ' ' . t('shared with you a document on ', [], [
-        'context' => 'gofast:gofast_link_sharing',
-        'langcode' => $user->language
-      ]) . variable_get('site_name', 'GoFAST 3'),
+    '#default_value' => $default_subject,
   ];
 
   $form['title'] = [
@@ -248,6 +276,7 @@ function gofast_link_sharing_form_submit($form, &$form_state){
 
   ## get all node informations
   $node = node_load($form_state['values']['nid']);
+  $human_readable_node_type = gofast_get_human_readable_node_type($node->type);
   $node_icon = str_replace('<span>', '<span style="display:none;">', theme('node_title', array('node' => $node, 'link' => FALSE)));
   $document_pic = gofast_mail_queue_fa_png($node_icon);
   
@@ -293,7 +322,7 @@ function gofast_link_sharing_form_submit($form, &$form_state){
           { $defaultSiteName = "GoFAST Community"; }
           $site_name = variable_get('site_name', $defaultSiteName);
 
-          $title = t('Document Sharing' , array(), $l);
+          $title = t('@node_type Sharing' , array('@node_type' => $human_readable_node_type), $l);
           $subject = $form_state['values']['subject'];
           $footer = t('Message sent from %site_name', array('%site_name' => $site_name), $l);
           $subheader_message = $user_name . ' ' . t('shared', array(), $l) . '<a href="' . $form_state['values']['url'] . '" style="color: #337ab7; text-decoration: none;">' . $document_pic . ' ' . $form_state['values']['title'] . '</a> ' . t('with you.', array(), $l);
@@ -306,6 +335,8 @@ function gofast_link_sharing_form_submit($form, &$form_state){
             array('%exp_period' => t(DEFAULT_EXPIRY_PERIOD_STRING, array(), $l)),
             $l),
             'l' => $l,
+            'node_type' => $human_readable_node_type,
+            'helper_message' => $node->type === 'webform' ? t('Click on the link to fill the webform', [], $l) : t('If you want, you can download the file and edit it.', [], $l)
           ));
           if (count($recpts) == 1){
             $recpt_mail[] = end($recpts);
@@ -319,7 +350,11 @@ function gofast_link_sharing_form_submit($form, &$form_state){
           $ret = gofast_mail_queue_api_queue_ext($mail, $recpt_mail, time(), $user->uid);
           if($already_add_toast == false && count($recipients_ids_list) < 1){
             flood_register_event('print_mail');
-            drupal_set_message(t('An email has been sent to the user(s) with the document\'s sharing link.'));
+            drupal_set_message(t(
+              'An email has been sent to the user(s) with the @node_type\'s sharing link.', 
+              array('@node_type' => $human_readable_node_type), 
+              array()
+            ));
           }
           $already_add_toast = true;
           }
@@ -336,7 +371,7 @@ function gofast_link_sharing_form_submit($form, &$form_state){
           }
         }
 
-        $subject = t('You shared a document with users in ', array(), array('context' => 'gofast:gofast_link_sharing'))." ".$defaultSiteName;
+        $subject = t('You shared a @node_type with users in ', array('@node_type' => $human_readable_node_type), array('context' => 'gofast:gofast_link_sharing'))." ".$defaultSiteName;
         $subheader_message = t('You shared', array(), $l) . '<a href="' . $form_state['values']['url'] . '" style="color: #337ab7; text-decoration: none;">' . $document_pic . ' ' . $form_state['values']['title'] . '</a> ' . t('with:', array(), $l);
         foreach($mail_list as $mail_list_recpt){
           $subheader_message .= "<div>" . $mail_list_recpt . "</div>";
@@ -350,6 +385,8 @@ function gofast_link_sharing_form_submit($form, &$form_state){
           array('%exp_period' => t(DEFAULT_EXPIRY_PERIOD_STRING, array(), $l)),
           $l),
           'l' => $l,
+          'node_type' => $human_readable_node_type,
+          'helper_message' => $node->type === 'webform' ? t('Click on the link to fill the webform', [], $l) : t('If you want, you can download the file and edit it.', [], $l)
         ));
 
         $mail = array(
@@ -480,13 +517,13 @@ function gofast_link_sharing_manage_mail_sharing_form($form, &$form_state) {
                   $selected_nids[rand(-9999999, -1)] = $alfresco_path;
                 }else{
                   $node = node_load($item->properties['gofast:nid']);
-              //Exclude unsharable confidential documents
-              $is_confidential = isset($node->field_criticity['und'][0]['tid']) && taxonomy_term_load($node->field_criticity['und'][0]['tid'])->name == "Confidential Data";
+                  //Exclude unsharable confidential documents
+                  $is_confidential = gofast_taxonomy_is_node_confidential($node); 
                   if($is_confidential){
                     $blocked_nids[] = $item->properties["gofast:nid"];
                     continue;
                   }
-                  $is_internal = isset($node->field_criticity['und'][0]['tid']) && taxonomy_term_load($node->field_criticity['und'][0]['tid'])->name == "Internal Distribution";
+                  $is_internal = gofast_taxonomy_is_node_criticity_internal($node);
                   if ($is_internal) {
                     $blocked_nids[] = $item->properties["gofast:nid"];
                     continue;
@@ -517,6 +554,10 @@ function gofast_link_sharing_manage_mail_sharing_form($form, &$form_state) {
       '#default_value' => json_encode(array_keys($selected_nids)),
       '#maxlength' => "99999"
   );
+  $form['selected_items'] = array(
+      '#type' => 'hidden',
+      '#value' => json_encode(['node' => array_keys($selected_nids)]),
+  );
   $form['selected_nodes_ids']['#attributes']['class'][] = "gofast_display_none";
   $rendered_items = "";
   foreach (array_unique($title_cart) as $title) {
@@ -529,9 +570,7 @@ function gofast_link_sharing_manage_mail_sharing_form($form, &$form_state) {
   }
 
 
-  $nodes = explode(',',$form['selected_nodes_ids']['#default_value']);
-  $nodes = str_replace("[",'',$nodes);
-  $nodes = str_replace("]",'',$nodes);
+  $nodes = array_filter(json_decode($form['selected_nodes_ids']['#default_value'], true) ?: []);
   $nodes_title = array();
   $nodes_nids = array();
   $nodes_links = array();
@@ -675,8 +714,18 @@ function gofast_link_sharing_manage_mail_sharing_form_submit($form, &$form_state
     return $formatted_item;
   }, json_decode((string) $form_state['input']['ac-list-tags-to']));
   
+  $items = [];
+  // Get folder id
+  if(isset($form_state['values']['folder_data'])){
+    $folder_data = $form_state['values']['folder_data'];
+    $items['folder'] = $folder_data;
+  }
   // Get nids
-  $nids = $form_state['values']['selected_nodes_ids'];
+  if(isset($form_state['values']['selected_nodes_ids'])){
+    $nids = $form_state['values']['selected_nodes_ids'];
+    $items['node'] = json_decode($nids);
+  }
+  $form_state['values']['items'] = $items;
 
   //Get subject
   $subject = $form_state['values']['subject'];
@@ -695,7 +744,7 @@ function gofast_link_sharing_manage_mail_sharing_form_submit($form, &$form_state
     $download_page_title = !empty($form_state['values']['folder_sharing_title']) ? $form_state['values']['folder_sharing_title'] : null;
     //Create all theme for the modal
     $html .= theme('gofast_manage_linksharing_progression', array('uid' => 
-      $info_recipient->value ,'nids' => $nids,'subject' => $subject ,'message' => $message, 'download_page_title' => $download_page_title, 'title' => $title));
+      $info_recipient->value ,'nids' => $nids,'subject' => $subject ,'message' => $message, 'download_page_title' => $download_page_title, 'title' => $title, 'items' => $items));
     }
 
       $commands[] = ctools_modal_command_dismiss();
@@ -733,55 +782,16 @@ function gofast_link_sharing_send_mail_to_transmitter($form,$form_state) {
   global $user;
   global $base_url;
 
+  $items = $form_state['values']['items'];
+  if(!isset($items)){
+    return;
+  }
+
   ## get information of current user
   $user_name = gofast_user_display_name($user);
   $user_mail = $user->mail;
 
-  ## get nids
-  $nids = $form_state['values']['selected_nodes_ids'];
   $nodes_informations = [];
-
-  ## get informations of all nodes to send (icons,build the hash..)
-  $data = json_decode($nids);
-
-  if (!is_array($data)) {
-    $data->properties = (array) $data->properties;
-    if (isset($data->properties['cmis:objectTypeId']) &&
-      $data->properties['cmis:objectTypeId'] == 'cmis:folder') {
-      //create node object for folder
-      $node = new stdClass();
-      $node->title = $data->properties['cmis:name'];
-      $node->nid = $data->properties['alfcmis:nodeRef'];
-      $node->type = 'gofast_folder';
-      $node->field_current_version = [LANGUAGE_NONE => [0 => ['value' => 1]]];
-      $nids = [$node];
-    }
-  }
-  if($nids[0]->type != 'gofast_folder'){
-    foreach (json_decode($nids) as $key => $nid) {
-      $node = node_load($nid);
-
-      $node_title = $node->title;
-      $nodes_informations[$key]['title'] = $node_title;
-      $document_version = $node->field_current_version[LANGUAGE_NONE][0]['value'];
-      $nodes_informations[$key]['version'] = $document_version;
-
-      ## get node icon
-      $node_icon = str_replace('<span>', '<span style="display:none;">', theme('node_title', array('node' => $node, 'link' => FALSE)));
-      ## store the icon in node information
-      $nodes_informations[$key]['icon'] = gofast_mail_queue_fa_png($node_icon);
-      $nodes_informations[$key]['url'] = $base_url .'/node/' . $nid;
-      ## get node icon
-      $node_icon = str_replace('<span>', '<span style="display:none;">', theme('node_title', [
-        'node' => $node,
-        'link' => FALSE
-      ]));
-      ## store the icon in node information
-      $nodes_informations[$key]['icon'] = gofast_mail_queue_fa_png($node_icon);
-      $nodes_informations[$key]['url'] = $base_url . '/node/' . $nid;
-    }
-  }
-
   $info_recipients = json_decode($form_state['input']['edit-to-hidden-values']);
 
   if (!empty($form_state['input']['to'])) {
@@ -884,9 +894,12 @@ function gofast_link_sharing_send_mail_to_transmitter($form,$form_state) {
     $message = t('No message', [], ['context' => 'gofast']);
   }
 
-  if (gettype($nids[0]) !== 'object') {
-    foreach (json_decode($nids) as $key => $nid) {
+  if(isset($items['node'])) {
+    foreach ($items['node'] as $key => $nid) {
       $node = node_load($nid);
+      if (!$node) {
+        continue;
+      }
 
       $node_title = $node->title;
       $nodes_informations[$key]['title'] = $node_title;
@@ -914,21 +927,43 @@ function gofast_link_sharing_send_mail_to_transmitter($form,$form_state) {
         $l),
       'l' => $l,
     ]);
-  }
-  else {
-    $folder_information = new stdClass();
-    $item = $nids[0];
-    $folder_information->title = $item->title;
-    $document_version = $item->field_current_version[LANGUAGE_NONE][0]['value'];
-    $folder_information->version = $document_version;
-    $folder_information->url = null;
-    $folder_information->type = 'folder';
+  } else if($items['folder']) {
+    $folder_informations = [];
+    foreach($items['folder'] as $alfresco_id => $folder_path){
+      $item = gofast_cmis_item_get($alfresco_id);
+      $folder_information = new stdClass();
+      $folder_information->title = $item->properties['cmis:name'];
+      $folder_information->url = null;
+      $folder_information->type = 'folder';
+      if($folder_path){
+        $folder_available_paths = gofast_cmis_webservice_get_node_parents($alfresco_id);
+        if(!in_array($folder_path, $folder_available_paths)){
+          $folder_path = $folder_available_paths[0] ?? null;
+        }
+        $space = gofast_cmis_get_spaceid_by_webdav_folder($folder_path, $alfresco_id);
+        $folder_url = $base_url . '/node/' . $space.'?path='.$folder_path;
+        $folder_information->url = $folder_url;
+      }
+      $folder_informations[] = $folder_information;
+    }
+    
+    $title = t('Information about shared folders', [], $l);
+    $subject = format_plural(
+      count($folder_informations), 
+      "You shared a folder with users in @site_name", 
+      "You shared @count folders with users in @site_name", 
+      array("@site_name" => $defaultSiteName), 
+      $l
+    );
 
-    $subject = t('You shared a folder with users in ', [], ['context' => 'gofast:gofast_link_sharing']) . " " . $defaultSiteName;
-    $subheader_message = t('You shared', array(), $l) . '<a href="' . $form_state['values']['url'] . '" style="color: #337ab7; text-decoration: none;">' .
-      '<i class="fa-2x fa fa-folder"></i>' . ' ' . $folder_information->title .
- '</a> ' . t('with:', 
-        array(), $l);
+    $folder_link_button = "<a href=\"{$folder_informations[0]->url}\" style=\"color: #337ab7; text-decoration: none;\"><i class=\"fa-2x fa fa-folder\"></i>$folder_information->title</a>";
+    $subheader_message = format_plural(
+      count($folder_informations),
+      "You shared !folder_link with:",
+      "You shared @count folders with:",
+      array("!folder_link" => $folder_link_button),
+      $l
+    );
     
     foreach($mail_list as $mail_list_recpt){
       $recipient = user_load_by_mail($mail_list_recpt); 
@@ -944,7 +979,7 @@ function gofast_link_sharing_send_mail_to_transmitter($form,$form_state) {
       'author_name' => $user_name,
       'author_pic' => theme('user_picture', array('account' => $user, 'dimensions' => 40, 'attributes' => ['width' => 40, 'style' => "border-radius: 5px; width:40px;"])),
       'recip_name' => $user_dest->name,
-      'folder_information' => $folder_information,
+      'folder_informations' => $folder_informations,
       'mail_list' => $mail_list,
       'subheader_message' => $subheader_message,
       'message' => nl2br($message),
@@ -957,7 +992,6 @@ function gofast_link_sharing_send_mail_to_transmitter($form,$form_state) {
   }
   
   $footer = t('Message sent from %site_name', ['%site_name' => $defaultSiteName], $l);
-
   ## send mail
   $mail = [
     'body' => $body,
@@ -993,6 +1027,7 @@ function gofast_manage_linksharing_process(){
       //Get message mail
       $mail_message = $_POST['process_message'];
 
+      $items = json_decode($_POST['process_items'], true);
       //Get all documents nid to send
       $process_nids = json_decode($_POST['process_nids']);
       $nids = explode(',' , $process_nids);
@@ -1018,13 +1053,16 @@ function gofast_manage_linksharing_process(){
       }
       
     $process_nids = json_decode($process_nids);
-    if(gettype($process_nids) == 'array'){
+    if(isset($items['node'])){
        //Get information of all nodes to send (icons,build the hash..)
       $nids_informations = array();
       //Get information of all nodes to send (icons,build the hash..)
       foreach ($nids as $key=>$nid){
             $nid = str_replace('"','',$nid);
             $node = node_load($nid);
+            if (!$node) {
+              continue;
+            }
             $document_version = $node->field_current_version['und']['0']['value'];
             $hash = gofast_link_sharing_build_link($nids,$uid,$user->uid,$document_version,TRUE,TRUE,$nid);
   
@@ -1060,24 +1098,31 @@ function gofast_manage_linksharing_process(){
               $l),
             'l' => $l,
           ));
-    }
-    else{
-      $hash = gofast_link_sharing_build_link(
-        $process_nids,
-        $uid,
-        $user->uid,
-        '', 
-        TRUE,
-        TRUE,
-        NULL, 
-        TRUE
-      );
-  
-      $folder_information = new stdClass();
-      $item = $process_nids;
-      $item->properties = (array)$item->properties;
-      $folder_information->title = $item->properties['cmis:name'];
-      $folder_information->url = $hash;
+    } else if(isset($items['folder'])) { // It's actually not possible to share multiple folder
+      $folder_informations = [];
+      foreach($items['folder'] as $folder_alfresco_id => $path){
+
+        $folder_item = gofast_cmis_item_get($folder_alfresco_id);
+        $hash = gofast_link_sharing_build_link(
+          $folder_alfresco_id,
+          $uid,
+          $user->uid,
+          '', 
+          TRUE,
+          FALSE,
+          NULL, 
+          TRUE,
+          ['folder_path' => $path],
+        );
+    
+        $folder_information = new stdClass();
+        $item = $folder_item;
+        $item->properties = (array)$item->properties;
+        $folder_information->title = $item->properties['cmis:name'];
+        $folder_information->url = $hash;
+        $folder_information->id = $folder_alfresco_id;
+        $folder_informations[] = $folder_information;
+      }
   
       // Get default site name
       if (!module_exists('gofast_community')){
@@ -1085,7 +1130,6 @@ function gofast_manage_linksharing_process(){
       }else{
         $defaultSiteName = "GoFAST Community";
       }
-  
       // Get recipient language (current user language if it's an extranet user)
       $l = array('langcode' => $recpts['to']['language'], 'context' => 'gofast:gofast_link_sharing');
       $title = t('Shared Folder' , array(), $l);
@@ -1093,16 +1137,17 @@ function gofast_manage_linksharing_process(){
         'author_pic' => theme('user_picture', array('account' => $user, 'dimensions' => 40, 'attributes' => ['width' => 40, 'style' => "border-radius: 5px; width:40px;"])),
         'author_name' => $user_name,
         'recip_name' => $recipient_user ? $recipient_user->name : $recipient_user_mail,
-        'folder_information' => $folder_information,
+        'folder_informations' => $folder_informations,
         'download' =>gofast_link_sharing_build_link(
-          $process_nids,
+          $folder_informations[0]->id,
           $uid,
           $user->uid,
           '',
           TRUE,
-          TRUE,
+          FALSE,
           NULL,
-          TRUE
+          TRUE,
+          ['folder_path' => $path],
         ),
         'message' => nl2br($mail_message),
         'expiry_msg' => t('This link will be functional for the next ' . '%exp_period. After this, it will be disabled.',
@@ -1133,16 +1178,80 @@ function gofast_manage_linksharing_process(){
 }
 
 /**
- * Sets up a redirect to the first accessible space that contains the given folder reference
- * @param string $folder_alfresco_reference The Alfresco reference or item ID of the folder to redirect to
+ * Attempts to redirect a user to a folder by its absolute path.
+ *
+ * This redirects the user to the parent space node view on the file browser tab
+ * with the folder itself open.
+ *
+ * This function only redirects to the given path if it is accessible, and
+ * should not redirect to any other possible location of the folder.
+ *
+ * @see gofast_link_sharing_try_redirecting_to_folder_by_item_id() to attempt to
+ *  redirect a user to any path they can access, optionally with a preferred
+ *  path to use.
+ *
+ * @param string $path Absolute path of the folder to redirect to.
+ * @return void|never Returns if the user could not be redirected, otherwise the
+ *  function exits.
  */
-function gofast_link_sharing_try_redirecting_to_folder_by_item_id($folder_alfresco_reference) {
+function gofast_link_sharing_try_redirecting_to_folder_path($path) {
+  $space_nid = gofast_cmis_get_spaceid_by_webdav_folder($path, NULL);
+  $space_node = node_load($space_nid);
+
+  // Check if space node exists.
+  if ($space_node === FALSE) {
+    return;
+  }
+
+  // Check if  user can browse files within space (needs to be a member of the space).
+  global $user;
+  $can_browse = in_array($user->uid, gofast_og_get_members_userlist_included($space_node));
+  if (!$can_browse) {
+    return;
+  }
+
+  // Redirect user to folder in file browser.
+  drupal_goto('/node/' . $space_nid, [
+    'query' => [
+      'path' => $path,
+    ],
+    'fragment' => 'ogdocuments',
+  ]);
+}
+
+/**
+ * Sets up a redirect to the first accessible space that contains the given folder reference
+ *
+ * This function will attempt to redirect the user to the preferred path if
+ * provided, as long as the user can access it.
+ *
+ * Otherwise, it will try to redirect the user to a location of the given folder
+ * item reference that they can access.
+ *
+ * If none of these succeed, this function returns and the user is not redirected.
+ *
+ * @see gofast_link_sharing_try_redirecting_to_folder_path() To attempt to
+ *  redirect a user to a folder by its path without attempting to redirect to
+ *  another location.
+ *
+ * @param string $folder_alfresco_reference The Alfresco reference or item ID of the folder to redirect to
+ * @param string|null $preferred_path Path that should be used first before
+ *  attempting to find another location that the user can access.
+ * @return void|never Returns if the user could not be redirected, otherwise the
+ *  function exits.
+ */
+function gofast_link_sharing_try_redirecting_to_accessible_folder_location_by_item_id($folder_alfresco_reference, $preferred_path = NULL) {
+  global $user;
+
+  // First try to redirect to a preferred path if provided.
+  if (!empty($preferred_path)) {
+    gofast_link_sharing_try_redirecting_to_folder_path($preferred_path);
+  }
+
   // normalize item id to reference
   if (strpos($folder_alfresco_reference, 'workspace://SpacesStore/') === false) {
     $folder_alfresco_reference = 'workspace://SpacesStore/' . $folder_alfresco_reference;
   }
-
-  $folder_parents = gofast_cmis_webservice_get_node_parents($folder_alfresco_reference);
 
   $folder_item = gofast_cmis_item_get($folder_alfresco_reference);
   // check if we got item from alfresco, if not it means the folder does not
@@ -1150,52 +1259,29 @@ function gofast_link_sharing_try_redirecting_to_folder_by_item_id($folder_alfres
   if ($folder_item === false) {
     return false;
   }
+  
   $folder_name = $folder_item->properties['cmis:name'];
 
-  foreach ($folder_parents as $parent_path) {
-    $path_segments = explode('/', $parent_path);
-    $folder_subpath_segments = [$folder_name];
+  // Find spaces of mirrored locations that user may access.
+  $folder_parents = gofast_cmis_item_get_mirrored_parent_spaces($folder_alfresco_reference, $user);
 
-    // find nearest space in path
-    while (count($path_segments)) {
-      // is current path_segments ending with a space name ?
-      $last_segment = end($path_segments);
-      if (str_starts_with($last_segment, "_")) {
-        break;
-      }
-
-      array_unshift($folder_subpath_segments, array_pop($path_segments));
-    }
-
-    // no space parent, shouldn't ever happen. If it ever does, ignore the path
-    if (empty($path_segments)) {
-      continue;
-    }
-
-    // construct back path parts
-    $space_path = implode('/', $path_segments);
-    $folder_subpath = implode('/', $folder_subpath_segments);
-
-    // get space node from its path
-    $space_item = gofast_cmis_item_get_by_path($space_path);
-    $space_nid = $space_item->properties['gofast:nid'];
+  foreach ($folder_parents as $parent_space) {
+    $space_nid = $parent_space['cmis_item']->properties['gofast:nid'];
     $space_node = node_load($space_nid);
 
     // if node loading failed, ignore this path
-    if ($space_node === false) {
+    if ($space_node === FALSE) {
       continue;
     }
 
-    // cannot access this space, do not redirect to it
-    if (!node_access('view', $space_node)) {
-      continue;
-    }
-
+    $folder_subpath = implode('/', [...$parent_space['segments_to_parent'], $folder_name]);
     // redirect
     drupal_goto(
       '/node/' . $space_nid,
       [
-        'query' => ['path' => $space_path . '/' . $folder_subpath],
+        'query' => [
+          'path' => $parent_space['path'] . '/' . $folder_subpath,
+        ],
         'fragment' => 'ogdocuments',
       ],
     );
@@ -1238,74 +1324,35 @@ function gofast_link_sharing_try_redirecting_to_node($node) {
   if (node_access('view', $node)) {
     // never returns / exits / diverges
     drupal_goto("/node/" . $node->nid);
+  } else if($node->type === "webform"){
+    // if it's a webform, redirect to public survey url
+    $survey_link =  "/drupal/survey/$node->nid?hash=". gofast_webform_create_expiration_hash($node->nid);
+    header('Location:'.$survey_link);
+    exit;
   }
 }
 
 function gofast_multi_sharing_check_session($hash){
-  $nodes_exist = true;
   if(!empty($hash)){
     $decrypt_datas = gofast_link_sharing_link_decrypt($hash);
   } else {
     $decrypt_datas = gofast_link_sharing_link_decrypt($_GET["hash"]);
   }
-  $nids = $decrypt_datas['nids'];
   $exp_date = $decrypt_datas['exp_date'];
-
-  //Check node exist
-  if(is_array($nids)){
-    foreach ($nids as $key => $nid) {
-      $node = node_load($nid);
-      $node_exists = isset($node->nid);
-      if(!$node_exists){
-        $nodes_exist = false;
-      }
-    }
-  }else if(is_numeric($nids)){
-    $node = node_load($nids);
-    $nodes_exist = isset($node->nid);
-  }
 
   //Check sharing expiry date
   if ($exp_date == "") {
-    $link_still_valid = TRUE;
+    $link_still_valid = FALSE;
   } else {
     $link_still_valid = ($exp_date > time()) ? TRUE : FALSE;
   }
-
+    
   //Check if there is already a gofast session
-  if(!$nodes_exist || !$link_still_valid) {
-      global $user;
-      // is user logged in ?
-      if ($user->uid !== "0") {
-        // when sharing a folder: try redirecting to folder
-        if (isset($_GET['workspace'])) {
-          $folder_alfresco_item_id = $_GET['workspace'];
-          // try redirecting to the folder, user may not have the rights to access so this may fail
-          // may never return (if redirect happens)
-          gofast_link_sharing_try_redirecting_to_folder_by_item_id($folder_alfresco_item_id);
-        }
-
-        // if sharing exactly one node that exists: no ambiguity redirect to node page.
-        if (isset($nids)) {
-          $nid_unique = $decrypt_datas['nid_unique'];
-          $node = gofast_link_sharing_try_load_sharing_link_node($nids, $nid_unique);
-
-          if($node !== false) {
-            // try redirecting to the node, user may not have the rights to access so this may fail
-            // may never return (if redirect happens)
-            gofast_link_sharing_try_redirecting_to_node($node);
-          }
-        }
-
-        // ambiguous case: multiple nodes shared, which one should be chosen ?
-        // -> don't choose, let user be redirected like they were not logged in.
-      }
-
-      drupal_set_message(t("Sorry this sharing link is not valid", array(), array('context' => 'sharing_dl')), 'error');
-      // never returns / exits / diverges
-      drupal_goto("/");
+  if(!$link_still_valid){
+    drupal_set_message(t("Sorry this sharing link is not valid", array(), array('context' => 'sharing_dl')), 'error');
+    // never returns / exits / diverges
+    drupal_goto("/");
   }
-  return $node;
 }
 
 /**
@@ -1562,6 +1609,10 @@ function gofast_link_sharing_folder_dl() {
   $hash = $_GET['hash'];
   $workspace = $_GET['workspace'];
   $process_uuid = $_GET['process_uuid'];
+  // Make first cmis call as admin to allow cmis instance having admin rights
+  usurp(1);
+  gofast_cmis_get_repository();
+  usurp(false);
 
   // Add process_uuid to $_POST to make a drupal variable with this id
   $_POST["process_uuid"] = $process_uuid;
@@ -1569,6 +1620,12 @@ function gofast_link_sharing_folder_dl() {
   // Check is the session link is not expiry
   gofast_multi_sharing_check_session($hash);
   if(isset($workspace)){
+    // The workspace must be the folder authorized by the signed hash.
+    $share = gofast_link_sharing_link_decrypt($hash);
+    if (empty($share['alfresco_id']) || $share['alfresco_id'] !== $workspace) {
+      drupal_goto('/');
+    }
+    $item = gofast_cmis_item_get($workspace);
     $nodeRefs = [['nodeRef' =>  'workspace://SpacesStore/'.$workspace]];
     drupal_json_output(array(
       'status' => 'success',
@@ -1577,9 +1634,8 @@ function gofast_link_sharing_folder_dl() {
     fastcgi_finish_request();
     
     gofast_multi_link_sharing_folder_send_mail($hash, $workspace);
-
     try{
-      gofast_ajax_file_browser_initialize_file_download_process($nodeRefs);
+      gofast_ajax_file_browser_initialize_file_download_process($nodeRefs, ['output_title' => $item->properties['cmis:name']]);
     }
     catch(\Exception $e){   
       variable_set("gofast_cmis_compression_status_$process_uuid", array(
@@ -1695,16 +1751,14 @@ function gofast_multi_link_sharing_folder_send_mail($hash, $folder_store_id){
  */
 function gofast_link_sharing_folder_form($form, $form_state){
   global $user;
-  
-  gofast_multi_link_sharing_send_mail($form,$form_state);
-  
+    
   $data = $form_state['data'];
   $user_details = user_load($user->uid);
   $current_user_fullname=  gofast_user_display_name($user_details);
   //append the candidates to the form to be used in the submit function
   $form['data'] = array(
     '#type' => 'hidden',
-    '#value' => json_encode($data)
+    '#value' => $data,
   );
   $form[] = gofast_link_sharing_displayFolderSharingInfo($data, $form);
 
@@ -1718,13 +1772,6 @@ function gofast_link_sharing_folder_form($form, $form_state){
  * @throws \Exception
  */
 function gofast_link_sharing_folder_form_submit($form, &$form_state){
-  
-  
-  global $user;
-  $data = json_decode($form_state['input']['data']);
-  $data = json_decode($data)->cmis_item;
-
-  $form_state['values']['selected_nodes_ids'] = json_encode($data);
   $form_state['values']['folder_sharing_title'] = t('Folder Shared Contents');
 
   gofast_link_sharing_manage_mail_sharing_form_submit($form, $form_state);

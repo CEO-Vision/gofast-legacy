@@ -10,7 +10,7 @@ use Firebase\JWT\JWT;
  */
 define('GOFAST_CMIS_CRON_CACHED_LOCATION_TREES', variable_get("gofast_cmis_cron_cached_location_trees", []));
 
-define("LO_VERSION", "7.6");
+define("LO_VERSION", "25.2");
 
 /**
  * This constant has a list of supported file extensions for the
@@ -20,7 +20,14 @@ define("LO_VERSION", "7.6");
  * 
  * @type array
  */
-const SUPPORTED_PREVIEW_EXTENSIONS = ['csv', 'et', 'ett', 'fods', 'ods', 'ots', 'sxc', 'xls', 'xlsb', 'xlsm', 'xlsx', 'xlt', 'xltm', 'xltx', 'xml', 'dps', 'dpt', 'fodp', 'odp', 'otp', 'odg', 'pot', 'potm', 'potx', 'pps', 'ppsm', 'ppsx', 'ppt', 'pptm', 'pptx', 'sxi', 'djvu', 'doc', 'docm', 'docx', 'docxf', 'dot', 'dotm', 'dotx', 'epub', 'fb2', 'fodt', 'htm', 'html', 'mht', 'mhtml', 'odt', 'ott', 'oxps', 'pdf', 'rtf', 'stw', 'sxw', 'txt', 'wps', 'wpt', 'xps', 'xml', 'vsd'];
+const SUPPORTED_PREVIEW_EXTENSIONS = [
+  'csv', 'et', 'ett', 'fods', 'ods', 'ots', 'sxc', 'xls', 'xlsb', 'xlsm', 'xlsx',
+  'xlt', 'xltm', 'xltx', 'xml', 'dps', 'dpt', 'fodp', 'odp', 'otp', 'odg', 'pot',
+  'potm', 'potx', 'pps', 'ppsm', 'ppsx', 'ppt', 'pptm', 'pptx', 'sxi', 'djvu',
+  'doc', 'docm', 'docx', 'docxf', 'dot', 'dotm', 'dotx', 'epub', 'fb2', 'fodt',
+  'htm', 'html', 'mht', 'mhtml', 'odt', 'ott', 'oxps', 'pdf', 'rtf', 'stw',
+  'sxw', 'txt', 'wps', 'wpt', 'xps', 'xml', 'vsd', 'vsdx', 'md',
+];
 
 /**
  * @package gofast_cmis
@@ -159,10 +166,20 @@ function gofast_cmis_webservice_generate_alfresco_ticket($username) {
  * to get only folders and "groups" to get only groups, "templates" to get a
  * list of all available templates for the user queryring. leave empty for all
  * or set "all"
+ * @param (array{
+ *   max_items?: string | null,
+ *   skip_until_after_path?: string | null,
+ * } | null) $pagination Pagination options array.
+ *  available keys:
+ *  - max_items?: Maximum number of descendant items to return for this request.
+ *    Passing a non-null value to this parameter changes the returned array structure.
+ *    Unlimited when null.
+ *  - skip_until_after_path?: Path to the last item returned by a previous request.
  * @return array
  */
-function gofast_cmis_webservice_item_get_descendants($reference, $param_documents = "all", $async = false, $as_admin = FALSE, $origine = NULL) {
-  
+function gofast_cmis_webservice_item_get_descendants($reference, $param_documents = "all", $async = false, $as_admin = FALSE, $origine = NULL, $pagination = NULL) {
+  $max_items = $pagination['max_items'];
+  $skip_until_after_path = $pagination['skip_until_after_path'];
   global $user;
   
   if (strpos($reference, "workspace") === false) {
@@ -189,6 +206,12 @@ function gofast_cmis_webservice_item_get_descendants($reference, $param_document
   }
 
   $url = "http://localhost:8080/alfresco/service/get/descendants/?reference=" . $reference . "&type=" . $param_documents . "&restrictdepth=".$restrictdepth;
+  if ($max_items !== NULL) {
+    $url .= '&maxItems=' . urlencode($max_items);
+  }
+  if ($skip_until_after_path !== NULL) {
+    $url .= '&skipUntilAfterPath=' . urlencode($skip_until_after_path);
+  }
 
   $ch = curl_init();
   if($as_admin == false){
@@ -215,9 +238,9 @@ function gofast_cmis_webservice_item_get_descendants($reference, $param_document
   $buf = strip_tags($buffer);
   $result = json_decode($buf);
   $descendants_final = array();
-  
+
   if (!empty($result)) {
-    foreach ($result as $key => $descendant) {
+    foreach ($result->descendants as $key => $descendant) {
       if (in_array($param_documents, array("documents", "templates"))) {
         $descendants_final[$descendant->id] = $descendant;
       }
@@ -236,8 +259,50 @@ function gofast_cmis_webservice_item_get_descendants($reference, $param_document
   if ($cache_again) {
     cache_set("gofast_cmis_cron_cached_location_" . $reference, $descendants_final);
   }
+
+  // Return pagination information if output may be limited.
+  if ($max_items !== NULL) {
+    return [
+      'descendants' => $descendants_final,
+      'count' => count($result->descendants),
+      'has_more' => $result->hasMore,
+    ];
+  }
+
   return $descendants_final;
 }
+
+/**
+ * Retrieves a deleted (trashed) node from Alfresco via REST API.
+ *
+ * This function queries the Alfresco API to get information about a deleted node.
+ * It can perform the request either as an admin or as the current user.
+ *
+ * @param string $reference The node reference or ID used to identify the trashed item.
+ * @param bool $as_admin Whether to perform the request as admin (default: TRUE).
+ *
+ * @return object|null Returns the decoded JSON object (`entry`) of the trashed node, or null on failure.
+ */
+function gofast_cmis_alfresco_api_get_trashed_node($reference, $as_admin = TRUE) {
+  $curl = curl_init();
+  $url = "http://localhost:8080/alfresco/api/-default-/public/alfresco/versions/1/deleted-nodes/".gofast_cmis_get_raw_item_id($reference);
+  if($as_admin == TRUE){
+    curl_setopt($curl, CURLOPT_USERPWD, "admin:" . gofast_get_admin_pwd());
+  } else {
+    global $user;
+    $ticket = gofast_cmis_get_user_ticket();
+    if($ticket == FALSE) {
+        $ticket = gofast_cmis_retrieve_and_store_ticket($user);
+    }
+    $url .= "?alf_ticket=".$ticket."";
+  }
+  curl_setopt($curl, CURLOPT_URL, $url);
+  curl_setopt($curl, CURLOPT_CUSTOMREQUEST, "GET");
+  curl_setopt($curl, CURLOPT_RETURNTRANSFER, 1);
+  $result = curl_exec($curl);
+  return json_decode($result)?->entry;
+}
+
 
 /**
  * @package gofast_cmis
@@ -992,8 +1057,9 @@ function gofast_cmis_webservice_space_assign_permissions($node) {
   $group_type = "og_private";
   if (gofast_og_is_user_private_space($node)) {
     $group_type = "private_space";
-  }
-  else {
+  } else if($node->type == "public"){
+    $group_type = "og_public";
+  } else {
     if (gofast_og_is_space($node, false)) {
       if (gofast_og_is_root_space($node)) {
         $group_type = "root_space";
@@ -1003,7 +1069,11 @@ function gofast_cmis_webservice_space_assign_permissions($node) {
       }
     }
   }
-  $unique_name = rawurlencode(str_replace("\,", ",", gofast_ldap_space_cn($node)));
+  if($node->type == "public"){
+    $unique_name = "PUBLIC_SPACE";
+  } else {
+    $unique_name = rawurlencode(str_replace("\,", ",", gofast_ldap_space_cn($node)));
+  }
   //on appel l'url du script alfresco qui attribue les droits sur un dossier
   //voir scripts setPermissionSubgroups.get.*
   //folder correpsond a la reference (id) du dossier alfresco
@@ -1148,6 +1218,32 @@ function gofast_cmis_webservice_item_assign_permissions($node_reference, $groups
   $buf = strip_tags($buffer);
 
   return $buf;
+}
+
+/**
+ * Returns the spaces of all the locations of an Alfresco item, as expected by gofast_cmis_webservice_item_assign_permissions().
+ *
+ * @param string $alf_ref
+ *   The Alfresco reference of a document or a folder
+ *
+ * @return (array{groups: string[], private_spaces: string[]})
+ *   The encoded cn of the spaces, with PUBLIC_SPACE standing for a public space, and the encoded cn of the private spaces
+ */
+function gofast_cmis_webservice_item_get_spaces_for_permissions($alf_ref) {
+  $spaces = array('groups' => array(), 'private_spaces' => array());
+  foreach ((array) gofast_cmis_webservice_get_node_parents($alf_ref) as $parent) {
+    $space = node_load(gofast_og_get_group_id_from_title_2($parent, TRUE, TRUE));
+    if (gofast_og_is_user_private_space($space)) {
+      $spaces['private_spaces'][] = rawurlencode(gofast_ldap_space_cn($space));
+    }
+    else if (isset($space->type) && $space->type == "public") {
+      $spaces['groups'][] = "PUBLIC_SPACE";
+    }
+    else {
+      $spaces['groups'][] = rawurlencode(gofast_ldap_space_cn($space));
+    }
+  }
+  return $spaces;
 }
 
 function gofast_cmis_webservice_item_assign_homepage_permissions($node_reference, $groups) {
@@ -1478,26 +1574,83 @@ function gofast_cmis_webservice_get_parents_folder_path($folder_ref)
 }
 
 /**
+ * Sends a request to alfresco to get the parents of a node (folder or document)
  * @package gofast_cmis
- * This method send a request using CURL to alfresco to get parents of a folder (return an array of all parents reference
- * @param type $folder_ref
- * @return array
+ * @param string $node_ref The reference to a node (document or folder) in alfresco.
+ *  Should be formatted as `{store protocol://store identifier}/UUID`
+ * (example: `workspace://SpacesStore/986570b5-4a1b-11dd-823c-f5095e006c11`).
+ * @return array an array of all parents references. The array may be empty, e.g. if a  file was deleted.
  */
-function gofast_cmis_webservice_get_node_parents($node_ref)
+function gofast_cmis_webservice_get_node_parents($node_ref, $account = null)
 {
   if (empty($node_ref)) {
     return false;
   }
+  // normalize item id to reference
+  if (strpos($node_ref, 'workspace://SpacesStore/') === false) {
+    $node_ref = 'workspace://SpacesStore/' . $node_ref;
+  }
   $ch = curl_init();
   curl_setopt($ch, CURLOPT_HEADER, 0);
   curl_setopt($ch, CURLOPT_RETURNTRANSFER, 1);
-  curl_setopt($ch, CURLOPT_USERPWD, "admin" . ":" . gofast_get_admin_pwd());
-  curl_setopt($ch, CURLOPT_URL, "http://localhost:8080/alfresco/s/getnodeparents?node=" . $node_ref);
+  $url = "http://localhost:8080/alfresco/s/getnodeparents?node=$node_ref";
+  // Get account accessible node parents
+  if($account){
+    $ticket = gofast_cmis_retrieve_and_store_ticket($account);
+    $url .= "&alf_ticket=$ticket";
+  } else {
+    curl_setopt($ch, CURLOPT_USERPWD, "admin" . ":" . gofast_get_admin_pwd());
+  }
+  curl_setopt($ch, CURLOPT_URL, $url);
   curl_setopt($ch, CURLOPT_TIMEOUT, 5);
   $buffer = curl_exec($ch);
-  $result = $buffer;
+  $result = trim($buffer);
   $result = explode('%%SEPARATOR%%', $result);
   $result = array_map('trim', $result);
+  $result = array_filter($result, fn ($str) => !empty($str));
+  return $result;
+}
+
+/**
+ * Check if any descendant document is multi-filed or any descendant folder is
+ * non-trivially mirrored, to determine if the folder can be shared.
+ *
+ * Performs a single Alfresco server-side call instead of one call per
+ * descendant, avoiding gateway timeouts on large folders.
+ *
+ * The result is cached per reference within the current request using
+ * drupal_static(), so calling this from both check functions only triggers
+ * one actual HTTP call.
+ *
+ * @param string $reference The alfresco nodeRef of the folder.
+ * @return array|false Associative array with boolean keys
+ *   'hasMultifiedDocuments' and 'hasMirroredFolders', or FALSE on error.
+ */
+function gofast_cmis_webservice_check_folder_descendants_shareable($reference) {
+  $cache = &drupal_static(__FUNCTION__, array());
+  if (isset($cache[$reference])) {
+    return $cache[$reference];
+  }
+
+  if (strpos($reference, 'workspace://SpacesStore/') === false) {
+    $reference = 'workspace://SpacesStore/' . $reference;
+  }
+
+  $ch = curl_init();
+  curl_setopt($ch, CURLOPT_HEADER, 0);
+  curl_setopt($ch, CURLOPT_RETURNTRANSFER, 1);
+  curl_setopt($ch, CURLOPT_USERPWD, 'admin' . ':' . gofast_get_admin_pwd());
+  $url = 'http://localhost:8080/alfresco/s/get/check_folder_descendants_shareable?reference=' . urlencode($reference);
+  curl_setopt($ch, CURLOPT_URL, $url);
+  curl_setopt($ch, CURLOPT_TIMEOUT, 30);
+  $buffer = curl_exec($ch);
+
+  $result = json_decode(strip_tags(trim($buffer)), TRUE);
+  if (!is_array($result)) {
+    return FALSE;
+  }
+
+  $cache[$reference] = $result;
   return $result;
 }
 
@@ -1526,18 +1679,72 @@ function gofast_cmis_webservice_update_node_type($node_ref, $qnameType) {
 }
 
 /**
+ * Call alfresco's API endpoint to get a node's parents and return the parsed response body.
+ *
  * @package gofast_cmis
- * use Alfresco API to get parents of given node ($reference)
- * is much faster than using the webservice
+ *
+ * @see gofast_cmis_alfresco_api_get_node_parents() To get the parents as a list of paths.
+ * @see gofast_cmis_alfresco_api_get_primary_parent() To get the primary parent
+ *  from Alfreso. This should generally be the same value as the
+ *  `field_main_emplacement` node field
+ * @see gofast_cmis_alfresco_node_has_multiple_parents() To know if a node has
+ *  multiple parents on alfresco, which may be useful for knowing if a folder is
+ *  itself mirrored.
+ *
+ * @param string $reference Node Alfresco reference (workspace://UUID) or alfresco node id (UUID).
+ * @param array{
+ *  as_admin?: bool,
+ *  where?:string,
+ *  max_items?:int,
+ *  include?:string[],
+ * } $options
+ *   Array of additional options to query the Alfresco rest API.
+ *
+ *   The options are:
+ *   - `as_admin`: Execute the request as the admin user
+ *   - `where`: limit the results by using the `where` parameter of the API (not included by default)
+ *   - `max_items`: limit the number of results using the `maxItems` parameter (not included by default)
+ *   - `include`: List of additional information to include about the node (defaults to ['path'])
+ *
+ *   For more information of the values, see the alfresco API documentation.
+ *
+ *   NB: The `raw` option should be set to true if the `include` option is specified.
+ *
+ * @return (object{
+ *  list: object{
+ *    pagination: object{
+ *      count: int,
+ *      hasMoreItems: bool,
+ *      totalItems: int,
+ *      skipCount: int,
+ *      maxItems: int,
+ *    },
+ *    entries: object{entry:object}[],
+ *  },
+ * }) A list of parent paths if the `raw` option is not set, the full decoded API response object otherwise
  */
-function gofast_cmis_alfresco_api_get_node_parents($reference, $as_admin = FALSE) {
+function gofast_cmis_alfresco_api_call_get_node_parents($reference, $options = []) {
   $curl = curl_init();
+  $as_admin = $options['as_admin'] ?? FALSE;
 
-  // we want to include node path
-  $url_parameters = "?include=path";
-  $url = "http://localhost:8080/alfresco/api/-default-/public/alfresco/versions/1/nodes/".gofast_cmis_get_raw_item_id($reference)."/parents" . $url_parameters;
+  // Set default options.
+  // we want to include node path by default.
+  $options = ['include' => ['path'], ...$options];
+
+  // Set query parameters.
+  $url_parameters = [];
+  if (!empty($options['include'])) {
+    $url_parameters['include'] = implode(',', array_unique($options['include']));
+  }
+  if (isset($options['max_items'])) {
+    $url_parameters['maxItems'] = $options['max_items'];
+  }
+  if (isset($options['where'])) {
+    $url_parameters['where'] = $options['where'];
+  }
+
   // permissions
-  if($as_admin == TRUE){
+  if ($as_admin) {
     curl_setopt($curl, CURLOPT_USERPWD, "admin:" . gofast_get_admin_pwd());
   } else {
     global $user;
@@ -1545,17 +1752,98 @@ function gofast_cmis_alfresco_api_get_node_parents($reference, $as_admin = FALSE
     if($ticket == FALSE) {
         $ticket = gofast_cmis_retrieve_and_store_ticket($user);
     }
-    $url .= "&alf_ticket=".$ticket."";
+    $url_parameters['alf_ticket'] = $ticket;
   }
+
+  $url_query_string = http_build_query($url_parameters);
+  if ($url_query_string !== '') {
+    $url_query_string = '?' . $url_query_string;
+  }
+
+  // FIXME The alfresco base URL should be a constant or even better, a config/drupal variable.
+  // If you fix this, also fix other uses.
+  $alfresco_rest_api_base_url = 'http://localhost:8080/alfresco/api/-default-/public/alfresco/versions/1';
+  $url = "$alfresco_rest_api_base_url/nodes/"
+    . gofast_cmis_get_raw_item_id($reference)
+    . "/parents"
+    . $url_query_string;
+
   // curl request
   curl_setopt($curl, CURLOPT_URL, $url);
   curl_setopt($curl, CURLOPT_CUSTOMREQUEST, "GET");
   curl_setopt($curl, CURLOPT_RETURNTRANSFER, 1);
   $result = curl_exec($curl);
   curl_close($curl);
+
+  if (is_bool($result)) {
+    throw new Exception('cURL error while requesting Alfresco API for node parents.');
+  }
+  return json_decode($result, flags: JSON_THROW_ON_ERROR);
+}
+
+/**
+ * Get an Alfresco node's primary parent using Alfresco's REST API.
+ *
+ * @param string $reference Alfresco node reference or UUID to get the primary parent of.
+ * @return object{id:string,path:string}
+ */
+function gofast_cmis_alfresco_api_get_primary_parent($reference, $as_admin = FALSE) {
+  $result = gofast_cmis_alfresco_api_call_get_node_parents($reference, [
+    'as_admin' => $as_admin,
+    'include' => ['path'],
+    'where' => '(isPrimary=true)',
+  ]);
+
+  $entry = $result->list->entries[0]->entry;
+  // Construct primary parent path in GoFAST format
+  $segments = $entry->path->elements;
+  // API response contains a 'root space' segment which we don't use in our paths.
+  array_shift($segments);
+  $segments = array_map(fn($s) => $s->name, $segments);
+  $segments[] = $entry->name;
+
+  return (object)[
+    'id' => $entry->id,
+    'path' => '/' . implode('/', $segments),
+  ];
+}
+
+/**
+ * use Alfresco API to get parents of given node ($reference)
+ * is much faster than using the webservice
+ *
+ * @package gofast_cmis
+ *
+ * @see gofast_cmis_alfresco_api_call_get_node_parents() to get the raw output
+ *  from the alfresco API.
+ *
+ * @param array{
+ *  where?:string,
+ *  max_items?:int,
+ * } $options
+ *   Array of additional options to query the Alfresco rest API.
+ *
+ *   The options are:
+ *   - `where`: limit the results by using the `where` parameter of the API (not included by default)
+ *   - `max_items`: limit the number of results using the `maxItems` parameter (not included by default)
+ *
+ *   For more information of the values, see the alfresco API documentation.
+ *
+ *   NB: The `raw` option should be set to true if the `include` option is specified.
+ *
+ * @return string[] A list of parent paths.
+ */
+function gofast_cmis_alfresco_api_get_node_parents($reference, $as_admin = FALSE, $options = []) {
+  // we want to include node path
+  $result = gofast_cmis_alfresco_api_call_get_node_parents($reference, [
+    ...$options,
+    'include' => ['path'],
+    'as_admin' => $as_admin,
+  ]);
+
   // parse results as full paths
   $results = [];
-  foreach (json_decode($result)->list->entries as $entry) {
+  foreach ($result->list->entries as $entry) {
     $item = new stdClass();
     $full_path = $entry->entry->path->name . "/" . $entry->entry->name;
     // keep only crumbs starting from /Sites
@@ -1586,6 +1874,74 @@ function gofast_cmis_set_folder_item_prop($item_id, $prop = "gofast:ismirrored",
   ));
   curl_setopt($curl, CURLOPT_POSTFIELDS, json_encode($options));
   $result = curl_exec($curl);
+  return $result;
+}
+
+/**
+ * Calls the Alfresco REST API to restore a deleted node.
+ *
+ * @param string $item_id Alfresco Node UUID or Node reference string.
+ * @param bool $as_admin Whether to call the alfresco API as the admin user.
+ * @return object{error:object}|object{entry:object} An object of the API call
+ *  result, either an error defining the 'error' property or a success with the
+ *  'entry' property.
+ */
+function gofast_cmis_alfresco_api_restore_node($item_id, $as_admin = FALSE) {
+  global $user;
+  $query_params = [];
+
+  if ($as_admin) {
+    $user_pwd = 'admin:' . gofast_get_admin_pwd();
+  } else {
+    $ticket = gofast_cmis_get_user_ticket();
+    if (!$ticket) {
+      $ticket = gofast_cmis_retrieve_and_store_ticket($user);
+    }
+    $query_params['alf_ticket'] = $ticket;
+  }
+
+  $alf_node_id = gofast_cmis_get_raw_item_id($item_id);
+
+  // Build URL.
+  $query = http_build_query($query_params);
+  if (!empty($query)) {
+    $query = '?' . $query;
+  }
+
+  $url = 'http://localhost:8080/alfresco/api/-default-/public/alfresco/versions/1/deleted-nodes/' . $alf_node_id . '/restore' . $query;
+
+  // Init and configure cURL request.
+  $curl = curl_init();
+  curl_setopt($curl, CURLOPT_URL, $url);
+  curl_setopt($curl, CURLOPT_POST, TRUE);
+  curl_setopt($curl, CURLOPT_POSTFIELDS, '');
+  curl_setopt($curl, CURLOPT_RETURNTRANSFER, TRUE);
+  curl_setopt($curl, CURLOPT_HTTPHEADER, [
+    'Content-Type: application/json',
+    'Content-Length: 0',
+  ]);
+  if (isset($user_pwd)) {
+    curl_setopt($curl, CURLOPT_USERPWD, $user_pwd);
+  }
+
+  // Call and process result.
+  $result_string = curl_exec($curl);
+  if ($result_string === FALSE) {
+    watchdog(
+      'gofast_cmis',
+      'cURL error while trying to call node restoration API: errno = @error_number, message = @message',
+      [
+        '@error_number' => curl_errno($curl),
+        '@message' => var_export(curl_error($curl), TRUE),
+      ],
+      WATCHDOG_WARNING,
+    );
+  }
+  $result = json_decode($result_string);
+  // Make entry properties an array on success.
+  if (isset($result->entry->properties)) {
+    $result->entry->properties = (array) $result->entry->properties;
+  }
   return $result;
 }
 

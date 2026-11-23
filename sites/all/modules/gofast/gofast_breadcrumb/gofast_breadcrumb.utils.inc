@@ -17,6 +17,7 @@ function gofast_breadcrumb_options($options){
     "from_tooltip" => FALSE, //Is the breadcrumb displayed inside a tooltip or not
     "return" => FALSE, //Return programmatically or display (ajax)
     "editable" => TRUE, //Is the node title editable, note that a permission check will be done even if this is enabled
+    "metadata_editable" => TRUE, // Should the metadata fields (e.g. title) in the breadcrumb be editable? A permission check is enforced where this is relevant.
     "remove_extension" => TRUE, //Mainly for the documents, should we remove the file extension at the end or not
     "title_link" => FALSE, //Do the node title should be a link, note that this option can't be enabled with "editable" option
     "show_role" => FALSE, //Should we display the role of the current user, the user passed in "show_role_for" option or the userlist passed in "show_role_for_ul" option at the end
@@ -61,7 +62,23 @@ function gofast_breadcrumb_generate_crumbs_from_locations($locations, $options =
       
       //Generate crumb for the current location
       $current_parts[] = $part;
-      $crumbs[] = gofast_breadcrumb_generate_crumbs_from_location($current_parts, $options);
+      $new_crumb = gofast_breadcrumb_generate_crumbs_from_location($current_parts, $options);
+      $crumbs[] = $new_crumb;
+
+      // If this crumb is the BROADCAST folder, inject the parent space login as a visible crumb
+      if (defined('GOFAST_TAXONOMY_BROADCAST_INBOX_FOLDER_NAME')
+          && $new_crumb['folder']
+          && $new_crumb['name'] === GOFAST_TAXONOMY_BROADCAST_INBOX_FOLDER_NAME
+          && count($crumbs) >= 2) {
+        $parent_crumb = $crumbs[count($crumbs) - 2];
+        $login_crumb = [
+          'name' => $parent_crumb['name'],
+          'text' => $parent_crumb['text'],
+          'href' => $parent_crumb['href'],
+          'gid'  => $parent_crumb['gid'],
+        ];
+        array_splice($crumbs, count($crumbs) - 1, 0, [$login_crumb]);
+      }
     }
     
     //If there is only a single crumb, duplicate the element to show the icon

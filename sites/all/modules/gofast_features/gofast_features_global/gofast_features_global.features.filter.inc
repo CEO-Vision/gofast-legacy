@@ -41,55 +41,6 @@ function gofast_features_global_filter_default_formats() {
           'filter_url_length' => 72,
         ),
       ),
-      'filter_toc' => array(
-        'weight' => 0,
-        'status' => 1,
-        'settings' => array(
-          'tableofcontents' => array(
-            'on_off' => array(
-              'hide' => 0,
-              'automatic' => 3,
-              'min_limit' => 2,
-            ),
-            'box' => array(
-              'title' => 'Table of Contents',
-              'minlevel' => 1,
-              'maxlevel' => 6,
-              'hide_show' => 1,
-              'collapsed' => 0,
-            ),
-            'header' => array(
-              'id_strip' => array(
-                'digits' => 0,
-                'dashes' => 0,
-                'periods' => 0,
-                'underscores' => 0,
-                'colons' => 0,
-              ),
-              'id_prefix' => 'hdr',
-              'id_sep' => '-',
-              'id_gen' => 'title',
-              'allowed' => '<em> <i> <strong> <b> <u> <del> <ins> <sub> <sup> <cite> <strike> <s> <tt> <span> <font> <abbr> <acronym> <dfn> <q> <bdo> <big> <small>',
-            ),
-            'back_to_top' => array(
-              'label' => '',
-              'location' => 'bottom',
-              'minlevel' => 1,
-              'maxlevel' => 1,
-              'anchor' => 'toc',
-              'scroll' => 0,
-            ),
-            'numbering' => array(
-              'method' => 2,
-              'headers' => 1,
-              'mode' => 0,
-              'prefix' => '',
-              'separator' => '.',
-              'suffix' => '.',
-            ),
-          ),
-        ),
-      ),
       'filter_autop' => array(
         'weight' => 1,
         'status' => 1,

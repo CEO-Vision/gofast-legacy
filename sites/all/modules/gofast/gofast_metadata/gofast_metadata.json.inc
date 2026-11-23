@@ -7,10 +7,22 @@
 
  function gofast_metadata_cron_check_json_queue()
 {
-  $json_queue = variable_get(GOFAST_METADATA_JSON_QUEUE, array());
-  foreach ($json_queue as $json_nid) {
+  $json_queue = gofast_metadata_get_json_queue();
+  foreach (array_keys($json_queue) as $json_nid) {
     $json_node = node_load($json_nid);
-    gofast_metadata_handle_json_metadata($json_node);
+    if (!$json_node) {
+      watchdog("gofast_metadata", "Queued json nid @nid has no node anymore : it is dropped from the queue and its acte needs a manual check", array("@nid" => $json_nid), WATCHDOG_ERROR);
+      gofast_metadata_remove_json_from_queue($json_nid);
+      continue;
+    }
+    try {
+      gofast_metadata_handle_json_metadata($json_node);
+    }
+    catch (Exception $e) {
+      // a pathological json must not hold back the rest of the queue
+      watchdog_exception("gofast_metadata", $e);
+      gofast_metadata_handle_json_failure($json_node, "Unexpected error while handling the json");
+    }
   }
 }
 
@@ -19,8 +31,8 @@ function gofast_metadata_handle_json_metadata($node) {
   $title = explode(".", $name);
   $json_ref = $node->reference;
   if (!$json_ref) {
-    watchdog("gofast_metadata", "No alfresco reference found for json file @title with nid @nid : will not parse json metadata", array("@title " => $node->title, "@nid" => $node->nid), WATCHDOG_ERROR);
-    gofast_metadata_remove_json_from_queue($node->nid);
+    // the alfresco reference may just not be replicated yet
+    gofast_metadata_handle_json_failure($node, "No alfresco reference found");
     return;
   }
   // json prefix is everything before the last "_" separator in the file name
@@ -31,33 +43,128 @@ function gofast_metadata_handle_json_metadata($node) {
   // get target nodes
   $json_target_nodes = gofast_metadata_get_nodes_from_json_prefix($json_ref, $json_prefix);
   if (empty($json_target_nodes)) {
-    watchdog("gofast_metadata", "No target nodes found for json file @title with nid @nid : will not parse json metadata", array("@title" => $node->title, "@nid" => $node->nid), WATCHDOG_ERROR);
-    gofast_metadata_remove_json_from_queue($node->nid);
+    // the json often reaches Alfresco before the acte it documents
+    gofast_metadata_handle_json_failure($node, "No target nodes found");
     return;
   }
   // parse json file
   $json_content = gofast_cmis_item_get_content($json_ref);
   $json_data = json_decode($json_content);
   if (!$json_data) {
-    watchdog("gofast_metadata", "Could not parse json file @title with nid @nid : will not parse json metadata", array("@title" => $node->title, "@nid" => $node->nid), WATCHDOG_ERROR);
-    gofast_metadata_remove_json_from_queue($node->nid);
+    // an Alfresco hiccup on the content read is indistinguishable from a corrupted json here
+    gofast_metadata_handle_json_failure($node, "Could not parse json file");
     return;
   }
   $all_nodes_updated = gofast_metadata_set_nodes_metadata_from_json($json_target_nodes, $json_data);
   // make sure all related nodes have been updated before removing the json file
-  if ($all_nodes_updated) {
-    // empty queue before removing the json file
-    gofast_metadata_remove_json_from_queue($node->id);
-    node_delete($node->id);
-    gofast_cmis_item_remove_item($json_ref);
+  if (!$all_nodes_updated) {
+    gofast_metadata_handle_json_failure($node, "Some target nodes are not replicated yet");
+    return;
+  }
+  // empty queue before removing the json file
+  gofast_metadata_remove_json_from_queue($node->nid);
+  // hook_node_delete of gofast_cmis also removes the matching item from Alfresco
+  node_delete($node->nid);
+}
+
+/**
+ * Log a failed run and let the queue decide whether the json deserves another try
+ */
+function gofast_metadata_handle_json_failure($node, $reason) {
+  try {
+    $attempts_exhausted = gofast_metadata_fail_json_attempt($node->nid);
+  }
+  catch (Exception $e) {
+    // only ever called from an error path : a database failure here must not raise a second one
+    watchdog_exception("gofast_metadata", $e, "Attempt count for json file @title with nid @nid could not be updated, it stays queued : !message in %function (line %line of %file).", array("@title" => $node->title, "@nid" => $node->nid));
+    return;
+  }
+  if ($attempts_exhausted) {
+    watchdog("gofast_metadata", "@reason for json file @title with nid @nid : giving up after @attempts attempts, its acte needs a manual check", array("@reason" => $reason, "@title" => $node->title, "@nid" => $node->nid, "@attempts" => GOFAST_METADATA_JSON_MAX_ATTEMPTS), WATCHDOG_ERROR);
+    return;
+  }
+  watchdog("gofast_metadata", "@reason for json file @title with nid @nid : will retry on the next cron run", array("@reason" => $reason, "@title" => $node->title, "@nid" => $node->nid), WATCHDOG_WARNING);
+}
+
+/**
+ * Read the json queue straight from the database
+ * The $conf cache built at bootstrap goes stale as soon as another PHP process writes the variable
+ * @param boolean $for_update locking read, required before a write : it returns the latest committed
+ *   value instead of the REPEATABLE READ snapshot, and holds the row until the enclosing transaction ends
+ * @return array mapping each queued nid to its number of failed attempts
+ */
+function gofast_metadata_get_json_queue($for_update = FALSE) {
+  $query = db_select("variable", "v")
+    ->fields("v", array("value"))
+    ->condition("v.name", GOFAST_METADATA_JSON_QUEUE);
+  if ($for_update) {
+    // locks the row, or the gap where it will be created, which serializes concurrent migrations too
+    $query->forUpdate();
+  }
+  $value = $query->execute()->fetchField();
+  if ($value !== FALSE) {
+    $json_queue = unserialize($value);
+    return is_array($json_queue)
+      ? $json_queue
+      : array();
+  }
+  // no row yet : the queue is still the legacy one, a list of nids whose keys mean nothing since
+  // array_filter left them sparse on every removal, hence array_fill_keys on the values alone
+  $legacy_value = db_query("SELECT value FROM {variable} WHERE name = :name", array(":name" => GOFAST_METADATA_JSON_QUEUE_LEGACY))->fetchField();
+  $legacy_queue = ($legacy_value === FALSE)
+    ? array()
+    : unserialize($legacy_value);
+
+  return is_array($legacy_queue)
+    ? array_fill_keys(array_filter($legacy_queue), 0)
+    : array();
+}
+
+/**
+ * Add a json nid to the queue
+ * The locking read holds the queue row until the enclosing transaction ends, which is what serializes
+ * concurrent writers
+ */
+function gofast_metadata_add_json_to_queue($json_nid) {
+  // kept in scope for the whole function : the queue row stays locked until this layer is closed
+  $transaction = db_transaction();
+  $json_queue = gofast_metadata_get_json_queue(TRUE);
+  if (!isset($json_queue[$json_nid])) {
+    $json_queue[$json_nid] = 0;
+    variable_set(GOFAST_METADATA_JSON_QUEUE, $json_queue);
   }
 }
 
+/**
+ * Count a failed run on a queued json and drop it once its attempts are exhausted
+ * @return boolean whether the json has been dropped from the queue
+ */
+function gofast_metadata_fail_json_attempt($json_nid) {
+  // kept in scope for the whole function : the queue row stays locked until this layer is closed
+  $transaction = db_transaction();
+  $json_queue = gofast_metadata_get_json_queue(TRUE);
+  if (!isset($json_queue[$json_nid])) {
+    return TRUE;
+  }
+  $json_queue[$json_nid]++;
+  $attempts_exhausted = $json_queue[$json_nid] >= GOFAST_METADATA_JSON_MAX_ATTEMPTS;
+  if ($attempts_exhausted) {
+    unset($json_queue[$json_nid]);
+  }
+  variable_set(GOFAST_METADATA_JSON_QUEUE, $json_queue);
+  return $attempts_exhausted;
+}
+
+/**
+ * Remove a json nid from the queue
+ * The locking read holds the queue row until the enclosing transaction ends, which is what serializes
+ * concurrent writers
+ */
 function gofast_metadata_remove_json_from_queue($json_nid) {
-  $json_queue = variable_get(GOFAST_METADATA_JSON_QUEUE, array());
-  $json_queue = array_filter($json_queue, function($nid) use ($json_nid) {
-    return $nid != $json_nid;
-  });
+  // kept in scope for the whole function : the queue row stays locked until this layer is closed
+  $transaction = db_transaction();
+  $json_queue = gofast_metadata_get_json_queue(TRUE);
+  unset($json_queue[$json_nid]);
   variable_set(GOFAST_METADATA_JSON_QUEUE, $json_queue);
 }
 
@@ -110,7 +217,9 @@ function gofast_metadata_set_nodes_metadata_from_json($json_target_nodes, $json_
 
     $node = node_load($target_node->properties->{"gofast:nid"});
     if (!$node) {
-      watchdog("gofast_metadata", "No node found for nid @nid : json metadata could not be added to the file", array("@nid" => $target_node->properties->{"gofast:nid"}), WATCHDOG_ERROR);
+      watchdog("gofast_metadata", "Document @name points to the missing node @nid : json metadata could not be added to it", array("@name" => $target_node->name, "@nid" => $target_node->properties->{"gofast:nid"}), WATCHDOG_ERROR);
+      // the json must not be deleted while one of its target documents is left without its metadata
+      $all_nodes_updated = FALSE;
       continue;
     }
 

@@ -21,8 +21,24 @@ function gofast_riot_schema() {
         'type' => 'text',
         'not null' => TRUE,
       ),
-      'device_riot' => array(
-        'description' => 'Reference to the device',
+      'has_chatbot' => array(
+        'description' => 'Whether the user has received a chatbot invite',
+        'type' => 'int',
+      ),
+      'access_token_riot' => array(
+        'description' => 'Actual token used to impersonate user with Matrix API',
+        'type' => 'text',
+      ),
+      'recovery_key' => array(
+        'description' => '"Secure Secret Storage and Sharing" recovery key to verify / sign user other devices.',
+        'type' => 'text',
+      ),
+      'backup_version' => array(
+        'description' => 'Megolm key backup version (small base64 string).',
+        'type' => 'text',
+      ),
+      'backup_recovery_key' => array(
+        'description' => 'Megolm backup decryption key, encrypted via gofast_encrypt.',
         'type' => 'text',
       ),
       'uid' => array(
@@ -78,7 +94,8 @@ function gofast_riot_install(){
     
     watchdog('riot', 'install');
     //connect admin riot
-    gofast_riot_get_tech_token();
+    $chatroom_active_token = gofast_riot_generate_user_token(GOFAST_RIOT_CHATROOM_ACTIVE_UID);
+    $admin_access_token = gofast_riot_get_tech_token("chatroom.active", $chatroom_active_token);
     
     $db_node = db_select("node", "n")
     ->fields('n')
@@ -97,7 +114,7 @@ function gofast_riot_install(){
         if( count($ancestors) > 0 && count($ancestors) <=2 ){
             $name = strtoupper(substr($node->type, 0, 3)).' - '.$node->title;
             $param = array('name'=>$name,'preset'=>"private_chat");  
-            $url = "https://".$conf['gofast-comm_domain']."/_matrix/client/api/v1/createRoom?access_token=".variable_get('riot_token_admin');
+            $url = "https://{$conf['gofast-comm_domain']}/_matrix/client/api/v1/createRoom?access_token=$admin_access_token";
             $data_string = json_encode($param);                                                                                   
             $ch = curl_init();   
             curl_setopt($ch, CURLOPT_URL, $url);
@@ -153,7 +170,7 @@ function gofast_riot_install(){
                                 $user ="@".strtolower($name).":".$conf['gofast-comm_domain'];
                                 $param = array('user_id'=>$user);  
 
-                                $url = "https://".$conf['gofast-comm_domain']."/_matrix/client/r0/rooms/".$idRoom."/invite?access_token=".variable_get('riot_token_admin'); 
+                                $url = "https://{$conf['gofast-comm_domain']}/_matrix/client/r0/rooms/$idRoom/invite?access_token=$admin_access_token"; 
 
                                 $data_string = json_encode($param);                                                                                   
                                 $ch = curl_init();   
@@ -176,7 +193,7 @@ function gofast_riot_install(){
                             $user ="@".strtolower($name).":".$conf['gofast-comm_domain'];
                                 $param = array('user_id'=>$user);  
 
-                                $url = "https://".$conf['gofast-comm_domain']."/_matrix/client/r0/rooms/".$idRoom."/invite?access_token=".variable_get('riot_token_admin');
+                                $url = "https://{$conf['gofast-comm_domain']}/_matrix/client/r0/rooms/$idRoom/invite?access_token=$admin_access_token";
 
                                 $data_string = json_encode($param);                                                                                   
                                 $ch = curl_init();   
@@ -200,13 +217,83 @@ function gofast_riot_install(){
     }
 }
 
-function gofast_riot_update_7000() {
-    if (db_field_exists("gofast_riot_token", "device_riot")) {
+function gofast_riot_update_7001() {
+    // Create column to track invites
+    if (db_field_exists("gofast_riot_token", "has_chatbot")) {
         return;
     }
-    $device_riot_field = array(
-        'description' => 'Reference to the device',
+    $has_chatbot_field = array(
+        'description' => 'Whether the user has received a chatbot invite',
+        'type' => 'int',
+      );
+    db_add_field("gofast_riot_token", "has_chatbot", $has_chatbot_field);
+}
+
+function gofast_riot_update_7002() {
+    // Create column to impersonate users
+    if (db_field_exists("gofast_riot_token", "access_token_riot")) {
+        return;
+    }
+    $access_token_riot = array(
+        'description' => 'Actual token used to impersonate user with Matrix API',
         'type' => 'text',
       );
-    db_add_field("gofast_riot_token", "device_riot", $device_riot_field);
+    db_add_field("gofast_riot_token", "access_token_riot", $access_token_riot);
+}
+
+/** 
+ * GOFAST-14114 - Create column to store the recovery key of the users "Secure Secret Storage and Sharing".
+ */
+function gofast_riot_update_7003() {
+    if (db_field_exists("gofast_riot_token", "recovery_key")) {
+        return;
+    }
+    $recovery_key = array(
+        'description' => '"Secure Secret Storage and Sharing" recovery key to verify / sign user other devices.',
+        'type' => 'text',
+      );
+    db_add_field("gofast_riot_token", "recovery_key", $recovery_key);
+}
+
+/**
+ * GOFAST-14114 - backup keys to survive IndexedDB rotation across sessions.
+ */
+function gofast_riot_update_7005() {
+    if (db_field_exists("gofast_riot_token", "backup_version")) {
+        return;
+    }
+    $backup_version = array(
+        'description' => 'Megolm key backup version (small base64 string).',
+        'type' => 'text',
+    );
+    db_add_field("gofast_riot_token", "backup_version", $backup_version);
+}
+
+/**
+ * GOFAST-14114 - backup keys to survive IndexedDB rotation across sessions.
+ */
+function gofast_riot_update_7006() {
+    if (db_field_exists("gofast_riot_token", "backup_recovery_key")) {
+        return;
+    }
+    $backup_recovery_key = array(
+        'description' => 'Megolm backup decryption key, encrypted via gofast_encrypt.',
+        'type' => 'text',
+    );
+    db_add_field("gofast_riot_token", "backup_recovery_key", $backup_recovery_key);
+}
+
+/**
+ * GOFAST-6861 - Drop the unused columns.
+ */
+function gofast_riot_update_7008() {
+    if (db_field_exists("gofast_riot_token", "device_riot")) {
+        db_drop_field("gofast_riot_token", "device_riot");
+    }
+    if (db_field_exists("gofast_riot_token", "device_pickle")) {
+        db_drop_field("gofast_riot_token", "device_pickle");
+    }
+    if (db_field_exists("gofast_riot_token", "olm_account")) {
+        db_drop_field("gofast_riot_token", "olm_account");
+    }
 }

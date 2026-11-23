@@ -895,7 +895,10 @@ function gofast_activity_feed_get_espaces($mainSpace){
             $node = [
                 "id" => $gid,
                 "text" => $r_space,
-                "children" => true
+                "children" => true,
+                "data" => [
+                  "isRoot" => TRUE,
+                ],
             ];
 
             $nodes[] = $node;
@@ -930,7 +933,10 @@ function gofast_activity_feed_get_espaces($mainSpace){
         $node = [
             "id" => $gid,
             "text" => $name,
-            "children" => true
+            "children" => true,
+            "data" => [
+              "isRoot" => TRUE,
+            ],
         ];
 
         $nodes[] = $node;

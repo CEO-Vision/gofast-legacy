@@ -281,7 +281,7 @@ switch ($step) {
                                                                     <td><img src="<?= $base_url . '/' . drupal_get_path('module', 'gofast_mail_queue') . '/icon/' . 'play-solid-white.png' ?>" alt="" width="14">
                                                                     </td>
                                                                     <td>
-                                                                        <a href="<?= isset($documents_info[0]) ? $base_url . "/node/" . $documents_info[0]["document"]->nid : $base_url . "/workflow/dashboard" ?>" style="color: #FFFFFF; font-size: 14px; font-weight: 600; text-decoration: none;">&nbsp;<?= t("Execute Task", array(), array("langcode" => $assignee_language, "context" => "gofast:gofast_workflows")) ?></a>
+                                                                        <a href="<?= $base_url . "/workflow/dashboard?execute_task=" . $assigned_user_task["id"] ?>" style="color: #FFFFFF; font-size: 14px; font-weight: 600; text-decoration: none;">&nbsp;<?= t("Execute Task", array(), array("langcode" => $assignee_language, "context" => "gofast:gofast_workflows")) ?></a>
                                                                     </td>
                                                                 </tr>
                                                             </tbody>
@@ -700,7 +700,7 @@ switch ($step) {
                                     <tbody>
                                         <tr>
                                             <td align="left" style="font-size:0px;padding:10px;word-break:break-word;">
-                                                <div style="font-family:Poppins;font-size:14px;font-weight:600;line-height:1;text-align:left;color:#000000;"><?= gofast_user_display_name(user_load_by_name($history_item->actor_login)) ?></div>
+                                                <div style="font-family:Poppins;font-size:14px;font-weight:600;line-height:1;text-align:left;color:#000000;"><?= $history_item->author_display_name_override ?? gofast_user_display_name(user_load_by_name($history_item->actor_login)) ?></div>
                                             </td>
                                         </tr>
                                     </tbody>

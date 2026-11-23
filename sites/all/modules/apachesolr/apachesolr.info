@@ -20,8 +20,6 @@ files[] = tests/solr_base_query.test
 files[] = tests/solr_base_subquery.test
 files[] = tests/solr_document.test
 
-; Information added by Drupal.org packaging script on 2020-12-11
-version = "7.x-1.12"
-core = "7.x"
-project = "apachesolr"
-datestamp = "1607712024"
+version = 7.x-1.15
+project = apachesolr
+datestamp = 1762365676

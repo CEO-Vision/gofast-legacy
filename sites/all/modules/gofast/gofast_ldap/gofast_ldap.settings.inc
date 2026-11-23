@@ -427,7 +427,7 @@ function gofast_ldap_server_attributes($sid = GOFAST_LDAP_INT_SERVER, $append_la
     $server->mail_attr => t('Mail', array(), array('context' => 'gofast')),
     'telephoneNumber' => t('Phone', array(), array('context' => 'gofast')), 
     'mobile' => t('Mobile', array(), array('context' => 'gofast')),
-    'description' => "Description"
+    'description' => t("Description"),
   );
   
   $sync_settings = variable_get('gofast_directory_sync_config', array());

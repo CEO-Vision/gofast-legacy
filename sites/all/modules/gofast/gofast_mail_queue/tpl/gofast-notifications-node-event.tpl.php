@@ -210,7 +210,7 @@ else :
                                                                 echo t("Added a document", array(), $l);
                                                                 break;
                                                             case "ECON":
-                                                                if ($action["update"]["field"] == "deadline") {
+                                                                if (in_array($action["update"]["field"], ["deadline", GOFAST_METADATA_CUSTOM_DATE_LABEL])) {
                                                                     $action["update"]["from"] = format_date(strtotime($action["update"]["from"]), 'custom', $short_without_hours_format, NULL, $l["langcode"]);
                                                                     $action["update"]["to"] = format_date(strtotime($action["update"]["to"]), 'custom', $short_without_hours_format, NULL, $l["langcode"]);
                                                                 }

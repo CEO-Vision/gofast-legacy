@@ -12,10 +12,33 @@ define('GOFAST_TIME_DIFF_PIVOT', 86400);
 define('GOFAST_TIKA_PATH', DRUPAL_ROOT . '/tika_executable');
 
 /**
+ * Define the path where is located Tika configuration file.
+ */
+define('GOFAST_TIKA_CONFIG_PATH', DRUPAL_ROOT . '/tika-config.xml');
+
+/**
+ * Define the directory, outside the web root, where the control files read
+ * by the root cron (scripts/restart_services.sh) are dropped.
+ */
+define('GOFAST_CONTROL_DIR', '/var/www/gofast-control');
+
+/**
  * Define the text to display when referring to the platform. Do not confuse
  * with variable 'site_name' that is configurable on the Gofast admin page.
  */
 define('GOFAST_NAME', 'GoFast');
+
+/**
+ * Returns the shell command running Tika on a file, every argument escaped.
+ *
+ * @param string $option
+ *   The Tika output option, e.g. '-x' or '--language'.
+ * @param string $file_path
+ *   The file to parse.
+ */
+function gofast_tika_command($option, $file_path) {
+  return sprintf('java -jar %s %s --config=%s %s', escapeshellarg(GOFAST_TIKA_PATH), escapeshellarg($option), escapeshellarg(GOFAST_TIKA_CONFIG_PATH), escapeshellarg($file_path));
+}
 
 
 /**
@@ -63,6 +86,9 @@ define('GOFAST_CO_EDITING_NUMBER_BADGE_MAX_VALUE_THRESHOLD', 9);
 define('GOFAST_TECHNICAL_FOLDER_NAMES', [
   'TEMPLATES',
   'Wikis',
+  // FIXME refactor definition so that we can use the
+  // GOFAST_TAXONOMY_BROADCAST_INBOX_FOLDER_NAME constant
+  'BROADCAST',
 ]);
 
 module_load_include('inc', 'gofast', 'gofast.settings');
@@ -193,7 +219,7 @@ function gofast_add_ckeditor_profiles($profiles) {
     "language" => $gofast_locale,
     "toolbar" => [
         "items" => [
-            'heading', '|', 'bold', 'italic', 'underline', 'strikethrough', '|', 'alignment', '|', 'numberedList', 'bulletedList', '|', 'link', 'blockquote', '|','emoji', 'undo', 'redo'
+            'heading', '|', 'bold', 'italic', 'underline', 'strikethrough', '|', 'alignment', '|', 'numberedList', 'bulletedList', '|', 'link', 'blockquote', '|', "emoji",'|', 'undo', 'redo'
         ]
     ],
     ...$link_open_in_new_tab_decorator,
@@ -227,6 +253,22 @@ function gofast_ckeditor_add_mention_plugin(&$profile) {
  * @see https://api.drupal.org/api/drupal/modules%21system%21system.api.php/function/hook_init/7
  */
 function gofast_init() {
+    // check if license is active or not
+    if(!gofast_license_is_active()){
+      $add_message = true;
+      $warning_message = t("The GoFast subscription was not renewed on time, support and updates are suspended while the subscription is regularized.", array(), array('context' => 'gofast'));
+      $all_messages = drupal_get_messages("warning", false);
+      if(count((array) $all_messages["warning"]) > 0){
+          foreach($all_messages["warning"] as $message){
+              if($warning_message == $message){
+                  $add_message = false;
+              }
+          }
+      }
+      if($add_message){
+        drupal_set_message($warning_message, 'warning');
+      }
+    }
   //GOFAST-8195
   //Security : Prevent all requests with CORS policy expressly disabled
   
@@ -249,6 +291,7 @@ function gofast_init() {
   // add Drupal date format to JS
   drupal_add_js([
     "date_format_short" => variable_get('date_format_short', 'm/d/Y - H:i'),
+    "date_format_short_without_hours" => variable_get('date_format_short', 'm/d/Y'),
     "date_format_medium" => variable_get('date_format_medium', 'D, m/d/Y - H:i'),
     "date_format_long" => variable_get('date_format_long', 'l, F j, Y - H:i'),
   ], "setting");
@@ -276,39 +319,6 @@ function gofast_init() {
 
   if (gofast_request_is_ajax()) {
     return;
-  }
-
-  //Load CKEditor (Don't load in some page because it will be loaded later)
-  if(strpos(current_path(), "node/add/") === FALSE && function_exists("libraries_get_path")){
-    $ckeditor_path = drupal_get_path('module', 'ckeditor');
-    $ckeditor_lib_path = libraries_get_path('ckeditor');
-    $ckeditor_link_path = drupal_get_path('module', 'ckeditor_link');
-
-    drupal_add_css($ckeditor_link_path . "/ckeditor_link.css");
-    drupal_add_css($ckeditor_path . "/css/ckeditor.editor.css");
-    drupal_add_css($ckeditor_path . "/css/ckeditor.css");
-
-    drupal_add_js($ckeditor_path . "/includes/ckeditor.utils.js");
-    drupal_add_js($ckeditor_lib_path . "/ckeditor.js");
-    drupal_add_js($ckeditor_lib_path . "/translations/$user->language.js");
-    drupal_add_js($ckeditor_path . "/ckeditor.styles.js");
-    drupal_add_js($ckeditor_path . "/ckeditor.config.js");
-  }
-
-  if(function_exists('ckeditor_profile_load') && $_SERVER['REQUEST_URI'] != '/gofast-cron.php' ){
-
-    if(!gofast_mobile_is_phone()){
-      $profile = ckeditor_profile_load('Full');
-      drupal_add_js('var cke_settings_full = '.json_encode($profile).';', 'inline');
-      $profile = ckeditor_profile_load('Advanced');
-      drupal_add_js('var cke_settings_advanced = '.json_encode($profile).';', 'inline');
-    }else{
-      $profile = ckeditor_profile_load('Mobile');
-      drupal_add_js('var cke_settings_full = '.json_encode($profile).';', 'inline');
-    }
-
-    $profile = ckeditor_profile_load('Blog');
-    drupal_add_js('var cke_settings_blog = '.json_encode($profile).';', 'inline');
   }
 
   // Defines whether we are in dev environment or not
@@ -352,9 +362,6 @@ function gofast_init() {
     }
   }
 
-
-  //Include gofast forms
-  module_load_include('inc', 'gofast', 'gofast_forms');
 
   //Add Vote updown CSS
   drupal_add_css(drupal_get_path('module', 'vud_comment') . '/vud_comment.css');
@@ -761,6 +768,33 @@ function gofast_cron() {
 }
 
 /**
+ * Gets the list of cron jobs that are currently in the failure state.
+ *
+ * Jobs enter the failure state when they first get disabled due to too many
+ * consecutive executions failing either by terminating the run unexpectedly
+ * (exit), or uncaught errors or exceptions.
+ *
+ * Jobs leave the failure state when an execution finishes without errors.
+ *
+ * Jobs in a failure state may be currently enabled but haven't successfully run
+ * to completion yet. They may be re-enabled and re-disabled multiple times
+ * before leaving this state.
+ *
+ * This function is made to be called in a script for getting monitoring data.
+ * It is therefore normal for it not to have any uses or references.
+ *
+ * @return string[] Array of cron job names that are in the failure state.
+ */
+function gofast_get_failing_cron_job_names() {
+  // The list of job names in this cache key is maintained within a patch of the
+  // Elysia cron module.
+  $failing_jobs = cache_get('gf_cron:jobs:failing');
+  $failing_jobs = $failing_jobs !== FALSE ? $failing_jobs->data : [];
+
+  return $failing_jobs;
+}
+
+/**
  * Implements hook_node_load()
  *
  * Act on arbitrary nodes being loaded from the database.
@@ -889,7 +923,7 @@ function gofast_library() {
     'title' => 'Gofast Library',
     'version' => '1.0',
     'js' => array(
-      drupal_get_path('module', 'jquery_update') . '/replace/ui/ui/jquery-ui.js' => array(
+      drupal_get_path('module', 'tag1d7es_jquery_update') . '/replace/jquery-ui-1.14.0/jquery-ui.js' => array(
         'group' => JS_LIBRARY, // JS_DEFAULT
         'every_page' => TRUE,
         'weight' => 1
@@ -977,7 +1011,7 @@ function gofast_library() {
       ),
     ),
     'css' => array(
-      drupal_get_path('module', 'jquery_update') . '/replace/ui/themes/base/jquery-ui.css' => array(
+      drupal_get_path('module', 'tag1d7es_jquery_update') . '/replace/jquery-ui-1.14.0/jquery-ui.css' => array(
         'type' => 'file',
         'media' => 'screen',
         'group' => CSS_THEME,
@@ -1447,6 +1481,21 @@ function gofast_menu() {
   return $items;
 }
 
+/**
+ * Implements hook_menu_alter()
+ */
+function gofast_menu_alter(&$items) {
+  $items['node/%node/edit']['page callback'] = 'gofast_node_edit_render'; //GOFAST-6985
+}
+
+function gofast_node_edit_render($node) {
+    $form_id = "{$node->type}_node_form";
+    $node_form = drupal_get_form($form_id, $node);
+    $content = theme("page_{$form_id}", ['form' => $node_form]);
+    $page_content = gofast_create_page_content($content);
+    return $page_content;
+}
+
 function gofast_admin_config_gofast_global() {
 
     $settingsTabs = gofast_admin_settings_tabs();
@@ -1580,6 +1629,11 @@ function gofast_permission() {
     ),
     'administer visibility configuration' => array(
       'title' => t('Administer Gofast Visibility Settings', array(), array('context' => 'gofast')),
+      'description' => t('Access the configuration page, update Gofast settings.', array(), array('context' => 'gofast')),
+      'restrict access' => TRUE
+    ),
+    'administer license configuration' => array(
+      'title' => t('Administer Gofast License Settings', array(), array('context' => 'gofast')),
       'description' => t('Access the configuration page, update Gofast settings.', array(), array('context' => 'gofast')),
       'restrict access' => TRUE
     ),
@@ -1917,7 +1971,6 @@ function gofast_form_alter(&$form, &$form_state) {
       'group' => JS_THEME + 1,
       'data' => drupal_get_path('module', 'gofast') . '/js/gofast_ajax_form.js',
     );
-      $form['#prefix'] = '<script src="' .$base_url . '/sites/all/libraries/ckeditor/ckeditor.js"></script>';
   }
 }
 
@@ -2170,6 +2223,13 @@ function gofast_ajax_submit_callback(&$form, &$form_state) {
          variable_set('node_language_detect', $get_valeur);
     }
 
+    $documents_form_defaults = variable_get("documents_form_defaults", []);
+    $has_upload_modal = $documents_form_defaults["gofast_metadata_has_upload_modal"] ?? 0;
+    $append = "";
+    if ($has_upload_modal) {
+      $append .= "?manage_taxonomy=true";
+    }
+
     if ($node->nid) {
       $form_state['values']['nid'] = $node->nid;
       $form_state['nid'] = $node->nid;
@@ -2186,7 +2246,7 @@ function gofast_ajax_submit_callback(&$form, &$form_state) {
             if($node->type == "alfresco_item" || $node->type == "article"){
                 $commands[] = array(
                     'command' => 'success_creating_node',
-                     'data' => '/node/' . $node->nid
+                    'data' => '/node/' . $node->nid . $append
                  );
             }else{
                  $commands[] = array(
@@ -2198,7 +2258,7 @@ function gofast_ajax_submit_callback(&$form, &$form_state) {
         $command_data = ($node->type == "contact") ? '/directory/contacts-listing' : '/node/' . $node->nid;
         $commands[] = array(
             'command' => 'success_creating_node',
-            'data' => $command_data,
+            'data' => $command_data . $append,
             'type' => $node->type,
           );
 
@@ -2229,6 +2289,50 @@ function gofast_form_validate($form, $form_state){
 }
 
 /**
+ * Validate node titles.
+ *
+ * @param string $title
+ *   The node title to validate.
+ * @param object $node
+ *   The node.
+ *
+ * @return string[]
+ *   List of error messages to return.
+ */
+function gofast_validate_node_title($title, $node) {
+  $errors = array();
+  $title = trim($title);
+
+  if (!gofast_validate_filename($title)) {
+    $errors[] = t('Title contains illegal characters or an invalid name.', array(), array('context' => 'gofast'));
+  }
+
+  // node.title is a varchar(255); spaces get the stricter Alfresco/CMIS limit below.
+  if (!gofast_og_is_space($node) && drupal_strlen($title) > 255) {
+    $errors[] = t('Title cannot be longer than @max characters.', array('@max' => 255), array('context' => 'gofast'));
+  }
+
+  if (gofast_og_is_space($node)) {
+    if (strpos($title, '_') === 0 || strpos($title, '#') === 0) {
+      $errors[] = t('A space title cannot begin with an [_] or [#].', array(), array('context' => 'gofast'));
+    }
+
+    // Space titles are path segments: a literal % breaks the file browser URI decoding.
+    if (strpbrk($title, '#%') !== FALSE) {
+      $errors[] = t('A space title cannot contain the following characters [#] [%].', array(), array('context' => 'gofast'));
+    }
+
+    if (drupal_strlen($title) > GOFAST_CMIS_MAX_FOLDER_NAME_LENGTH) {
+      $errors[] = t('The space title is too long: it must not exceed @limit characters.', array(
+        '@limit' => GOFAST_CMIS_MAX_FOLDER_NAME_LENGTH,
+      ), array('context' => 'gofast'));
+    }
+  }
+
+  return $errors;
+}
+
+/**
  * Validate handler.
  *
  *  Set a form error if a node title contains invalid title.
@@ -2240,18 +2344,14 @@ function gofast_form_validate_title(&$form, &$form_state) {
   // Always strip whitespaces from the title.
   $title = trim($title);
 
-  // All content types are subject to the same validator.
-  if (!gofast_validate_filename($title)) {
-    form_set_error('title', t('Title contains illegals characters or an invalid name.', array(), array('context' => 'gofast')));
+  $errors = gofast_validate_node_title($title, $node);
+  foreach($errors as $error) {
+    form_set_error('title', $error);
   }
 
   // Specific rules for Gofast Spaces.
   if (gofast_og_is_space($node)) {
     $ogm_type = GOFAST_OG_PARENT_GROUP_FIELD;
-    if (strpos($title, '_') === 0 || strpos($title, '#') === 0)
-      form_set_error('title', t('A space title cannot begin with an [_] or [#].', array(), array('context' => 'gofast')));
-    if (strpos($title, '#') !== FALSE)
-      form_set_error('title', t('A space title cannot contain the following char [#].', array(), array('context' => 'gofast')));
   }
   else {
     $ogm_type = GOFAST_OG_CONTENT_MEMBERSHIP_FIELD;
@@ -2329,13 +2429,28 @@ function gofast_form_user_login_block_alter(&$form, &$form_state)
 
       if (isset($_GET['path']) && !empty($_GET['path'])) {
         $_SESSION['login_path'] = $_GET['path'];
-      }else{
+      }elseif(isset($parts['host'], $parts['path']) && $parts['host'] === $_SERVER['HTTP_HOST'] && preg_match('#^/(?![/\\\\])#', $parts['path'])){
+        // Only a local path of this site: a foreign referer or a "//host" path would post the credentials elsewhere.
         $form['#action'] = $parts["path"];
       }
     }
     // Prevent redirect to user/logout on log in for users just logged out.
     if ($form['#action'] === '/user/logout') {
       $form['#action'] = '/';
+    }
+    
+    // prevent 403 error when login on a tab already authenticated GOFAST-11149
+    if (strpos($form['#action'], "error/403")  !== FALSE) {
+       // Browsers drop tabs and newlines from URLs, and a leading slash would
+       // make "//host": either way the credentials would be posted off-site.
+       $destination = str_replace(["\t", "\n", "\r"], '', drupal_get_destination()["destination"]);
+       $destination = ltrim($destination, "/\\\x00..\x20");
+       if($destination !== 'user/logout'){
+           $form['#action'] = '/'.$destination;
+       }else{
+           $form['#action'] = '/';
+       }
+       
     }
 
     // Prevent redirect to user/logout on log in for users just logged out.
@@ -2349,6 +2464,26 @@ function gofast_form_user_login_block_alter(&$form, &$form_state)
 
   //Logout from Element
   $form['#suffix'] = theme("gofast_riot_logout_page");
+
+  // When logging in on a node page, preserve path parameter. (in case of space.)
+  // This allows the browser to initialise in the correct directory if the node
+  // URL was a space and contained a path referencing a directory.
+  $path = parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH);
+  if (preg_match('#^/node/\d+$#', $path) && !empty($_GET['path'])) {
+    $_SESSION['login_path'] = $_GET['path'];
+  }
+
+  // Force login form to preserve url fragment after submit
+  // adds fragment using client-side JS to end of form action url
+  // NOTE: we have to use JS since fragment is never sent to the server
+  // it would be better to rely on query strings for special behaviors rather
+  // than fragment values. Query strings can be fully handled on the server side.
+  $form['#attached']['js'][] = [
+    'data' => drupal_get_path('module', 'gofast') . '/js/gofast_login_form.js',
+    'type' => 'file',
+    'defer' => true,
+  ];
+
 }
 
 function gofast_user_login(&$edit, $account) {
@@ -2365,8 +2500,8 @@ function gofast_user_login(&$edit, $account) {
 
   setcookie('gofast_user', $account->name, strtotime( '+1 year' ), '/', $cookie_domain, true, true);
 
-  gofast_resynchro_ldap_membership_one_user($account);
-
+  // In case of timeout, we don't want the OG membership DB transaction to delay other DB transactions (such as variable_set)
+  register_shutdown_function("gofast_resynchro_ldap_membership_one_user", $account);
 }
 
 function gofast_user_logout($account) {
@@ -2625,6 +2760,14 @@ function gofast_update_projects_alter(&$projects) {
   if(!drupal_is_cli() && !gofast_dev_mode()){
     $projects = array();
   }
+}
+
+/**
+ * Implements hook_html_head_alter().
+ * Remove Drupal version from meta generator tag (GOFAST-13813).
+*/
+function gofast_html_head_alter(&$head_elements) {
+  unset($head_elements['system_meta_generator']);
 }
 
 function gofast_get_contextual_actions_webform($node) {
@@ -3028,16 +3171,17 @@ function gofast_get_contextual_actions_node($node, $browser_path = FALSE, $fromT
 
   if($node == "filebrowser"){
     //Selected elements are stores in POST the input
-    $selected = $_POST['selected'];
+    $selected = gofast_xss_clean($_POST['selected']);
     if(gettype($selected) == "string"){
       $selected = json_decode($selected, true);
     }
-    $fromTree = $_POST['fromTree'];
+    $fromTree = gofast_xss_clean($_POST['fromTree']);
 
-    //Just in case
-    if(count($selected) == 0){
-      return;
+    // Just in case
+    if (empty($selected) || !is_array($selected)) {
+      return array();
     }
+
     $browser_actions = gofast_get_file_browser_actions($selected, $fromTree);
 
     return $browser_actions;
@@ -3091,7 +3235,7 @@ function gofast_get_contextual_actions_node($node, $browser_path = FALSE, $fromT
             $disabled_class = "disabled";
         }else{
             $href = $base_url . '/onlyoffice/editor/' . $node->nid . '?start=' . time();
-            $title = t("Edit this document with OnlyOffice");
+            $title = t('Co-edit with OnlyOffice', [], ['context' => 'gofast']);
             $disabled_class = "";
         }
 
@@ -3129,7 +3273,7 @@ function gofast_get_contextual_actions_node($node, $browser_path = FALSE, $fromT
       }
 
       $node_contextual_actions[] = array (
-        'text' => t('Co-edit with onlyoffice', array(), array('context' => 'gofast')),
+        'text' => t('Co-edit with OnlyOffice', array(), array('context' => 'gofast')),
         'id' => 'contextual_btn_onlyoffice',
         'classes' => array('gofast-non-ajax', $disabled_class),
         'href' => $href_oo,
@@ -3190,11 +3334,12 @@ function gofast_get_file_browser_actions($selected, $fromTree = FALSE){
         $browser_actions = gofast_get_contextual_actions_node($node, $path, $fromTree);
       }
       if(strpos(json_encode($browser_actions), "Contextual actions") === false){
-          $browser_actions = gofast_get_mass_actions_on_selected_items($selected);
+          $browser_actions = gofast_get_mass_actions_on_selected_items($selected, $path);
       }
     }
   }else{
-    $browser_actions = gofast_get_mass_actions_on_selected_items($selected);
+    $current_path = isset($_POST['currentPath']) ? gofast_xss_clean($_POST['currentPath']) : $selected[0]["path"];
+    $browser_actions = gofast_get_mass_actions_on_selected_items($selected, $current_path);
   }
   return $browser_actions;
 }
@@ -3202,13 +3347,26 @@ function gofast_get_file_browser_actions($selected, $fromTree = FALSE){
 /*
  * Multiple items selected in File Browser
  */
-function gofast_get_mass_actions_on_selected_items($selected){
+function gofast_get_mass_actions_on_selected_items($selected, $current_path){
   $contains_space = false;
   $contains_wiki = false;
   $contains_template = false;
   $contains_unreplicated_document = false;
+  $all_zip = true;
   $actions = array();
   $miror_folder = false;
+  $only_spaces = true;
+  $nids = array();
+
+  $parent_item = gofast_cmis_item_get_by_path(str_replace("/alfresco/webdav", "", $current_path));
+  if (!isset($parent_item->properties["alfcmis:nodeRef"])) {
+    // Something is very wrong in the current user context, return early
+    print json_encode(["message" => t("Something went wrong!")]);
+    exit;
+  }
+  $raw_parent_ref = gofast_cmis_get_raw_item_id($parent_item->properties["alfcmis:nodeRef"]);
+
+  $filenames = [];
 
   foreach($selected as $item){ //Check if one of the selected items is a space
     $path = $item["path"];
@@ -3218,9 +3376,22 @@ function gofast_get_mass_actions_on_selected_items($selected){
 
     $path = explode('/', $path);
     $last_item = array_pop($path);
+    if ($item["type"] != "Folder") {
+      $filenames[] = $last_item;
+
+      $ext = strtolower(pathinfo($last_item, PATHINFO_EXTENSION));
+      if ($ext !== 'zip') {
+          $all_zip = false;
+      }
+    } else {
+        $all_zip = false;
+        $contains_folder = true;
+    }
 
     if(substr($last_item, 0, 1) == "_"){
       $contains_space = true;
+    } else {
+      $only_spaces = false;
     }
     if ($last_item == "Wikis") {
       $contains_wiki = true;
@@ -3239,26 +3410,16 @@ function gofast_get_mass_actions_on_selected_items($selected){
         $contains_folder = true;
       }
     }
-    //For miror folder
     $path_decoded = rawurldecode($item["path"]);
     $nid = gofast_ajax_file_browser_get_nid_from_href($path_decoded);
     if (is_numeric($nid)) {
-      $node = node_load($nid);
-      if ($node->type == "alfresco_item" || $node->type == "article") {
-        gofast_process_location_check_async($nid, true);
-      }
-      $node = node_load($nid, NULL, TRUE);
-      $result = gofast_contextual_menu_node_not_in_mirror_folder($node,null);
-      if($result !== true){
-      $miror_folder = true;
-        break;
-      }
-    }
-    // If we can't find the nid and it's not a folder then it's a unreplicated node.
-    if($nid == false && $item["type"] != "Folder"){
-      $contains_unreplicated_document = true;
+      $nids[] = $nid;
     } 
   }
+
+  $contains_unreplicated_document = gofast_cmis_has_unreplicated_items($raw_parent_ref, $filenames);
+  $mirror_folder = gofast_cmis_has_mirrored_items($raw_parent_ref, $filenames);
+
   $attr = array(
     'onClick' => "Gofast.ITHit.bulkSelected(event)"
   );
@@ -3283,9 +3444,14 @@ function gofast_get_mass_actions_on_selected_items($selected){
         ));
       }
       $actions[]['themed'] = gofast_dropdown_link(t('Compress', array(), array('context' => 'gofast:ajax_file_browser')), '/modal/nojs/compress-files', 'compress_files', 'ctools-use-modal compress-files', 'fa fa-file-archive-o n-color', $attr);
-      if(!$contains_folder){
+      if($all_zip && !$contains_folder){
         $actions[]['themed'] = gofast_dropdown_link(t('Extract', array(), array('context' => 'gofast')), '/modal/nojs/unzip-files', 'unzip-files', 'ctools-use-modal unzip-files', 'fa fa-file-archive-o n-color', $attr);
       }
+  }
+
+  if($only_spaces){
+    $spaces_actions = gofast_directory_bulk_actions_spaces_get_all_actions($nids, false);
+    array_push($actions, ...$spaces_actions);
   }
 
   foreach(module_implements('alter_mass_actions_on_selected_items') as $module){
@@ -3295,9 +3461,10 @@ function gofast_get_mass_actions_on_selected_items($selected){
 
   if(!$contains_space && !$contains_folder && !$contains_unreplicated_document){
     $actions[]['themed'] = gofast_dropdown_link(t('Manage Metadata', array(), array('context' => 'gofast')), '/modal/nojs/manage-taxonomy', 'taxonomy_open_span', 'ctools-use-modal manage-taxonomy', 'fa fa-tags', $attr);
-    if ($miror_folder) {
-      $actions[]['themed'] = gofast_dropdown_link(t('Share/Add locations', array(), array('context' => 'gofast')), '/modal/nojs/add-locations', 'locations_open_span', 'ctools-use-modal add-locations', 'fa fa-share-alt n-color', array_merge($attr, array('disabled' => true)));
-  } else {
+    if ($mirror_folder) {
+      $title = t("One or several selected item(s) are in a mirrored location");
+      $actions[]['themed'] = gofast_dropdown_link(t('Share/Add locations', array(), array('context' => 'gofast')), '/modal/nojs/add-locations', 'locations_open_span', 'ctools-use-modal add-locations', 'fa fa-share-alt n-color', array_merge($attr, array('disabled' => true, 'title' => $title)));
+    } else {
       $actions[]['themed'] = gofast_dropdown_link(t('Share/Add locations', array(), array('context' => 'gofast')), '/modal/nojs/add-locations', 'locations_open_span', 'ctools-use-modal add-locations', 'fa fa-share-alt n-color', $attr);
   }
     $actions[]['themed'] = gofast_dropdown_link(t('Create publications', array(), array('context' => 'gofast')), '/modal/nojs/manage-publications', 'locations_open_span', 'ctools-use-modal manage-publications', 'fa fa-arrow-up', $attr);
@@ -3305,6 +3472,17 @@ function gofast_get_mass_actions_on_selected_items($selected){
     $actions[]['themed'] = gofast_dropdown_link(t('Archive', array(), array('context' => 'gofast:ajax_file_browser')), '/modal/nojs/bulk-archive', 'locations_open_span', 'ctools-use-modal bulk-archive', 'fa fa-archive',$attr);
     $actions[]['themed'] = gofast_dropdown_link(t('Add to cart', array(), array('context' => 'gofast')), '/modal/nojs/bulk_add_to_cart', 'cart_open_span', 'ctools-use-modal add_to_cart', 'fas fa-shopping-basket', $attr);
 
+  }
+
+  if (empty($actions)) {
+    $actions[]['themed'] = gofast_dropdown_link(
+      t('No actions available'),
+      '#',
+      'no_action_span',
+      'ctools-use-modal no-action', 
+      'fa fa-ban',
+      array('disabled' => true)
+    );
   }
 
   return array(
@@ -3852,6 +4030,14 @@ function gofast_theme() {
     'template' => 'tpl/gofast-node/gofast-node-extra-metadata-readonly',
   );
 
+  $themes['gofast_node_space_extra_metadatas'] = array(
+    'template' => 'tpl/gofast-node/space/gofast-node-space-extra-metadata',
+  );
+
+  $themes['gofast_node_space_extra_metadatas_readonly'] = array(
+    'template' => 'tpl/gofast-node/space/gofast-node-space-extra-metadata-readonly',
+  );
+
   $themes['gofast_node_metadata_info'] = array(
     'template' => 'tpl/gofast-node/gofast-node-metadata-info',
   );
@@ -3965,6 +4151,29 @@ function gofast_theme() {
     'template'  => 'tpl/gofast-side-file-browser/gofast-side-file-browser-no-item',
   );
 
+  $themes['gofast_password_eye'] = [
+    'template' => 'tpl/partials/password-eye',
+    'render element' => 'element',
+  ];
+
+  $themes['gofast_node_links'] = [
+    'template' => 'tpl/gofast-node/gofast-node-links',
+    'variables' => [
+      'rand_id' => NULL,
+      'nodes' => [],
+      'first_node' => NULL,
+    ],
+  ];
+
+  $themes['gofast_node_links_dashboard'] = [
+    'template' => 'tpl/gofast-node/gofast-node-links-dashboard',
+    'variables' => [
+      'rand_id' => NULL,
+      'nodes' => [],
+      'first_node' => NULL,
+    ],
+  ];
+
   $themes['gofast_platform_logo'] = [
     'template' => 'tpl/gofast-platform-logo',
     'variables' => [
@@ -3997,6 +4206,121 @@ function gofast_theme() {
  */
 function gofast_theme_registry_alter(&$theme_registry) {
   $theme_registry['pager_link']['function'] = "gofast_custom_pager_link";
+}
+
+/**
+ * Implements hook_element_info
+ */
+function gofast_element_info() {
+  return [
+    /*
+     * An element to display a password input with a button to show/hide its value.
+     *
+     * USAGE:
+     * [
+     *  '#type' => 'password_eye',
+     *  // Generally accepts the same options as the 'password' input
+     *  // NOTE: the id is set on the wrapper element, not on the input itself.
+     *  '#id' => 'form-password',
+     *  // Additional options:
+     *  // Whether to initially show or hide the value
+     *  '#show_password' => FALSE,
+     *  // Options for the inner input element, mostly useful to change some
+     *  // attributes (like classes)
+     *  '#inner_input' => [
+     *    '#attributes' => []
+     *  ],
+     *  // Options for the inner toggle button element, mostly useful to change
+     *  // some attributes (like classes)
+     *  '#inner_button' => [
+     *    '#attributes' => []
+     *  ],
+     * ]
+     */
+    'password_eye' => [
+      '#input' => TRUE,
+      '#theme' => 'gofast_password_eye',
+      '#attached' => [
+        'js' => [
+          drupal_get_path('module', 'gofast') . '/js/gofast_password_eye.js',
+        ],
+      ],
+      // Base password config.
+      '#size' => 60,
+      '#maxlength' => 128,
+      '#process' => array('ajax_process_form'),
+      '#theme_wrappers' => array('form_element'),
+      // Use the same value callback as for textfields; this ensures that we only
+      // get string values.
+      '#value_callback' => 'form_type_textfield_value',
+    ],
+  ];
+}
+
+/**
+ * Implements template_preprocess_HOOK for gofast_password_eye
+ */
+function template_preprocess_gofast_password_eye(&$variables) {
+  $element = &$variables['element'];
+
+  // Set default element option values
+  $element['#show_password'] ??= FALSE;
+
+  // Add mandatory inner <input/> element attributes
+  $element['#inner_input']['#attributes']['type'] = $element['#show_password'] ? 'text' : 'password';
+  $element['#inner_input']['#attributes']['data-show'] = $element['#show_password'] ? 'true' : 'false';
+  $element['#inner_input']['#attributes']['class'][] = 'password-eye-input';
+
+  // Setup inner <button/> element attributes
+  $element['#inner_button']['#attributes']['type'] = 'button';
+  $element['#inner_button']['#attributes']['class'] = [
+    ...$element['#inner_button']['#attributes']['class'] ?? [],
+    'btn',
+    'btn-icon',
+    'password-eye-btn',
+    'h-auto',
+    'btn-secondary', // Might want to make this configurable later?
+  ];
+
+  // Setup outer wrapper element's attributes (CSS classes)
+  $element['#attributes']['class'] = [
+    ...$element['#attributes']['class'] ?? [],
+    'password-eye',
+    'form-item',
+    'input-group',
+  ];
+
+  // Transfer tabindex attribute to inner input and button tabindex if set, with
+  // priority to any already existing value.
+  $element['#inner_input']['#attributes']['tabindex'] ??= $element['#attributes']['tabindex'];
+  $element['#inner_button']['#attributes']['tabindex'] ??= $element['#attributes']['tabindex'];
+  // Remove original tabindex to not apply it to the wrapper element.
+  // NOTE: If a tabindex is truly needed later on the wrapper, use a path like [#wrapper][#attributes][tabindex]
+  unset($element['#attributes']['tabindex']);
+
+  // Mimic processing of builtin password input
+  // Similar logic to element_set_attribute, but which attribute array gets the
+  // value in the element option array can change.
+  $root_attributes_path = ['#attributes'];
+  $inner_input_attributes_path = ['#inner_input', '#attributes'];
+  $attribute_map = [
+    'id' => $root_attributes_path,
+    'name' => $inner_input_attributes_path,
+    'size' => $inner_input_attributes_path,
+    'maxlength' => $inner_input_attributes_path,
+  ];
+
+  foreach ($attribute_map as $attribute_name => $path) {
+    $option_name = '#' . $attribute_name;
+    if (!isset($element[$option_name])) {
+      continue;
+    }
+    $attribute_value = $element[$option_name];
+
+    drupal_array_set_nested_value($element, [...$path, $attribute_name], $attribute_value);
+  }
+
+  _form_set_class($element, ['form-text']);
 }
 
 function gofast_get_comments_view($node) {
@@ -4321,8 +4645,18 @@ function gofast_get_node_locations($node, $origine = null) {
 
 /**
  * This function prepares the locations for a node.
+ *
+ * @param (array{
+ *  max_items?: int | null,
+ *  skip_until_after_path?: string | null,
+ * } | null) $pagination Pagination options array.
+ *  available keys:
+ *  - max_items?: Maximum number of descendant items to return for this request.
+ *    Passing a non-null value to this parameter changes the returned array structure.
+ *    Unlimited when null.
+ *  - skip_until_after_path?: Path to the last item returned by a previous request.
  */
-function gofast_get_node_locations_async($node, $origine = null, $template = false  , $browser_path = null, $is_publication = false, $conference_path = null ,$is_confidential = false, $is_internal = false) {
+function gofast_get_node_locations_async($node, $origine = null, $template = false  , $browser_path = null, $is_publication = false, $conference_path = null ,$is_confidential = false, $is_internal = false, $pagination = NULL) {
 
   global $user;
   $all_paths = array();
@@ -4360,7 +4694,8 @@ function gofast_get_node_locations_async($node, $origine = null, $template = fal
     if ($node->type == "article") {
       $target_documents = "groups";
     }
-    $user_paths = (array) gofast_cmis_webservice_item_get_descendants($item->id, $target_documents, true, false, $origine);
+    $descendants_response = (array) gofast_cmis_webservice_item_get_descendants($item->id, $target_documents, true, false, $origine, $pagination);
+    $user_paths = $descendants_response['descendants'] ?? $descendants_response;
 
     // New ztree selected items
     $selected_spaces = array();
@@ -4406,28 +4741,18 @@ function gofast_get_node_locations_async($node, $origine = null, $template = fal
           }
           $map_id_locations[$node_location_path] = $item_nid;
         }else {
+          $space_path = gofast_get_space_path_from_folder_path($node_location_path);
+          $space_id = gofast_ajax_file_browser_get_nid_from_href($space_path, true);
           if($is_publication){
-            //Check if we have permission in the parent space
-            $node_parent_path_crumbs = explode('/', $node_location_path);
-            for($i = 0; $i<count(explode('/', $node_location_path)); $i++){
-                //Remove last element and iterrate
-                array_pop($node_parent_path_crumbs);
-                $location_to_check = implode("/", $node_parent_path_crumbs);
-
-                if(substr(end($node_parent_path_crumbs),0,1) == "_"){
-                    //This is the space, check our permissions
-                    $gid_in_crumb = gofast_og_get_group_id_from_title_without_cmis($location_to_check,true,true);
-                    if(og_user_access('node', $gid_in_crumb, 'create alfresco_item content')){
-                        //We have permission here, set this path and break
-                        unset($node_locations_paths[$key]);
-                        break;
-                    }else{
-                        //We don't have permission here, stop the parent loop and continue
-                        continue 2;
-                    }
-                }else{
-                    //This element is a folder, continue searching for a space
-                }
+            if(og_user_access('node', $space_id, 'create alfresco_item content')){
+              unset($node_locations_paths[$key]);
+            }
+          } else {
+            // Only set the space name of the unaccessible item, preventing displaying restricted folder name in tree
+            if(!og_user_access('node', $space_id, 'create alfresco_item content')){
+              $node_locations_paths[$key] = $space_path;
+              $map_id_locations[$space_path] = $space_id;
+              continue;
             }
           }
           $map_id_locations[$node_location_path] = $node_location_path;
@@ -4437,18 +4762,14 @@ function gofast_get_node_locations_async($node, $origine = null, $template = fal
         //We load (non async) the neighbours of the selected paths as ztree consider them loaded
         $paths_to_load = explode('/', substr($node_location_path, 1));
         //We don't need to load the 1st level as it is already loaded
-        $path_to_load = '/'.$paths_to_load[0].'/'.$paths_to_load[1].'/'.$paths_to_load[2].'/';
+        $path_to_load = '/'.$paths_to_load[0].'/'.$paths_to_load[1].'/';
         unset($paths_to_load[0]);
         unset($paths_to_load[1]);
-        unset($paths_to_load[2]);
-        $continue = FALSE; //2 subs are loaded so we don't need to load 1/2 paths
+
         foreach($paths_to_load as $path_element){
-          if(!$continue){
-            $item_load = gofast_cmis_item_get_by_path($path_to_load);
-            $user_paths = array_merge($user_paths, gofast_cmis_webservice_item_get_descendants($item_load->id, $target_documents, true));
-          }
+          $item_load = gofast_cmis_item_get_by_path($path_to_load);
+          $user_paths = array_merge($user_paths, gofast_cmis_webservice_item_get_descendants($item_load->id, $target_documents, true));
           $path_to_load .= $path_element.'/';
-          $continue = !$continue;
         }
           unset($user_paths[$node_location_path]);
 
@@ -4547,11 +4868,6 @@ function gofast_get_node_locations_async($node, $origine = null, $template = fal
         $oldest_parent_uuid = db_query("SELECT uuid FROM alf_node WHERE id = :oldest_parent_id", array(":oldest_parent_id" => $oldest_parent_id), array("target" => "alfresco"))->fetchAll()[0]->uuid;
         $item = gofast_cmis_item_get($oldest_parent_uuid);
         $oldest_parent_path = $item->properties["cmis:path"];
-      }
-      // we make the mirror source uncheckable to prevent the user from breaking the whole mirroring relationship
-      if ($oldest_parent_path) {
-        $check_disabled_locations[$oldest_parent_path] = $oldest_parent_path;
-        $_REQUEST['path_warnings'] = array($oldest_parent_path => t("This is the mirroring source, the folder can't be removed from it while it still has mirroring target locations", array(), array("context" => "gofast:gofast_ztree")));
       }
       $name = $item->properties['cmis:name'];
       $folder_parents = gofast_cmis_webservice_get_node_parents($folder_reference);
@@ -4717,13 +5033,14 @@ function gofast_get_node_locations_async($node, $origine = null, $template = fal
     'selected_paths' => $selected_paths,
     'check_disabled_paths' => $check_disabled_locations,
     'disabled_paths' => $disabled_paths,
+    'has_more' => $descendants_response['has_more'] ?? FALSE,
   );
 
 
 
   if(isset($node->field_criticity['und'][0]['tid'])){
-    $is_internal = taxonomy_term_load($node->field_criticity['und'][0]['tid'])->name == "Internal Distribution" ? TRUE : FALSE;
-    $is_confidential = taxonomy_term_load($node->field_criticity['und'][0]['tid'])->name == "Confidential Data" ? TRUE : FALSE;
+    $is_internal = gofast_taxonomy_is_node_internal($node);
+    $is_confidential = gofast_taxonomy_is_node_confidential($node);
   }
 
   // unset spaces public or||and extranet depend of type of Criticity
@@ -5149,220 +5466,6 @@ function gofast_get_mlid_by_path($path) {
 }
 
 /**
- * Gofast autocomplete query builder.
- *
- * Given an input text $str, an $entity_type and an array of $options, builds a
- * database query and return an array of matches. The benefits of using this
- * function is that you can combine entity field query with base table property
- * query using OR operator, invoke access hooks, and format/theme autcocomplete
- * items from matching entities.
- *
- * @param string $str
- *  Input string to search for.
- *
- * @param string $entity_type
- *  The entity type to match.
- *
- * @param array $options [optional]
- *  An associative array of options. Defaults to an empty array with a fallback
- *  depending on entity type. It may contain the following elements:
- *  - 'bundle': an array of bundle to filter. Leave empty to bypass bundle
- *     filtering. Don't use bundle 'user' with entity type 'user' or Drupal
- *     will land in an error.
- *  - 'fields': An array of fields to search on.
- *  - 'properties': An array of entity base table properties to search on.
- *  - 'key': A string defining the name of the key that holds matching items
- *     identifiers.
- *  - 'value': A string defining the name of the value that will be returned,
- * it can be a field or a property.
- *  - 'format_key_callback': Callable function handling formatting and how
- * to display the key of a matching entity in an autocomplete item.
- *  - 'format_value_callback': Callable function handling formatting and
- * how to display the value of a matching entity in an autocomplete item.
- *  - 'link': if TRUE the default format_value_callback will link matching item
- *  to the corresponding entity when possible, other formatter can make their
- *  implementation of this option.
- *
- * @return array
- *  An associative array of matches, ready for printing. Keys and values depends
- *  on matching entities' type and the options callback : keys and values are
- *  respectively formatted by 'format_key_callback' and 'format_value_callback'.
- */
-function gofast_ac_query($str, $entity_type, $options = array(), $broadcast = false, $space = array()) {
-  global $user;
-  $options += array(
-    'bundle' => array(),
-    'fields' => array(),
-    'properties' => array(),
-    'key' => NULL,
-    'value' => NULL,
-    'format_key_callback' => 'gofast_ac_format_key',
-    'format_value_callback' => 'gofast_ac_format_value',
-    'link' => FALSE,
-    'limit' => 20
-  );
-
-  if($entity_type == 'taxonomy_term'){
-    $_GET['query'] = $str;
-    $taxonomy_output = gofast_xeditable_tag_autocomplete(false);
-  }
-  $info = entity_get_info($entity_type);
-
-  $base_table = $info['base table'];
-
-  foreach ($options as $key => &$option) {
-    if (empty($option)) {
-      $option = gofast_ac_query_option_default($entity_type, $key, $options);
-    }
-  }
-
-  if (!is_assoc($options['fields'])) {
-    // Generate field aliases.
-    $options['fields'] = array_flip(array_map(function($i) {
-              return chr(($i | 96) + 1); //+97
-            }, array_flip($options['fields'])));
-  }
-
-  $EFQuery = new EntityFieldQuery();
-  $EFQuery->entityCondition('entity_type', $entity_type)
-          ->addMetaData('base_table', $base_table)
-          ->addMetaData('properties', $options['properties'])
-          ->addMetaData('fields', $options['fields'])
-          ->addMetaData('key', $options['key'])
-          ->addMetaData('str', $str);
-  // Moving out tag oring - caused problems when querying for contacts api autocomplete.
-  // The tag is still here when we don't query contacts
-
-  // Alter the query and apply appropriate access tag based on entity type.
-  if($broadcast == false){
-    gofast_ac_query_access($EFQuery, $entity_type, $options['fields']);
-  }
-
-  if ($entity_type === 'user') {
-    // Prevent showing up drupal admin.
-    $EFQuery->entityCondition('entity_id', 1, '<>');
-    // prevent showing up blocked users.
-    $EFQuery->propertyCondition('status', 1)
-            ->addTag('oring');
-  }
-  elseif (!empty($options['bundle'])) {
-    $EFQuery->entityCondition('bundle', $options['bundle'], is_array($options['bundle']) ? 'IN' : '=');
-        if(in_array('contact', $options['bundle'])) {
-            $EFQuery->addTag('first_and_last_name');
-        }else $EFQuery->addTag('oring');
-  }else $EFQuery->addTag('oring');
-
-  if($options['limit']){
-      $EFQuery->range(0, $options['limit']);
-  }
-
-  $ids = $EFQuery->execute();
-  $matches = array();
-  if(!empty($taxonomy_output)){
-      $entities = array();
-      foreach ($taxonomy_output as $val) {
-          $entities[] = taxonomy_term_load($val['id']);
-      }
-  }else{
-    if (empty($ids) || empty($ids[$entity_type])) {
-        return $matches;
-    }
-
-    $entities = entity_load($entity_type, array_keys($ids[$entity_type]));
-  }
-
-
-  ///filter by role for user and userlist if required
-  if( $entity_type === 'user' && isset($options['roles_filter'])){
-    foreach ($entities as $key => $entity){
-      $entity_roles = gofast_og_get_user_final_roles_for_space('node', $options['roles_filter']['space_nid'], $entity->uid);
-      if( empty(array_intersect($entity_roles, $options['roles_filter']['roles'])) ){
-        unset($entities[$key]);
-      }
-    }
-  }elseif ( $entity_type === 'userlist' && isset($options['roles_filter']) ){
-    foreach ($entities as $key => $entity){
-      $entity_roles = gofast_userlist_og_get_userlist_roles('node', $options['roles_filter']['space_nid'], $entity->ulid);
-      if( empty(array_intersect($entity_roles, $options['roles_filter']['roles']))  ){
-        unset($entities[$key]);
-      }
-    }
-  }
-
-  $map_value = in_array($options['value'], $options['fields']) ?
-          function ($entity, $value) {
-    return $entity->{$value}[LANGUAGE_NONE][0]['value'];
-  } :
-          function ($entity, $value) {
-    return $entity->{$value};
-  };
-
-  $format_key = $options['format_key_callback'];
-  $format_value = $options['format_value_callback'];
-
-  //Check space filter passed in params. If this is a user not member of the space filter ignore it
-  if(!empty($space)){
-      $users_in_spaces = array();
-
-      foreach($space as $gid){
-          $users_in_spaces = array_merge($users_in_spaces, gofast_og_get_members_userlist_included(node_load($gid), OG_STATE_ACTIVE));
-      }
-  }
-
-  foreach ($entities as $id => $entity) {
-
-      if($entity->type == NULL && $entity_type != 'userlist' && $entity->vid != GOFAST_VID_TAGS){
-          $access = user_view_access($entity);
-          if($access == FALSE){
-              continue;
-          }
-      }
-
-      //Check space permissions
-      if(in_array($entity->type, array('group', 'organisation', 'extranet', 'public'), TRUE) && !$broadcast){
-          $membership = og_get_membership('node', $entity->nid, 'user', $user->uid);
-          $isMember = ($membership != FALSE && $membership->state != OG_STATE_PENDING);
-
-          //check membership from userlist
-          if( ! $isMember){
-            $isMember = gofast_userlist_og_is_user_member_of_space($entity->nid, $user);
-          }
-
-          if(!$isMember){
-              continue;
-          }
-      }
-
-      //if broadcast, we keep only the entities in which we are not member of
-      if($broadcast == true){
-          if(node_access("update", $entity)){
-              continue;
-          }
-      }
-
-      //Check userlist permissions if partitionning is enabled
-      if($entity_type == "userlist" && !gofast_userlist_is_visible($entity->ulid)){
-          continue;
-      }
-
-      //Check space filter passed in params. If this is a user not member of the space filter ignore it
-      if(!empty($space) && $entity_type === 'user'){
-          if(!in_array($entity->uid, $users_in_spaces)){
-              continue;
-          }
-      }
-
-    $_value = $map_value($entity, $options['value']);
-    $_key = $entity->{$options['key']};
-    $key = $format_key($entity_type, $entity, $_key, $_value, $options);
-    $value = $format_value($entity_type, $entity, $_key, $_value, $options);
-    $matches[$key] = $value;
-  }
-
-  return $matches;
-}
-
-/**
  * Options fallback per entity type for Gofast autocomplete query builder.
  */
 function gofast_ac_query_option_default($entity_type, $key, $options) {
@@ -5589,7 +5692,15 @@ function theme_node_title($variables)
   if ($variables['noIcon'] !== TRUE) {
     $img = theme('gofast_node_icon_format', array('node' => $node));
   }
-  $title = $img . "<span>{$node->title}</span>";
+  $title_tag = 'span';
+  if(isset($variables['title_tag'])){
+    $title_tag = $variables['title_tag'];
+  }
+  $title_attr = '';
+  if(isset($variables['title_attr'])){
+    $title_attr = $variables['title_attr'];
+  }
+  $title = $img . "<$title_tag $title_attr>{$node->title}</$title_tag>";
 
   // Allow to display other entity types title like node title (along with its
   // format icon), by faking etid property name/key (nid).
@@ -5868,7 +5979,8 @@ function gofast_unarchive_space($node){
   variable_set("unarchiving_space_" . $node->nid, $state);
 
   $node->field_archive[LANGUAGE_NONE][0]["value"] = 0;
-  gofast_update_field_database($node, "field_archive");
+  // Trigger node save to update alfresco gofast:isarchived property
+  node_save($node);
   gofast_cmis_webservice_space_assign_permissions($node);
   // gofast_cmis_webservice_item_set_permission(gofast_cmis_node_get_item_id($node), $node->name, TRUE);
 
@@ -6105,7 +6217,7 @@ function gofast_get_node_actions_async($nid){
   exit;
 }
 
-function gofast_process_location_check_async($nid, $no_answer = false, $force_execute = false, $no_timecheck = false){
+function gofast_process_location_check_async($nid, $no_answer = false, $force_execute = false, $no_timecheck = false, $return = false){
   global $user;
   $node = node_load($nid);
   $reference = gofast_cmis_node_get_item_id($node);
@@ -6114,6 +6226,9 @@ function gofast_process_location_check_async($nid, $no_answer = false, $force_ex
   // Prevent checking locations for non alfresco items
   if($node->type !== 'alfresco_item' && $node->type !== "article"){
     $data['response'] = "OK";
+    if ($return) {
+      return $data;
+    }
     print json_encode($data);
     exit;
   }
@@ -6283,6 +6398,9 @@ function gofast_process_location_check_async($nid, $no_answer = false, $force_ex
           ->execute();
         cache_clear_all("field:node:$node->nid", 'cache_field');
         $data['response'] = "reload";
+        if ($return) {
+          return $data;
+        }
         print json_encode($data);
         exit;
       }
@@ -6297,20 +6415,22 @@ function gofast_process_location_check_async($nid, $no_answer = false, $force_ex
   if (!$file_size) {
     $data['response'] = "KO";
     $data['message'] = t('This file is corrupted. Please try to upload it again', array(), array('context' => 'gofast'));
+    if ($return) {
+      return $data;
+    }
     print json_encode($data);
     exit;
   }
 
   if(!$no_answer){
-      if(isset($data['response'])){
-        print json_encode($data);
-        exit;
-      }else{
+      if(!isset($data['response'])){
         $data['response'] = "OK";
-        print json_encode($data);
-        exit;
       }
-
+      if($return){
+        return $data;
+      }
+      print json_encode($data);
+      exit;
   }
 }
 
@@ -6469,18 +6589,21 @@ function gofast_api_get_node_access($params) {
       gofast_api_internal_server_error("Unable to load node with nid : " . $nid);
     }
 
-    if($user->uid == 0){
-      if($node->type == "webform" && isset($params["hash"])){
-        $hash = $params["hash"];
-        $decryted_hash = gofast_decrypt(CIPHER_KEY, $hash);
-        $hash_data = json_decode($decryted_hash);
-        if($hash_data->nid == $node->nid){
-          gofast_api_success(["access" => "view"]);
-        }
-      }
-      gofast_api_success(["access" => false]);
-    }
     $permission = FALSE;
+
+    if($node->type == "webform" && isset($params["hash"])){
+      $hash = $params["hash"];
+      $decryted_hash = gofast_decrypt(CIPHER_KEY, $hash);
+      $hash_data = json_decode($decryted_hash);
+      if($hash_data->nid == $node->nid){
+        $permission = "view";
+      }
+    }
+
+    if($user->uid == 0){
+      gofast_api_success(["access" => $permission]);
+    }
+
     foreach(["delete", "update", "view"] as $op) {
       if(node_access($op, $node)) {
         $permission = $op;
@@ -6574,7 +6697,7 @@ function gofast_api_node_links($params){
     //Check authentication
     global $user;
     if($user->uid == 0){
-       //gofast_api_not_authorized("Unavailable ressource for anonymous user");
+      gofast_api_not_authorized("Unavailable ressource for anonymous user");
     }
 
     //Check if we have a nid param
@@ -6607,62 +6730,23 @@ function gofast_api_node_links($params){
         $nodes = node_load_multiple($nids_array);
     }
 
+    //Drop missing nodes and nodes the user is not allowed to view
     foreach($nodes as $k => $node){
-        if($node == null){
+        if($node == null || !node_access('view', $node)){
             unset($nodes[$k]);
         }
     }
     //Check if we retrieved a node
     if(count($nodes) == 0){
-        gofast_api_internal_server_error("Unable to load node with nids : " . $nids);
+        gofast_api_internal_server_error("Unable to load node");
     }
 
-    //Check node access
-    //TODO
-    /*if(!node_access_multiple('view', $node)){
-       gofast_api_forbidden("You don't have the permission to view this node");
-    }*/
-    $rand_id = rand(0,5000);
-
-    if(count($nodes) > 1){
-       if(!$params['dashboard']){
-            $html_content = '<span data-nid="'.$rand_id.'"  onmouseover="$(this).parent().find(\'#wf_multiple_docs_\'+$(this).data(\'nid\')).css(\'display\', \'block\');" onmouseout="$(this).parent().find(\'#wf_multiple_docs_\'+$(this).data(\'nid\')).css(\'display\', \'none\');" id="wf_multiple_docs_'.$rand_id.'" style="display:none;position:absolute;z-index:999;margin-top:20px;"><div class="panel panel-primary"><div class="panel-heading">'.t("Associated documents", array(), array('context' => 'gofast:gofast_workflows'))."</div><div class='panel-body'>";
-       }
-       foreach($nodes as $node){
-
-              // $link_node_html = "<span style='float: left; margin-top:-2px;color:#000000'></span><span style='max-width:180px;white-space: nowrap;overflow:hidden;text-overflow:ellipsis;-o-text-overflow:ellipsis;display:inline-block;'>".l($mynode->title, 'node/' . $mynode->nid, array('attributes' => array("nid" => $mynode->nid, "class" => "ajax-navigate", "title" => $mynode->title),  'html' => TRUE))."</span>";
-              if($params['dashboard']){
-                $link_node_html = "<span style='float: left; margin-top:-2px;color:#000000'></span><span style='max-width:680px;white-space: nowrap;overflow:hidden;text-overflow:ellipsis;-o-text-overflow:ellipsis;display:inline-block;'><span>". theme('node_title', array('node' => $node, "icon_size" => 24))."</span></span>";
-                $link_node_html = str_replace('width="24"', 'width="16px"', $link_node_html);
-                $link_node_html = str_replace('height="24"', 'height="16px"', $link_node_html);
-                $html_content .= $link_node_html;
-              }else{
-                $link_node_html = "<span style='float: left; margin-top:-2px;color:#000000'></span><span style='max-width:400px;white-space: nowrap;overflow:hidden;text-overflow:ellipsis;-o-text-overflow:ellipsis;display:inline-block;'><span onClick='window.parent.parent.Gofast.".(gofast_essential_is_essential() ? "Essential.processEssentialAjax" : "processAjax")."(\"/node/".$node->nid."\");window.parent.parent.modalContentClose();'>". theme('node_title', array('node' => $node, "icon_size" => 24, 'link' => FALSE))."</span></span>";
-                $link_node_html = str_replace('width="24"', 'width="16px"', $link_node_html);
-                $link_node_html = str_replace('height="24"', 'height="16px"', $link_node_html);
-                $html_content .= "<div class='deadline_box_in_rapide_todoliste' style='max-width:685px;max-height:22px;' title=\"".$node->title."\">".$link_node_html."</div>";
-              }
-
-       }
-       if(!$params['dashboard']){
-            $first_node = array_shift(array_values($nodes));
-            $html_content .= '</div></div></span><div class="deadline_box_in_rapide_todoliste" style="cursor:pointer;max-width:685px;max-height:22px;" onmouseover="$(this).parent().find(\'#wf_multiple_docs_\'+$(this).data(\'nid\')).css(\'display\', \'block\');" onmouseout="$(this).parent().find(\'#wf_multiple_docs_\'+$(this).data(\'nid\')).css(\'display\', \'none\');" data-nid="'.$rand_id.'"></span><span style="float:left;">'.theme('node_title', array('node' => $first_node, "icon_size" => 24, 'link' => FALSE)).'</span><span class="fa fa-caret-down" title="Documents" style="float:left;margin-top:4px;margin-left:5px;position:absolute;"><span style="clear:both;"></span></div>';
-       }
-    }else{
-       if($params['dashboard']){
-           $node = array_shift(array_values($nodes));
-           $link_node_html = "<span style='cursor:pointer;color:#337ab7;'>". theme('node_title', array('node' => $node, "icon_size" => 24))."</span>";
-           $link_node_html = str_replace('width="24"', 'width="16px"', $link_node_html);
-           $link_node_html = str_replace('height="24"', 'height="16px"', $link_node_html);
-           $html_content = $link_node_html;
-       }else{
-           $node = array_shift(array_values($nodes));
-           $link_node_html = "<span style='cursor:pointer;color:#337ab7;' onClick='window.parent.parent.Gofast.".(gofast_essential_is_essential() ? "Essential.processEssentialAjax" : "processAjax")."(\"/node/".$node->nid."\");window.parent.parent.modalContentClose();'>". theme('node_title', array('node' => $node, "icon_size" => 24, 'link' => FALSE))."</span>";
-           $link_node_html = str_replace('width="24"', 'width="16px"', $link_node_html);
-           $link_node_html = str_replace('height="24"', 'height="16px"', $link_node_html);
-           $html_content = $link_node_html;
-       }
-    }
+    $template_parameters = [
+      'nodes' => $nodes,
+    ];
+    $html_content = $params['dashboard'] ?
+      theme('gofast_node_links_dashboard', $template_parameters)
+      : theme('gofast_node_links', $template_parameters);
 
     $output = array(
         'content' => $html_content
@@ -7166,41 +7250,41 @@ function gofast_api_post_node_metadata($params){
         //Switch into fields to alter data before sending them
         switch($field){
           case 'field_filename':
+            // FIXME Maybe this should go through gofast_update_node_field?
+            // Load fresh node to make sure not to overwrite other change
+            $node = node_load($node->nid, NULL, TRUE);
             $extension = pathinfo($node->field_filename[LANGUAGE_NONE][0]['value'], PATHINFO_EXTENSION);
             $new_title = $params['field_filename'] . "." . $extension;
             $node->title = $new_title;
             $node->field_filename[LANGUAGE_NONE][0]['value'] = $new_title;
             $node->field_filename[LANGUAGE_NONE][0]['safe_value'] = $new_title;
             node_save($node);
+            cache_clear_all("field:node:$node->nid", 'cache_field');
+            $node = node_load($node->nid, NULL, TRUE);
 
-            $output = array(
-              "field_filename" => array(
-                "nameEnter" => $params['field_filename'],
-                "extension" => $extension,
-                "newName" => $new_title,
-                "status" => "OK",
-              )
-            );
-            gofast_api_success($output);
-            break;
-          case 'field_document_reference':
-            $node->field_document_reference[LANGUAGE_NONE][0]['value'] = $value;
-            $node->field_document_reference[LANGUAGE_NONE][0]['safe_value'] = $value;
-            node_save($node);
-            $output = array(
-              "field_document_reference" => array(
-                "newDocumentReference" => $value,
-                "status" => "OK",
-              )
-            );
-            gofast_api_success($output);
+            $output[$field] = [
+              'status' => 'OK',
+              'newValue' => $new_title,
+              'extension' => $extension,
+              'input' => $params['field_filename'],
+            ];
+            // Need to continue from 2nd level to continue foreach since switch
+            // is considered a looping structure.
+            continue 2;
             break;
           case 'field_date':
-            global $user;
-            $target_format = $user->language === 'en' ? 'm/d/Y' : 'd/m/Y';
             $_fdate = DateTime::createFromFormat('d/m/Y', $value);
-            $timestamp_date = $_fdate->getTimestamp();
-                  $value = date($target_format, $timestamp_date );
+            // An out of range day or month (e.g. a m/d/Y date) is rolled over instead of failing
+            $_ferrors = DateTime::getLastErrors();
+            if (!$_fdate || !empty($_ferrors['warning_count'])) {
+              gofast_api_output(array(
+                'Content-Type' => "application/json",
+                'code' => "400 Bad Request",
+                'data' => array('message' => "field_date must be a valid d/m/Y date"),
+              ));
+            }
+            // Use the format gofast_update_node_field() reads, whatever the user language
+            $value = $_fdate->format(variable_get('date_format_short_without_hours', 'm/d/Y'));
             break;
           case 'field_tags':
                 foreach($value as &$tid){
@@ -7257,15 +7341,6 @@ function gofast_api_post_node_metadata($params){
             case 'field_external_page_url':
                  $value = json_decode($value);
             break;
-            case 'field_filename':
-              if (!gofast_validate_filename($value)) {
-                gofast_api_internal_server_error("field_filename contains illegals characters or an invalid name.");
-              }
-              $extension = taxonomy_term_load($node->field_format[LANGUAGE_NONE][0]['tid'])->name;
-              $value = $value . "." . strtolower($extension);
-              $node->title = $value;
-              node_save($node);
-            break;
         }
 
         $upfield = strtoupper(str_replace('field_', '', $field));
@@ -7276,7 +7351,8 @@ function gofast_api_post_node_metadata($params){
         $_POST['name'] = $field;
         $_POST['value'] = $value;
         $_POST['non_xeditable'] = TRUE;
-        $output[$field] = json_decode(gofast_update_node_field(), TRUE);
+        $updated_field = gofast_update_node_field();
+        $output[$field] = is_string($updated_field) ? json_decode($updated_field, TRUE) : $updated_field;
     }
 
     gofast_api_success($output);
@@ -7430,7 +7506,8 @@ function gofast_api_patch_node_metadata($params){
         $_POST['name'] = $field;
         $_POST['value'] = $final_values;
         $_POST['non_xeditable'] = TRUE;
-        $output[$field] = json_decode(gofast_update_node_field(), TRUE);
+        $updated_field = gofast_update_node_field();
+        $output[$field] = is_string($updated_field) ? json_decode($updated_field, TRUE) : $updated_field;
     }
 
     gofast_api_success($output);
@@ -7493,7 +7570,8 @@ function gofast_api_get_node_autocomplete($params){
     );
 
     if ($params["populate"]) {
-      $output = gofast_ac_get_query($str, 'node', $option_ac_node);
+      $option_ac_node["format_json"] = true;
+      $output = gofast_ac_query($str, 'node', $option_ac_node);
     } else {
       $option_ac_node['format_key_callback'] = 'gofast_node_api_autocomplete_format_key';
       $option_ac_node['format_value_callback'] = 'gofast_node_api_autocomplete_format_value';
@@ -7555,10 +7633,6 @@ function gofast_tour_visited_pages_reset() {
   exit;
 }
 
-function gofast_flush_caches(){
-    variable_set('ckeditor_timestamp', time());
-}
-
 /**
  * Implements hook parse_js_file_alter
  * Allowing to modify currently matched JS translatables
@@ -7583,10 +7657,6 @@ function gofast_rebuild_js_alter(&$language, &$object_reference) {
 }
 
 function gofast_js_alter(&$js){
-    $js["sites/all/modules/ckeditor/includes/ckeditor.utils.js"]['version'] = variable_get('ckeditor_timestamp', time());
-    $js["sites/all/libraries/ckeditor/ckeditor.js"]['version'] = variable_get('ckeditor_timestamp', time());
-    $js["sites/all/modules/ckeditor/ckeditor.styles.js"]['version'] = variable_get('ckeditor_timestamp', time());
-    $js["sites/all/modules/ckeditor/ckeditor.config.js"]['version'] = variable_get('ckeditor_timestamp', time());
     // for technical chains
     $language = language_list()["gfen"];
     _locale_rebuild_js("gfen");
@@ -7980,7 +8050,7 @@ function gofast_render_historyByNode_async($node, $async=true){
     return;
   }
   
-  $is_confidential = isset($node->field_criticity['und'][0]['tid']) && taxonomy_term_load($node->field_criticity['und'][0]['tid'])->name == "Confidential Data";
+  $is_confidential = gofast_taxonomy_is_node_confidential($node);
 
   if($async){
     print theme('gofast_history_tab', ['version' => $data_version['str'], 'content_version' => $data_version['users_versions'], 'async' => TRUE, "is_confidential" => $is_confidential]);
@@ -8003,6 +8073,7 @@ function gofast_render_allCommentsByNode_async($node, $async=false){
   }
 
   foreach($arrayDataComments as $dataComment){
+    $dataReturn = [];
     $comment = $dataComment['comment_body']['#object'];
     $nid = $comment->nid;
     $cid = $comment->cid;
@@ -8079,8 +8150,6 @@ function gofast_render_allCommentsByNode_async($node, $async=false){
   }
 
   foreach ($comments as $comment) {
-    if ($comment['creator_id'] == 1)
-      continue;
 
     if($comment['comment_pid'] == 0) {
         $newC[] = getChildrens($comment, $comments);
@@ -8149,7 +8218,7 @@ function gofast_create_page_content($content, String $contentType = 'content-flu
   return $pageContent;
 }
 
-function gofast_get_properties_user_by_uid_or_u_name($uid = NULL, $u_name = NULL, $properties_u, $static = FALSE) {
+function gofast_get_properties_user_by_uid_or_u_name($uid = NULL, $u_name = NULL, $properties_u = NULL, $static = FALSE) {
     $args = json_encode([$uid, $u_name, $properties_u]);
     if ($static) {
       static $data;
@@ -8265,18 +8334,18 @@ function gofast_get_roles($role_name = "") {
     return $result;
 }
 
-function gofast_get_node_properties_by_nid($nid, $properties = array()) {
+function gofast_get_node_properties_by_nid($nids, $properties) {
+  $nids = (array) $nids;
+  if(empty($nids)){
+    return [];
+  }
+  $properties = (array) $properties;
+  $query = db_select('node', 'n');
+  $query->fields('n', $properties);
+  $query->condition('n.nid', $nids, 'IN');
 
-    if($properties) {
-        $query = db_select('node', 'n');
-        $query->fields('n', $properties);
-        $query->condition('n.nid', $nid, '=');
-    } else {
-        return node_load($nid);
-    }
-
-    $result = $query->execute();
-    return $result->fetchAll()[0];
+  $result = $query->execute();
+  return $result->fetchAll();
 }
 
 function gofast_get_rid_of_user_role_by_uid($uid) {
@@ -8384,13 +8453,13 @@ function gofast_render_extraMetadataTabsByNode_async($node, $async = false){
 function gofast_get_is_confidential_from_nid()
 {
   $nid = $_POST["nid"];
-  $is_internal = false;
+  $is_confidential = false;
 
   if (!empty($nid)) {
     $node = node_load($nid);
-    $is_internal = isset($node->field_criticity['und'][0]['tid']) && taxonomy_term_load($node->field_criticity['und'][0]['tid'])->name == "Confidential Data" ? TRUE : FALSE;
+    $is_confidential = gofast_taxonomy_is_node_confidential($node);
   }
-  print json_encode(array("status" => "OK", "value" => $is_internal));
+  print json_encode(array("status" => "OK", "value" => $is_confidential));
   exit;
 }
 
@@ -8401,7 +8470,7 @@ function gofast_get_is_internal_from_nid()
 
   if (!empty($nid)) {
     $node = node_load($nid);
-    $is_internal = isset($node->field_criticity['und'][0]['tid']) && taxonomy_term_load($node->field_criticity['und'][0]['tid'])->name == "Internal Distribution" ? TRUE : FALSE;
+    $is_internal = gofast_taxonomy_is_node_criticity_internal($node);
   }
   print json_encode(array("status" => "OK", "value" => $is_internal));
   exit;
@@ -8533,4 +8602,59 @@ function gofast_signature_placer_embedded_widget() {
   drupal_add_css($module_path . '/css/gofast_signature_placer.css');
 
   return theme('gofast_signature_placer_widget');
+}
+
+/**
+ * Common variable preprocessing for both the `gofast_node_links` and
+ * `gofast_node_links_dashboard` theme hooks.
+ *
+ * @param (array{
+ *   rand_id: numeric,
+ *   nodes: object[],
+ *   first_node?: object,
+ * }) $variables
+ *   Array of variables set in the template file.
+ *
+ * @return void
+ *   Updates the passed variables array.
+ */
+function gofast_template_node_links_common_preprocess(&$variables) {
+  // Generate random ID for the element.
+  $rand_id = rand(0,5000);
+  $variables['rand_id'] = $rand_id;
+
+  $nodes_copy = $variables['nodes'];
+  $variables['first_node'] = $nodes_copy[array_key_first($nodes_copy)];
+}
+
+/**
+ * Implements template_preprocess_HOOK for gofast_node_links.
+ *
+ * NOTE: This is implemented in the module declaring the theme hook as
+ * recommended in the documentation of the `theme` function.
+ *
+ * @param array &$variables
+ *   Array of variables set in the template file.
+ *
+ * @return void
+ *   Updates the passed variables array.
+ */
+function template_preprocess_gofast_node_links(&$variables) {
+  gofast_template_node_links_common_preprocess($variables);
+}
+
+/**
+ * Implements template_preprocess_HOOK for gofast_node_links_dashboard.
+ *
+ * NOTE: This is implemented in the module declaring the theme hook as
+ * recommended in the documentation of the `theme` function.
+ *
+ * @param array &$variables
+ *   Array of variables set in the template file.
+ *
+ * @return void
+ *   Updates the passed variables array.
+ */
+function template_preprocess_gofast_node_links_dashboard(&$variables) {
+  gofast_template_node_links_common_preprocess($variables);
 }

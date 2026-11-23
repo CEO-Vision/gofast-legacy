@@ -38,10 +38,10 @@
     </div>
 </div> -->
 
-<div id="dashboard-calendar" class="panel-body">
-    <div id="dashboard-calendar-meetings">
+<div id="dashboard-calendar" class="panel-body h-100">
+    <div id="dashboard-calendar-meetings" class="h-100">
     </div>
-    <div id="dashboard-calendar-deadlines" style="display: none;">
+    <div id="dashboard-calendar-deadlines" class="h-100" style="display: none;">
     </div>
 </div>
 
@@ -59,8 +59,13 @@
             url: "/gofast/dashboard/get_upcomings",
             success: function(response) {
                 var data = JSON.parse(response);
+
                 jQuery('#dashboard-calendar-deadlines').html(data.files);
                 jQuery('#dashboard-calendar-meetings').html(data.meetings);
+
+                // Both meetings and file deadlines are under this element, this
+                // single attachBehaviors call should process both at once.
+                Drupal.attachBehaviors(jQuery('#dashboard-calendar')[0]);
             }
         });
 

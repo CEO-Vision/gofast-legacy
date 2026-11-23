@@ -50,7 +50,7 @@ function gofast_features_taxonomy_uuid_features_default_terms() {
     'field_extensions' => array(
       'und' => array(
         0 => array(
-          'value' => ';svg;',
+          'value' => ';odg;svg;',
           'format' => NULL,
         ),
       ),
@@ -65,7 +65,7 @@ function gofast_features_taxonomy_uuid_features_default_terms() {
     ),
   );
   $terms[] = array(
-    'name' => 'C3 – Restricted / Secret / Sensitive sovereign',
+    'name' => 'C3 – Confidential / Secret / Sensitive sovereign',
     'description' => '',
     'format' => 'filtered_html',
     'weight' => 3,
@@ -81,6 +81,13 @@ function gofast_features_taxonomy_uuid_features_default_terms() {
         ),
       ),
     ),
+    'field_confidentiality' => [
+      'und' => [
+        0 => [
+          'value' => 1,
+        ],
+      ],
+    ],
   );
   $terms[] = array(
     'name' => 'French Military',
@@ -128,6 +135,13 @@ function gofast_features_taxonomy_uuid_features_default_terms() {
         ),
       ),
     ),
+    'field_state_has_og' => array(
+      'und' => array(
+        0 => array(
+          'value' => 1,
+        ),
+      ),
+    ),
   );
   $terms[] = array(
     'name' => 'Critical',
@@ -159,6 +173,30 @@ function gofast_features_taxonomy_uuid_features_default_terms() {
     'i18n_tsid' => 0,
     'vocabulary_machine_name' => 'state',
     'field_standard_gf' => array(
+      'und' => array(
+        0 => array(
+          'value' => 1,
+        ),
+      ),
+    ),
+  );
+  $terms[] = array(
+    'name' => 'Awaiting',
+    'description' => '',
+    'format' => 'plain_text',
+    'weight' => 0,
+    'uuid' => '6433437c-7f32-4188-b886-03531312837d',
+    'language' => 'und',
+    'i18n_tsid' => 0,
+    'vocabulary_machine_name' => 'state',
+    'field_standard_gf' => array(
+      'und' => array(
+        0 => array(
+          'value' => 1,
+        ),
+      ),
+    ),
+    'field_state_has_og' => array(
       'und' => array(
         0 => array(
           'value' => 1,
@@ -216,7 +254,7 @@ function gofast_features_taxonomy_uuid_features_default_terms() {
     'field_extensions' => array(
       'und' => array(
         0 => array(
-          'value' => ';odg;pub;',
+          'value' => ';pub;',
           'format' => NULL,
         ),
       ),
@@ -822,6 +860,13 @@ function gofast_features_taxonomy_uuid_features_default_terms() {
         ),
       ),
     ),
+    'field_confidentiality' => [
+      'und' => [
+        0 => [
+          'value' => 1,
+        ],
+      ],
+    ],
   );
   $terms[] = array(
     'name' => 'Confidential Data',
@@ -955,6 +1000,13 @@ function gofast_features_taxonomy_uuid_features_default_terms() {
     'i18n_tsid' => 0,
     'vocabulary_machine_name' => 'state',
     'field_standard_gf' => array(
+      'und' => array(
+        0 => array(
+          'value' => 1,
+        ),
+      ),
+    ),
+    'field_state_has_og' => array(
       'und' => array(
         0 => array(
           'value' => 1,
@@ -1112,7 +1164,7 @@ function gofast_features_taxonomy_uuid_features_default_terms() {
     ),
   );
   $terms[] = array(
-    'name' => 'C2 – Confidential / Sensitive',
+    'name' => 'C2 – Restricted / Sensitive',
     'description' => '',
     'format' => 'filtered_html',
     'weight' => 2,
@@ -1128,6 +1180,13 @@ function gofast_features_taxonomy_uuid_features_default_terms() {
         ),
       ),
     ),
+    'field_confidentiality' => [
+      'und' => [
+        0 => [
+          'value' => 1,
+        ],
+      ],
+    ],
   );
   $terms[] = array(
     'name' => 'Profil',
@@ -1167,7 +1226,7 @@ function gofast_features_taxonomy_uuid_features_default_terms() {
     'field_extensions' => array(
       'und' => array(
         0 => array(
-          'value' => ';vsd;',
+          'value' => ';vsd;vsdx;',
           'format' => NULL,
         ),
       ),
@@ -1254,6 +1313,13 @@ function gofast_features_taxonomy_uuid_features_default_terms() {
         ),
       ),
     ),
+    'field_state_has_og' => array(
+      'und' => array(
+        0 => array(
+          'value' => 1,
+        ),
+      ),
+    ),
   );
   $terms[] = array(
     'name' => 'C1 – Internal',
@@ -1272,6 +1338,13 @@ function gofast_features_taxonomy_uuid_features_default_terms() {
         ),
       ),
     ),
+    'field_confidentiality' => [
+      'und' => [
+        0 => [
+          'value' => 0,
+        ],
+      ],
+    ],
   );
   $terms[] = array(
     'name' => 'Secret Defence',
@@ -1290,6 +1363,13 @@ function gofast_features_taxonomy_uuid_features_default_terms() {
         ),
       ),
     ),
+    'field_confidentiality' => [
+      'und' => [
+        0 => [
+          'value' => 1,
+        ],
+      ],
+    ],
   );
   $terms[] = array(
     'name' => 'Restricted Diffusion',
@@ -1308,6 +1388,13 @@ function gofast_features_taxonomy_uuid_features_default_terms() {
         ),
       ),
     ),
+    'field_confidentiality' => [
+      'und' => [
+        0 => [
+          'value' => 0,
+        ],
+      ],
+    ],
   );
   $terms[] = array(
     'name' => 'EU Restricted',
@@ -1326,6 +1413,13 @@ function gofast_features_taxonomy_uuid_features_default_terms() {
         ),
       ),
     ),
+    'field_confidentiality' => [
+      'und' => [
+        0 => [
+          'value' => 0,
+        ],
+      ],
+    ],
   );
   $terms[] = array(
     'name' => 'EU Confidential',
@@ -1344,6 +1438,13 @@ function gofast_features_taxonomy_uuid_features_default_terms() {
         ),
       ),
     ),
+    'field_confidentiality' => [
+      'und' => [
+        0 => [
+          'value' => 1,
+        ],
+      ],
+    ],
   );
   $terms[] = array(
     'name' => 'EU Secret',
@@ -1362,6 +1463,13 @@ function gofast_features_taxonomy_uuid_features_default_terms() {
         ),
       ),
     ),
+    'field_confidentiality' => [
+      'und' => [
+        0 => [
+          'value' => 1,
+        ],
+      ],
+    ],
   );
   $terms[] = array(
     'name' => 'EU Top Secret',
@@ -1380,6 +1488,13 @@ function gofast_features_taxonomy_uuid_features_default_terms() {
         ),
       ),
     ),
+    'field_confidentiality' => [
+      'und' => [
+        0 => [
+          'value' => 1,
+        ],
+      ],
+    ],
   );
   $terms[] = array(
     'name' => 'NC – Unclassified / Public',
@@ -1398,6 +1513,13 @@ function gofast_features_taxonomy_uuid_features_default_terms() {
         ),
       ),
     ),
+    'field_confidentiality' => [
+      'und' => [
+        0 => [
+          'value' => 0,
+        ],
+      ],
+    ],
   );
   $terms[] = array(
     'name' => 'TLP:CLEAR',
@@ -1416,6 +1538,13 @@ function gofast_features_taxonomy_uuid_features_default_terms() {
         ),
       ),
     ),
+    'field_confidentiality' => [
+      'und' => [
+        0 => [
+          'value' => 0,
+        ],
+      ],
+    ],
   );
   $terms[] = array(
     'name' => 'TLP:AMBER+STRICT',
@@ -1434,6 +1563,13 @@ function gofast_features_taxonomy_uuid_features_default_terms() {
         ),
       ),
     ),
+    'field_confidentiality' => [
+      'und' => [
+        0 => [
+          'value' => 1,
+        ],
+      ],
+    ],
   );
   $terms[] = array(
     'name' => 'TLP:GREEN',
@@ -1452,6 +1588,13 @@ function gofast_features_taxonomy_uuid_features_default_terms() {
         ),
       ),
     ),
+    'field_confidentiality' => [
+      'und' => [
+        0 => [
+          'value' => 0,
+        ],
+      ],
+    ],
   );
   $terms[] = array(
     'name' => 'TLP:RED',
@@ -1470,6 +1613,13 @@ function gofast_features_taxonomy_uuid_features_default_terms() {
         ),
       ),
     ),
+    'field_confidentiality' => [
+      'und' => [
+        0 => [
+          'value' => 1,
+        ],
+      ],
+    ],
   );
   $terms[] = array(
     'name' => 'HTML',
@@ -2367,6 +2517,161 @@ function gofast_features_taxonomy_uuid_features_default_terms() {
       ),
     ),
     'field_naming_rules' => array(),
+  );
+
+  $terms[] = array(
+    'name' => 'Circular',
+    'description' => '',
+    'format' => 'filtered_html',
+    'weight' => 1,
+    'uuid' => 'fe769a30-4ae1-49b9-8a1a-6766d27f97f4',
+    'language' => 'und',
+    'i18n_tsid' => 0,
+    'vocabulary_machine_name' => 'category',
+    'og_taxonomy_category_group' => array(),
+    'field_standard_gf' => array(
+      'und' => array(
+        0 => array(
+          'value' => 1,
+        ),
+      ),
+    ),
+    'field_naming_rules' => array(),
+    'parent' => array(
+      0 => '6f2daed0-3d2c-48bf-af89-666f463e5d8b',
+    ),
+  );
+  $terms[] = array(
+    'name' => 'Schematic and/or Architecture',
+    'description' => '',
+    'format' => 'filtered_html',
+    'weight' => 2,
+    'uuid' => 'ff7021b1-ff61-49dd-96fe-5fa4afa3b6c4',
+    'language' => 'und',
+    'i18n_tsid' => 0,
+    'vocabulary_machine_name' => 'category',
+    'og_taxonomy_category_group' => array(),
+    'field_standard_gf' => array(
+      'und' => array(
+        0 => array(
+          'value' => 1,
+        ),
+      ),
+    ),
+    'field_naming_rules' => array(),
+    'parent' => array(
+      0 => '1dfb455c-5089-42e7-8be3-56436264c25a',
+    ),
+  );
+  $terms[] = array(
+    'name' => 'Official report',
+    'description' => '',
+    'format' => 'filtered_html',
+    'weight' => 7,
+    'uuid' => '46e4e44f-fa8e-4c40-935a-e2ec145945f5',
+    'language' => 'und',
+    'i18n_tsid' => 0,
+    'vocabulary_machine_name' => 'category',
+    'og_taxonomy_category_group' => array(),
+    'field_standard_gf' => array(
+      'und' => array(
+        0 => array(
+          'value' => 1,
+        ),
+      ),
+    ),
+    'field_naming_rules' => array(),
+    'parent' => array(
+      0 => '6f2daed0-3d2c-48bf-af89-666f463e5d8b',
+    ),
+  );
+  $terms[] = array(
+    'name' => 'Deliberation',
+    'description' => '',
+    'format' => 'filtered_html',
+    'weight' => 5,
+    'uuid' => '5a297b5e-4e7f-47d4-b2f2-b163fd690575',
+    'language' => 'und',
+    'i18n_tsid' => 0,
+    'vocabulary_machine_name' => 'category',
+    'og_taxonomy_category_group' => array(),
+    'field_standard_gf' => array(
+      'und' => array(
+        0 => array(
+          'value' => 1,
+        ),
+      ),
+    ),
+    'field_naming_rules' => array(),
+    'parent' => array(
+      0 => '6f2daed0-3d2c-48bf-af89-666f463e5d8b',
+    ),
+  );
+  $terms[] = array(
+    'name' => 'Receipt',
+    'description' => '',
+    'format' => 'filtered_html',
+    'weight' => 4,
+    'uuid' => 'af8ea6be-802d-4f73-bfb1-ba9d0ca13068',
+    'language' => 'und',
+    'i18n_tsid' => 0,
+    'vocabulary_machine_name' => 'category',
+    'og_taxonomy_category_group' => array(),
+    'field_standard_gf' => array(
+      'und' => array(
+        0 => array(
+          'value' => 1,
+        ),
+      ),
+    ),
+    'field_naming_rules' => array(),
+    'parent' => array(
+      0 => 'dc45a58c-0a76-4ac9-950e-55a43ef27bd0',
+    ),
+  );
+  $terms[] = array(
+    'name' => 'Identity document',
+    'description' => '',
+    'format' => 'filtered_html',
+    'weight' => 0,
+    'uuid' => '1d8002d0-3004-42bd-8879-48a1da217b5e',
+    'language' => 'und',
+    'i18n_tsid' => 0,
+    'vocabulary_machine_name' => 'category',
+    'og_taxonomy_category_group' => array(),
+    'field_standard_gf' => array(
+      'und' => array(
+        0 => array(
+          'value' => 1,
+        ),
+      ),
+    ),
+    'field_naming_rules' => array(),
+    'parent' => array(
+      0 => 'dc45a58c-0a76-4ac9-950e-55a43ef27bd0',
+    ),
+  );
+  $terms[] = array(
+    'name' => 'Certificate',
+    'description' => '',
+    'format' => 'filtered_html',
+    'weight' => 0,
+    'uuid' => '941c95e0-8e6e-49dd-be74-2965fea6de87',
+    'language' => 'und',
+    'i18n_tsid' => 0,
+    'vocabulary_machine_name' => 'category',
+    'og_taxonomy_category_group' => array(),
+    'field_standard_gf' => array(
+      'und' => array(
+        0 => array(
+          'value' => 1,
+        ),
+      ),
+    ),
+    'field_naming_rules' => array(),
+    'parent' => array(
+      0 => 'dc45a58c-0a76-4ac9-950e-55a43ef27bd0',
+    ),
   );
 
   return $terms;

@@ -489,7 +489,7 @@
     
     Drupal.behaviors.async_rssFeed_menu = {
         attach: function(context, settings) {
-            let rss = document.querySelector('#gofast_aggregator:not(.processed)');
+            let rss = document.querySelector('#gofast_aggregator:not(.processed):not(.gofast-menu-disabled)');
             let rssButton = document.querySelector('#gofast_aggregator:not(.processed) a');
             
             if(rss){

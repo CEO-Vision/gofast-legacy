@@ -575,39 +575,21 @@
   };
 
   Gofast.search.setSearchInputsAfterUrl = function () {
-    if (document.URL.split("/")[3] != "search") {
-      return;
-    }
-    let currentSearchTerm = "";
-    if (document.URL.split("/")[5]) {
-      currentSearchTerm = document.URL.split("/")[5].split("?")[0];
-    }
-    // we select search-forms **and** search-block-forms
-    let currentSearchInputs = document.querySelectorAll("#search-form:not(.d-none) input:not([type='hidden']), #search-block-form:not(.d-none) input:not([type='hidden'])");
-    let isNewBlankSearch = false;
-
-    if (currentSearchInputs.length === 2) {
-      isNewBlankSearch = (currentSearchInputs[0].value === "" && currentSearchInputs[1].value !== "") || (currentSearchInputs[0].value !== "" && currentSearchInputs[1].value === "");
-    } else if(currentSearchInputs.length) {
-      isNewBlankSearch = (currentSearchInputs[0].value === "" && currentSearchTerm.value !== "");
-    }
-
-    if (isNewBlankSearch) {
-      return;
-    }
-
-    if (currentSearchTerm) {
-      currentSearchInputs.forEach((input) => {
-        if (!input.value) {
-          input.value = decodeURIComponent(currentSearchTerm);
-        }
-      });
+    let href = location.pathname;
+    if(href.startsWith("/search/solr")){
+      let searchUrl = new URL(location.origin + href);
+      let keywords = decodeURIComponent(searchUrl.pathname.replace("/search/solr/", ""));
+      $("#search-form input.form-control, #search-block-form input.form-control").val(keywords)
+    } else {
+      $("#search-form input.form-control, #search-block-form input.form-control").val("")
     }
   };
+  $(window).on("ajax-nav-success", () => {
+    Gofast.search.setSearchInputsAfterUrl()
+  })
 
   Drupal.behaviors.gofast_search_switchs = {
     attach: function (context) {
-      Gofast.search.setSearchInputsAfterUrl();
       
       var toogleOption = function (item, value) {
         $(item).toggleClass("item-checked");

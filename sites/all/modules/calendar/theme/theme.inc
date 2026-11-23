@@ -713,7 +713,7 @@ function theme_calendar_stripe_legend($vars) {
   foreach ($options as $key => $label) {
     $stripe = array_key_exists($key, $display_options) ? $display_options[$key] : CALENDAR_EMPTY_STRIPE;
     if ($stripe != CALENDAR_EMPTY_STRIPE) {
-      $rows[] = array($label, '<div style="background-color:' . $stripe . ';color:' . $stripe . '" class="stripe" title="Key: ' . $label . '">&nbsp;</div>');
+      $rows[] = array(check_plain($label), '<div style="background-color:' . $stripe . ';color:' . $stripe . '" class="stripe" title="Key: ' . check_plain($label) . '">&nbsp;</div>');
     }
   }
 
@@ -741,7 +741,7 @@ function theme_calendar_stripe_stripe($vars) {
   if (is_array($item->stripe_label)) {
     foreach ($item->stripe_label as $k => $stripe_label) {
       if (!empty($item->stripe[$k]) && !empty($stripe_label)) {
-        $output .= '<div style="background-color:' . $item->stripe[$k] . ';color:' . $item->stripe[$k] . '" class="stripe" title="Key: ' . $item->stripe_label[$k] . '">&nbsp;</div>' . "\n";
+        $output .= '<div style="background-color:' . $item->stripe[$k] . ';color:' . $item->stripe[$k] . '" class="stripe" title="Key: ' . check_plain($item->stripe_label[$k]) . '">&nbsp;</div>' . "\n";
       }
     }
   }

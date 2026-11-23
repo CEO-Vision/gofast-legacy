@@ -1,8 +1,13 @@
-<div id="file_browser_full_container" class="d-flex flex-column">
+<div id="file_browser_full_container" class="d-flex flex-column" tabindex="-1">
   <div id="file_browser_full_toolbar_container" class="mb-4">
     <div id="file_browser_full_toolbar" class="w-100">
       <div class="d-flex justify-content-between w-100">
         <div class="d-flex">
+          <?php if (gofast_essential_is_essential()) { ?>
+            <div id="" class="btn-group">
+              <button type="button" id="file_browser_tooolbar_contextual_actions" class="btn btn-icon btn-primary btn-sm" aria-haspopup="true" aria-expanded="false"><i class="fa fa-bars" aria-hidden="true" disabled></i></button>
+            </div>
+          <?php } ?>
           <div class="btn-group">
             <button type="button" class="btn btn-white btn-sm dropdown-toggle" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false"><i id="file_browser_tooolbar_display_icon" class="fa fa-list" aria-hidden="true"></i> <?php echo t('Display', array(), array('context' => 'gofast:ajax_file_browser')); ?> <span class="caret"></span></button>
             <ul class="dropdown-menu text-truncate">
@@ -46,35 +51,40 @@
              </div>
             </ul>
           </div>
-          <div id="" class="btn-group">
+          <div id="" class="btn-group gofast-node-actions">
             <button type="button" id="file_browser_tooolbar_manage" title="<?= t("Managing actions will not work if nothing is selected or if folders are selected.", array(), array("context" => "gofast:gofast_ajax_file_browser")) ?>" class="btn btn-disabled btn-sm dropdown-toggle" aria-haspopup="true"><i class="fa fa-gear" aria-hidden="true" disabled></i> <?php echo t('Manage', array(), array('context' => 'gofast:ajax_file_browser')); ?> <span class="caret"></span></button>
             <ul class="dropdown-menu">
-             <div class="navi navi-hover navi-link-rounded text-truncate min-w-250px">
+              <!-- Container element for contextual menu options, which are added in gofast_ajax_file_browser.js -->
+            </ul>
+            <div class="gofast_display_none">
               <?php
               $attr = array(
                 'onClick' => "Gofast.ITHit.bulkSelected(event)",
               );
-              print '<li class="navi-item">' . gofast_dropdown_link(t('Manage Metadata', array(), array('context' => 'gofast')), '/modal/nojs/manage-taxonomy', 'taxonomy_open_span', 'ctools-use-modal manage-taxonomy', 'fa fa-tags', $attr) . '</li>';
-              print '<li class="navi-item">' . gofast_dropdown_link(t('Share/Add locations', array(), array('context' => 'gofast')), '/modal/nojs/add-locations', 'locations_open_span', 'ctools-use-modal add-locations', 'fa fa-share-alt n-color', $attr) . '</li>';
-              print '<li class="navi-item">' . gofast_dropdown_link(t('Create publications', array(), array('context' => 'gofast')), '/modal/nojs/manage-publications', 'publications_open_span', 'ctools-use-modal manage-publications', 'fa fa-arrow-up', $attr) . '</li>';
-              print '<li class="navi-item">' . gofast_dropdown_link(t('Share by email', array(), array('context' => 'gofast')), '/modal/nojs/manage-mail-sharing', 'linksharing_open_span', 'ctools-use-modal manage-mail-sharing', 'fa fa-envelope', $attr) . '</li>';
-              print '<li class="navi-item">' . gofast_dropdown_link(t('Archive content'), '/modal/nojs/bulk-archive', 'archive_open_span', 'ctools-use-modal bulk-archive', 'fa fa-archive', $attr) . '</li>';
-              print '<li class="navi-item">' . gofast_dropdown_link(t('Add to cart', array(), array('context' => 'gofast')), '/modal/nojs/bulk_add_to_cart', 'cart_open_span', 'ctools-use-modal add_to_cart', 'fas fa-shopping-basket', $attr) . '</li>';
-              print '<li class="navi-item">' . gofast_dropdown_link(t('Delete', array(), array('context' => 'gofast')), '', 'cart_open_span', '', 'fa fa-trash', array('onClick' => "Gofast.ITHit.deleteSelected(event);")) . '</li>';
-              print '<li class="navi-item">' . gofast_dropdown_link(t('Download', array(), array('context' => 'gofast')), '', 'cart_open_span', '', 'fa fa-cloud-download', array('onClick' => "event.preventDefault();Gofast.ITHit.downloadSelected();")) . '</li>';
-              print '<li class="navi-item">' . gofast_dropdown_link(t('Manage Metadata', array(), array('context' => 'gofast')), '/modal/nojs/manage-taxonomy', 'taxonomy_open_span', 'ctools-use-modal bulk_taxonomy manage-taxonomy gofast_display_none', 'fa fa-tags') . '</li>';
-              print '<li class="navi-item">' . gofast_dropdown_link(t('Share/Add locations', array(), array('context' => 'gofast')), '/modal/nojs/add-locations', 'locations_open_span', 'ctools-use-modal bulk_add_locations add-locations gofast_display_none', 'fa fa-share-alt n-color') . '</li>';
-              print '<li class="navi-item">' . gofast_dropdown_link(t('Create publications', array(), array('context' => 'gofast')), '/modal/nojs/manage-publications', 'publications_open_span', 'ctools-use-modal bulk_publications manage-publications gofast_display_none', 'fa fa-arrow-up') . '</li>';
-              print '<li class="navi-item">' . gofast_dropdown_link(t('Share by email', array(), array('context' => 'gofast')), '/modal/nojs/manage-mail-sharing', 'linksharing_open_span', 'ctools-use-modal bulk_mail_sharing manage-mail-sharing gofast_display_none', 'fa fa-envelope') . '</li>';
-              print '<li class="navi-item">' . gofast_dropdown_link(t('Archive content'), '/modal/nojs/bulk-archive', 'taxonomy_open_span', 'ctools-use-modal bulk_archive bulk-archive gofast_display_none', 'fa fa-archive') . '</li>';
-              print '<li class="navi-item">' . gofast_dropdown_link(t('Add to cart'), '/modal/nojs/bulk_add_to_cart', 'taxonomy_open_span', 'ctools-use-modal bulk_add_to_cart gofast_display_none', 'fas fa-shopping-basket') . '</li>';
-              print '<li class="navi-item">' . gofast_dropdown_link(t('Compress'), '/modal/nojs/compress-files', 'taxonomy_open_span', 'ctools-use-modal compress_files gofast_display_none', 'fa fa-file-archive-o n-color') . '</li>';
-              print '<li class="navi-item">' . gofast_dropdown_link(t('Extract', array(), array('context' => 'gofast')), '/modal/nojs/unzip-files', 'taxonomy_open_span', 'ctools-use-modal unzip_files gofast_display_none', 'fa fa-file-archive-o n-color') . '</li>';
-
-
+              // Old "manage" menu specific options, some of these elements are
+              // needed to execute bulk actions from the file browser.
+              // Duplicated at: sites/all/modules/gofast/gofast_essential/tpl/gofast-essential-ajax-file-browser.tpl.php
+              // Remember to update both to prevent potential issues.
+              // FIXME: Make it so these DOM elements' existence is not
+              // necessary for bulk actions to work and remove them.
+              print gofast_dropdown_link(t('Manage Metadata', array(), array('context' => 'gofast')), '/modal/nojs/manage-taxonomy', 'taxonomy_open_span', 'ctools-use-modal manage-taxonomy gofast_display_none', 'fa fa-tags', $attr);
+              print gofast_dropdown_link(t('Share/Add locations', array(), array('context' => 'gofast')), '/modal/nojs/add-locations', 'locations_open_span', 'ctools-use-modal add-locations gofast_display_none', 'fa fa-share-alt n-color', $attr);
+              print gofast_dropdown_link(t('Create publications', array(), array('context' => 'gofast')), '/modal/nojs/manage-publications', 'publications_open_span', 'ctools-use-modal manage-publications gofast_display_none', 'fa fa-arrow-up', $attr);
+              print gofast_dropdown_link(t('Share by email', array(), array('context' => 'gofast')), '/modal/nojs/manage-mail-sharing', 'linksharing_open_span', 'ctools-use-modal manage-mail-sharing gofast_display_none', 'fa fa-envelope', $attr);
+              print gofast_dropdown_link(t('Archive content'), '/modal/nojs/bulk-archive', 'archive_open_span', 'ctools-use-modal bulk-archive gofast_display_none', 'fa fa-archive', $attr);
+              print gofast_dropdown_link(t('Add to cart', array(), array('context' => 'gofast')), '/modal/nojs/bulk_add_to_cart', 'cart_open_span', 'ctools-use-modal add_to_cart gofast_display_none', 'fas fa-shopping-basket', $attr);
+              print gofast_dropdown_link(t('Delete', array(), array('context' => 'gofast')), '', 'cart_open_span', 'gofast_display_none', 'fa fa-trash', array('onClick' => "Gofast.ITHit.deleteSelected(event);"));
+              print gofast_dropdown_link(t('Download', array(), array('context' => 'gofast')), '', 'cart_open_span', 'gofast_display_none', 'fa fa-cloud-download', array('onClick' => "event.preventDefault();Gofast.ITHit.downloadSelected();"));
+              print gofast_dropdown_link(t('Manage Metadata', array(), array('context' => 'gofast')), '/modal/nojs/manage-taxonomy', 'taxonomy_open_span', 'ctools-use-modal bulk_taxonomy manage-taxonomy gofast_display_none', 'fa fa-tags');
+              print gofast_dropdown_link(t('Share/Add locations', array(), array('context' => 'gofast')), '/modal/nojs/add-locations', 'locations_open_span', 'ctools-use-modal bulk_add_locations add-locations gofast_display_none', 'fa fa-share-alt n-color');
+              print gofast_dropdown_link(t('Create publications', array(), array('context' => 'gofast')), '/modal/nojs/manage-publications', 'publications_open_span', 'ctools-use-modal bulk_publications manage-publications gofast_display_none', 'fa fa-arrow-up');
+              print gofast_dropdown_link(t('Share by email', array(), array('context' => 'gofast')), '/modal/nojs/manage-mail-sharing', 'linksharing_open_span', 'ctools-use-modal bulk_mail_sharing manage-mail-sharing gofast_display_none', 'fa fa-envelope');
+              print gofast_dropdown_link(t('Archive content'), '/modal/nojs/bulk-archive', 'taxonomy_open_span', 'ctools-use-modal bulk_archive bulk-archive gofast_display_none', 'fa fa-archive');
+              print gofast_dropdown_link(t('Add to cart'), '/modal/nojs/bulk_add_to_cart', 'taxonomy_open_span', 'ctools-use-modal bulk_add_to_cart gofast_display_none', 'fas fa-shopping-basket');
+              print gofast_dropdown_link(t('Compress'), '/modal/nojs/compress-files', 'taxonomy_open_span', 'ctools-use-modal compress_files gofast_display_none', 'fa fa-file-archive-o n-color');
+              print gofast_dropdown_link(t('Extract', array(), array('context' => 'gofast')), '/modal/nojs/unzip-files', 'taxonomy_open_span', 'ctools-use-modal unzip_files gofast_display_none', 'fa fa-file-archive-o n-color');
               ?>
-             </div>
-            </ul>
+            </div>
           </div>
           <div id='file_browser_tooolbar_ccp' class="d-flex">
             <button title="<?php echo t('Copy'); ?>" id="file_browser_tooolbar_copy" type="button" class="btn btn-white btn-sm btn-icon" disabled><i class="fa fa-files-o" aria-hidden="true"></i></button>
@@ -85,11 +95,6 @@
             <button title="<?php echo t('Add to cart'); ?>" id="file_browser_tooolbar_cart_button" type="button" class="btn btn-white btn-sm btn-icon" onclick="$('bulk_add_too_cart').click()" disabled><i class="fas fa-shopping-basket" aria-hidden="true"></i></button>
           </div>
           <?php print gofast_dropdown_link('', '/modal/nojs/bulk_add_to_cart', 'builk_open_span', 'ctools-use-modal bulk_add_to_cart gofast_display_none', 'fa fa-share-alt n-color'); ?>
-          <?php if (gofast_essential_is_essential()) { ?>
-            <div id="" class="btn-group">
-              <button type="button" id="file_browser_tooolbar_contextual_actions" class="btn btn-white btn-sm dropdown-toggle" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false"><i class="fa fa-bars" aria-hidden="true" disabled></i></button>
-            </div>
-          <?php } ?>
         </div>
         <div class="d-flex" >
           <div id="file_browser_full_toolbar_search" class="input-group">

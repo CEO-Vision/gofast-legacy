@@ -3,7 +3,7 @@
 function gofast_naming_rules_metadata_get_metadata_types()
 {
     $metadata_types = [
-        t("Reference", [], ["context" => "gofast:gofast_naming_rules"]) => "field_document_reference",
+        GOFAST_METADATA_DOCUMENT_REFERENCE_LABEL => "field_document_reference",
         t("Creation date", [], ["context" => "gofast:gofast_naming_rules"]) => "created",
         t("Author", [], ["context" => "gofast:gofast_naming_rules"]) => "field_document_author",
         t("Title", [], ["context" => "gofast:gofast_naming_rules"]) => "field_title",
@@ -47,6 +47,16 @@ function gofast_naming_rules_metadata_get_metadata_value($node, $term, $field_na
 }
 
 /**
+ * Returns true if the category matching the provided term ID has a naming rule.
+ */
+function gofast_naming_rules_category_has_naming_rule($tid) {
+    return (bool) db_select("field_data_field_naming_rules", "nr")
+    ->fields("nr", array("entity_id"))
+    ->condition("entity_id", $tid)
+    ->countQuery()->execute()->fetchField();
+}
+
+/**
  * Intended to work with the contextual menu.
  * Returns true if the naming rule has _no_ naming rule, otherwise returns an explanatory message.
  */
@@ -56,17 +66,14 @@ function gofast_naming_rules_node_has_no_naming_rule($node)
     if(!$node_category_tid) {
         return TRUE;
     }
-    $has_rule = (bool) db_select("field_data_field_naming_rules", "nr")
-        ->fields("nr", array("entity_id"))
-        ->condition("entity_id", $node_category_tid)
-        ->countQuery()->execute()->fetchField();
+    $has_rule = gofast_naming_rules_category_has_naming_rule($node_category_tid);
     $has_ruled_value = TRUE;
     // we're not inserting so if the node doesn't hold a ruled value it means it doesn't have the naming rule applied
     if ($has_rule && !isset($node->original) && !isset($node->is_new)) {
         $term = taxonomy_term_load($node_category_tid);
-        $ruled_value = gofast_naming_rule_get_node_ruled_value($node, $term, TRUE);
+        $ruled_value = gofast_naming_rule_get_node_ruled_value($node, $term, TRUE)["value"];
         $node_title = explode(".", $node->title);
-        $extension = array_pop($node_title);
+        array_pop($node_title);
         $node_title = implode(".", $node_title);
 
         // node is already named according to its naming rule
@@ -119,8 +126,5 @@ function gofast_naming_rule_get_node_ruled_value($node, $term, $get_metadata_val
         }
         return $value;
     }, $naming_rule);
-    if ($invalid) {
-        return FALSE;
-    }
-    return $ruled_value;
+    return ["has_all_metadata" => !$invalid, "value" => $ruled_value];
 }

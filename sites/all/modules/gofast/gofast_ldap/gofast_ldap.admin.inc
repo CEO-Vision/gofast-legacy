@@ -832,7 +832,11 @@ function gofast_ldap_admin_test_connection($options = NULL, $ajax = TRUE) {
       // Test server connection.
       $server->disconnect();
       $server->connect();
-      $binding = $server->bind();
+      if(empty($settings['bindpw']) && empty($settings['binddn'])) {
+        $binding = $server->bind(NULL, NULL, TRUE);
+      } else {
+        $binding = $server->bind();
+      }
           
       $status = $binding === LDAP_SUCCESS;
       watchdog('Gofast LDAP', 'LDAP Server binding attempt - Server ID: :sid - status: :status.', array(':sid' => $sid, ':status' => $status ? 'success' : 'fail'), WATCHDOG_ERROR);
@@ -988,6 +992,9 @@ function gofast_ldap_sasl_auth_on($account = NULL) {
       continue;
     }
     gofast_ldap_update_password_expiration($_account);
+    
+    // Remove ppolicy password
+    gofast_ldap_add_password_policy_without_expiration($dn);
         
     $success[$_account->uid] = t('SASL authentication activated successfully : !pw', array('!pw' => $userPassword), array('context' => 'gofast:gofast_ldap'));
     watchdog('Gofast LDAP', $success[$_account->uid]);
@@ -1107,6 +1114,10 @@ function gofast_ldap_sasl_auth_off($account = NULL) {
       continue;
     }
     gofast_ldap_update_password_expiration($_account);
+    
+     // re-apply ppolicy password
+    $dn = gofast_ldap_user_dn($_account->uid);
+    gofast_ldap_remove_password_policy_without_expiration($dn);
         
     $success[$_account->uid] = t('SASL authentication deactivated successfully for !user', array('!user' => $name), array('context' => 'gofast:gofast_ldap'));
     watchdog('Gofast LDAP', $success[$_account->uid]);
@@ -1149,6 +1160,58 @@ function gofast_ldap_sasl_auth_off($account = NULL) {
       
   return $log;
 }
+
+function gofast_ldap_add_password_policy_without_expiration($user_dn) {
+  $ldap_server = gofast_ldap_server_load(GOFAST_LDAP_INT_SERVER);
+  $ldap_server->connectAndBindIfNotAlready();
+
+  if (!$ldap_server->connection) {
+    return FALSE;
+  }
+
+  $search = @ldap_read($ldap_server->connection, $user_dn, '(objectClass=*)', array('pwdPolicySubentry'));
+
+  if (!$search) {
+    return FALSE;
+  }
+
+  $entries = ldap_get_entries($ldap_server->connection, $search);
+  $attributes = array('pwdPolicySubentry' => GOFAST_SASL_PPOLICY_DN);
+
+  if (isset($entries[0]['pwdpolicysubentry'])) {
+    $result = @ldap_mod_replace($ldap_server->connection, $user_dn, $attributes);
+  } else {
+    $result = @ldap_mod_add($ldap_server->connection, $user_dn, $attributes);
+  }
+
+  return $result;
+}
+
+function gofast_ldap_remove_password_policy_without_expiration($user_dn) {
+  $ldap_server = gofast_ldap_server_load(GOFAST_LDAP_INT_SERVER);
+  $ldap_server->connectAndBindIfNotAlready();
+  if (!$ldap_server->connection) {
+    return FALSE;
+  }
+  
+  $search = @ldap_read($ldap_server->connection, $user_dn, '(objectClass=*)', array('pwdPolicySubentry'));
+  
+  if (!$search) {
+    return FALSE;
+  }
+  
+  $entries = ldap_get_entries($ldap_server->connection, $search);
+
+  // Attribute doesn't exist on user
+  if (!isset($entries[0]['pwdpolicysubentry'])) {
+    return TRUE; 
+  }
+  
+  $attributes = array('pwdPolicySubentry' => array());
+  $result = @ldap_mod_del($ldap_server->connection, $user_dn, $attributes);
+  
+  return $result;
+}
     
 /**
  * Helper that updates SASL field on the given entity.
@@ -1177,18 +1240,25 @@ function gofast_ldap_sync_form() {
     '#resizable' => FALSE,
     '#attributes' => array('style' => array('display:none'))
   );
-      
+
   $form['ldap_search'] = array(
     '#title' => t('Search', array(), array('context' => 'gofast')),
     '#type' => 'textfield',
     '#default_value' => '',
-    '#autocomplete_path'  => 'admin/config/gofast/ldap/search-autocomplete',
-    '#description' => t('Search by first-name, last-name or id, select a suggestion then hit "Grab data"', array(), array('context' => 'gofast:gofast_ldap'))
+    '#description' => t('Search by first-name, last-name or id, select a suggestion then hit "Retrieve data"', array(), array('context' => 'gofast:gofast_ldap')),
+    '#maxlength' => 999999,
+    '#attributes' => [
+      'data-tagify-name' => 'ac-list-tags-list-ldap',
+      'class' => ['form-control-tags js-tagify'],
+      'data-ac-max-tags' => 1,
+      'data-tagify-url' => '/admin/config/gofast/ldap/search-autocomplete',
+    ],
   );
-      
+
   $form['submit'] = array(
     '#type' => 'submit',
-    '#value' => t('Grab data', array(), array('context' => 'gofast'))
+    '#value' => t('Retrieve data', array(), array('context' => 'gofast')),
+    '#attributes' => array('class' => array('btn-primary')),
   );
       
   return $form;
@@ -1213,15 +1283,16 @@ function gofast_ldap_sync_form_modal($js) {
     $commands = ctools_modal_form_wrapper('gofast_ldap_sync_form', $form_state);
         
     if ($form_state['submitted']) {
-      $html_form = gofast_normalize_string_from_ajaxifying(drupal_render(drupal_get_form('user_register_form')));      
-      $commands = array(
-        ctools_modal_command_dismiss(),         
-        ajax_command_replace('#user-register-form', $html_form),
-            
-      ); 
       if(isset($_SESSION['gofast_ldap_user_synched_data_messages'])){
-          $commands[] = gofast_command_toast_message($_SESSION['gofast_ldap_user_synched_data_messages'], 'error') ; 
-          unset($_SESSION['gofast_ldap_user_synched_data_messages']);
+        $commands[] = gofast_command_toast_message($_SESSION['gofast_ldap_user_synched_data_messages'], 'error') ; 
+        unset($_SESSION['gofast_ldap_user_synched_data_messages']);
+      } else {
+        // Close modal only if there are no errors
+        $html_form = gofast_normalize_string_from_ajaxifying(drupal_render(drupal_get_form('user_register_form')));      
+        $commands = array(
+          ctools_modal_command_dismiss(),         
+          ajax_command_replace('#user-register-form', $html_form),
+        ); 
       }
     }
   //}
@@ -1245,9 +1316,11 @@ function gofast_ldap_sync_form_validate(&$form, &$form_state) {
     form_set_error('ldap_search', t('Unable to prefill form, LDAP Directory seems to be unavailable.', array(), array('context' => 'gofast:gofast_ldap')));
     return; // unable togo further.
   }
-      
+
+  $ldap_search = json_decode($form_state['values']['ldap_search'], true) ?? '';
+
   // Get matched user identifier.
-  if (!preg_match('/.*\((.*)\)$/', $form_state['values']['ldap_search'], $match)) {
+  if (!preg_match('/.*\((.*)\)$/', $ldap_search[0]['value'], $match)) {
     form_set_error('ldap_search', t('Selection does not match a .', array(), array('context' => 'gofast:gofast_ldap')));
     return; // unable togo further.
   }
@@ -1255,8 +1328,10 @@ function gofast_ldap_sync_form_validate(&$form, &$form_state) {
   // Check if a user with the same identifier already exists.
   $username = $match[1];
   if (user_load_by_name($username)) {
-    $_SESSION['gofast_ldap_user_synched_data_messages'] = t('A user account with the same identifier "%user" already exists.', array('%user' => $username)); 
-    form_set_error('ldap_search', t('A user account with the same identifier "%user" already exists.', array('%user' => $username), array('context' => 'gofast:gofast_ldap')));
+    $already_exist_error_msg = t('A user account with the same identifier "%user" already exists.', array('%user' => $username), array('context' => 'gofast:gofast_ldap'));
+    $_SESSION['gofast_ldap_user_synched_data_messages'] = $already_exist_error_msg;
+    form_set_error('ldap_search', $already_exist_error_msg);
+    return;
   }
       
   $_f = array('attr' => $LdapServer->user_attr, 'value' => $username);
@@ -1287,7 +1362,11 @@ function gofast_ldap_sync_form_submit(&$form, &$form_state) {
 /**
  * Autocomplete callback : LDAP Search external directory for user entries.
  */
-function gofast_ldap_search_autocomplete($str) {
+function gofast_ldap_search_autocomplete() {
+  if (!isset($_POST['str'])) {
+    return;
+  }
+  $str = $_POST['str'];
   $LdapServer = gofast_ldap_server_load(GOFAST_LDAP_EXT_SERVER);
   if (!gofast_ldap_bind_or_warn($LdapServer)) {
     return;
@@ -1328,9 +1407,9 @@ function gofast_ldap_search_autocomplete($str) {
   $entries = $LdapServer->search($base_dn, $filter, $attributes);
       
   for ($i=0, $j=min(array($entries['count'],10)); $i<$j; $i++) {
-    $matches[$m = "{$entries[$i]['cn'][0]} ({$entries[$i][$LdapServer->user_attr][0]})"] = $m;
+    $m = "{$entries[$i]['cn'][0]} ({$entries[$i][$LdapServer->user_attr][0]})";
+    $matches[] = array('name' => $m, 'value' => $m);
   }
-      
   drupal_json_output($matches);
   exit;
 }

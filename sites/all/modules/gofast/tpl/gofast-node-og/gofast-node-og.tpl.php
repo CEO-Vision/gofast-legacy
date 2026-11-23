@@ -55,17 +55,31 @@
     </div>
     <?php endif; ?>
   <div class="card card-stretch GofastNodeOg__container <?php print gofast_essential_is_essential() ? 'w-100' : 'card-custom';?>" <?php print $content_attributes; ?>>
-    <?php if (gofast_group_is_archive($node)) { ?>
-      <div class="alert alert-custom alert-notice alert-light-warning">
-          <div class="alert-icon"><i class="flaticon-warning"></i></div>
-          <div class="alert-text"><?php print t('This space is archived', array(), array('context' => 'gofast')) ?></div>
-                <div class="alert-close">
-                  <button type="button" class="close" data-dismiss="alert" aria-label="Close">
-                    <span aria-hidden="true"><i class="ki ki-close"></i></span>
-            </button>
-          </div>
-      </div>
-    <?php } ?>
+    <div class="archived-space-warning-alert">
+      <?php
+      $archived_space_alert_template = format_string(
+        <<<'HTML'
+        <div class="alert alert-custom alert-notice alert-light-warning">
+            <div class="alert-icon"><i class="flaticon-warning"></i></div>
+            <div class="alert-text">@archived_warning_message</div>
+                  <div class="alert-close">
+                    <button type="button" class="close" data-dismiss="alert" aria-label="Close">
+                      <span aria-hidden="true"><i class="ki ki-close"></i></span>
+              </button>
+            </div>
+        </div>
+        HTML,
+        ['@archived_warning_message' => t('This space is archived', array(), array('context' => 'gofast'))],
+      );
+
+      // The template element allows JS to mirror the content defined here as
+      // needed when adding the alert, such as when navigating to an archived space.
+      ?>
+      <template id="archived-space-warning-alert-template"><?= $archived_space_alert_template ?></template>
+      <?php if (gofast_group_is_archive($node)) {
+        echo $archived_space_alert_template;
+      } ?>
+    </div>
     <?php if(!gofast_essential_is_essential()) :?>
     <div class="card-header h-50px min-h-50px border border-0 flex-nowrap">
       <?php print theme('gofast_menu_header_subheader', array('node' => $node)); ?>

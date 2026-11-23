@@ -336,14 +336,24 @@
       let href = $(el).attr("href");
       // Execute the request
       $.get(href).done((content)=>{
+        const contentElement = $(content['content']);
+        // Update incoming side panel element to keep actual expand state
+        if($('#filterSideButton').hasClass('expand')){
+          Gofast.Essential.expandSideBar(contentElement.find("#filterSideButton"), false);
+          contentElement.find("#gofastSearchResultsFilter > .card-custom").removeClass("d-none");
+        } else {
+          Gofast.Essential.reduceSideBar(contentElement.find("#filterSideButton"), false);
+          contentElement.find("#gofastSearchResultsFilter > .card-custom").addClass("d-none");
+        }
+        contentElement.find("#filterSideButton").addClass('processed')
         if($('#searchPageLayer').length == 0){
           if($('#activityFeedLayer').length > 0){
             $('#activityFeedLayer').remove()
           }
-          $('#fileBrowserLayer').clone().appendTo($('#fileBrowserLayer').parent()).html(content).attr('id','searchPageLayer')
+          $('#fileBrowserLayer').clone().appendTo($('#fileBrowserLayer').parent()).html(contentElement).attr('id','searchPageLayer')
         } else {
           $('#searchPageLayer').hide();
-          $("#searchPageLayer").html(content)
+          $("#searchPageLayer").html(contentElement)
         }
         $('#fileBrowserLayer').removeClass('d-flex').addClass('d-none')
         $('#searchPageLayer > #kt_content .gofast-content').removeClass('gofast-content')
@@ -361,20 +371,20 @@
     searchHandlerPaginate: function(){
       if(!$('#gofastSearchResultsContent').hasClass('processed')){
         $('#gofastSearchResultsContent').addClass('processed');
-        // When trigger pager, change only the layer
-        $('#gofastSearchResultsContent .card-footer .align-items-center ul li a.btn').click(function(event){
-          event.preventDefault();
-          event.stopPropagation();
-          
-          Gofast.Essential.displaySearch(this);
-        });
         
-        $('#block-apachesolr-search-sort ul .btn-group li a').click(function(event){
+        // When trigger pager, change only the layer
+        const handleClick = function(event) {
           event.preventDefault();
           event.stopPropagation();
-          
+          // Replace search layer content by a spinner until content is updated
+          $('#gofastSearchResultsContent .apachesolr_search-results').html('<div class="spinner spinner-center spinner-primary m-auto h-100 w-100">')
           Gofast.Essential.displaySearch(this);
-        });
+        }
+
+        // Handle click on page buttons
+        $('#gofastSearchResultsContent .card-footer .align-items-center ul li a.btn').click(handleClick);
+        // Handle click on sort buttons
+        $('#block-apachesolr-search-sort ul .btn-group li a').click(handleClick);
       }
     },
     showActivityFeedLayer: async function(){
@@ -656,11 +666,21 @@
       $.get('/essential/get_node_content_part/search/'+requestParam).done((content)=>{
         var commands = content["commands"]
         Drupal.ajax.prototype.handleAjaxCommands(commands);
+        const contentElement = $(content['content']); 
+        // Update incoming side panel element to keep actual expand state 
+        if($('#filterSideButton').hasClass('expand')){ 
+          Gofast.Essential.expandSideBar(contentElement.find("#filterSideButton"), false); 
+          contentElement.find("#gofastSearchResultsFilter > .card-custom").removeClass("d-none"); 
+        } else { 
+          Gofast.Essential.reduceSideBar(contentElement.find("#filterSideButton"), false); 
+          contentElement.find("#gofastSearchResultsFilter > .card-custom").addClass("d-none"); 
+        } 
+        contentElement.find("#filterSideButton").addClass('processed') 
         if($('#searchPageLayer').length == 0){
           Gofast.Essential.removeAllNodeLayers(true);
-          $('.GofastNodeOg__container > .card-body').clone().appendTo($('.GofastNodeOg__container > .card-body').parent()).html(content["content"]).attr('id','searchPageLayer')
+          $('.GofastNodeOg__container > .card-body').clone().appendTo($('.GofastNodeOg__container > .card-body').parent()).html(contentElement).attr('id','searchPageLayer')
         } else {
-          $("#searchPageLayer").html(content["content"])
+          $("#searchPageLayer").html(contentElement)
         }
         Gofast.removeLoading();
         // document.title = Drupal.settings.site_name || "GoFAST";
@@ -828,12 +848,20 @@
     /*
      * Reduce Essential SideBar
     */
-    reduceSideBar: function(el){
-      let sideBarEl = $(".side-content-container-essential").has(el);
+    reduceSideBar: function(el, animate = true, animationCallback = null){
+      let sideBarEl = el.parents('.side-content-container-essential');
       // Selects the child element .card inside of the parent element #id > .sideContent and changes its left property to 98%
       if(sideBarEl.length){
         sideBarEl.find('.card-header').css('overflow', 'hidden');
-        sideBarEl.animate({width: 68 + 'px'});
+        const panelWidth = 68;
+        if(animate){
+          sideBarEl.animate(
+            { width: panelWidth + 'px' },
+            { complete: animationCallback }
+          );
+        } else {
+          sideBarEl.css('width', panelWidth + 'px')
+        }
         // Remove margin-right
         sideBarEl.css('margin-right', '0px');
       }
@@ -844,29 +872,37 @@
     /*
      * Expand Essential SideBar
     */
-    expandSideBar: function(el){
-      let sideBarEl = $(".side-content-container-essential").has(el);
+    expandSideBar: function(el, animate = true, animationCallback = null){
+      let sideBarEl = el.parents('.side-content-container-essential');
       // Selects the child element card inside of the parent element #id > .sideContent and changes its left property to 0
       if(sideBarEl.length){
         sideBarEl.find('.card-header').css('overflow', "");
+        var panelWidth = 0;
         // Make search filter side panel smaller
         if(el.attr("id") == "filterSideButton"){
+          panelWidth = 320;
           if(Gofast.isTablet() && !Gofast.isMobile()){
-            sideBarEl.animate({width: 320 + 'px'});
             sideBarEl.css('margin-right', '0px'); 
           }else{
-            sideBarEl.animate({width: 320 + 'px'});
             sideBarEl.css('margin-right', '68px');
           }
         } else {
           // Add margin-right
           if(Gofast.isTablet() && !Gofast.isMobile()){
-            sideBarEl.animate({width: 400 + 'px'});
+            panelWidth = 400;
             sideBarEl.css('margin-right', '0px'); 
           }else{
-            sideBarEl.animate({width: 568 + 'px'});
+            panelWidth = 568;
             sideBarEl.css('margin-right', '68px');
           }
+        }
+        if(animate){
+          sideBarEl.animate(
+            { width: panelWidth + 'px' },
+            { complete: animationCallback }
+          );
+        } else {
+          sideBarEl.css('width', panelWidth + 'px');
         }
       }
       el.find(".fa-chevron-left").removeClass("fa-chevron-left").addClass("fa-chevron-right")
@@ -925,16 +961,15 @@
       // Check if the metadata side button has the class 'expand'
       if($('#filterSideButton').hasClass('expand')) {
           // If it does, call the reduceSidebar function and pass in the id "metadataSideButton"
-          Gofast.Essential.reduceSideBar($("#filterSideButton"));
-          
-          //Hide the block content
-          $("#gofastSearchResultsFilter > .card-custom").addClass("d-none");
+          Gofast.Essential.reduceSideBar($("#filterSideButton"), true, () => {
+            //Hide the block content
+            $("#gofastSearchResultsFilter > .card-custom").addClass("d-none");
+          });
       } else {
-          // If it does not, call the expandSidebar function and pass in the id "metadataSideButton"
-          Gofast.Essential.expandSideBar($("#filterSideButton"));
-          
-          //Display the block content
-          $("#gofastSearchResultsFilter > .card-custom").removeClass("d-none");
+        //Display the block content
+        $("#gofastSearchResultsFilter > .card-custom").removeClass("d-none");
+        // If it does not, call the expandSidebar function and pass in the id "metadataSideButton"
+        Gofast.Essential.expandSideBar($("#filterSideButton"));
       }
     },
     /*
@@ -1087,7 +1122,7 @@
             $('#essentialFileBrowserHistory').attr('style', 'display:none!important;')
             Gofast.ITHit.tree.cancelSelectedNode()
             $.get('/essential/get_node_content_part/search/'+requestParam).done((content)=>{
-              $('#fileBrowserLayer').clone().appendTo($('#fileBrowserLayer').parent()).html(content).attr('id','searchPageLayer')
+              $('#fileBrowserLayer').clone().appendTo($('#fileBrowserLayer').parent()).html(content['content']).attr('id','searchPageLayer')
               $('#fileBrowserLayer').first().removeClass('d-flex').addClass('d-none')
               $('#essentialFileBrowserHistory').first().removeClass('d-flex').addClass('d-none')
               $('#searchPageLayer > #kt_content .gofast-content').removeClass('gofast-content')

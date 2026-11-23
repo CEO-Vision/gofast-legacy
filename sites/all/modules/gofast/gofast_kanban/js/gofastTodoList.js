@@ -438,7 +438,7 @@ const GofastTodoItem = (task) => {
             });
        
 
-            if(responsableInput.data != null){
+            if(responsableInput.data != null && $(responsableInput.DOM.input).select2("data")){
                 Object.entries(responsableInput.data).forEach(([key, value]) => {
                     $(responsableInput.DOM.input).select2("data")[0][key] = value
                 })

@@ -35,6 +35,15 @@
             <!--end::Item-->
         </ul>
         <div class="table-responsive" style="<?= gofast_essential_is_essential() ? "" : "max-height: calc(100vh - 400px - 6rem);" ?>">
+            <!--begin::No template message-->
+            <div
+                id="no-template-found-message"
+                class="ml-5 my-5"
+                style="<?= !empty($available_templates) ? 'display: none;' : '' ?>"
+            >
+                <span class="text-muted"><?= t("No templates available", [], ['context' => 'gofast:gofast_cmis']) ?></span>
+            </div>
+            <!--end::No template message-->
             <!--begin::Table-->
             <table id="gofastTemplateTable" class="table align-middle my-0">
                 <!--begin::Table head-->
@@ -87,6 +96,8 @@
         const $gofastCmisTitleSelect = jQuery("#edit-title");
         const $gofastCmisExtensionSelect = jQuery("#edit-extension");
         const $gofastCmisLanguageSelect = jQuery("#edit-language");
+
+        const $noTemplateMessageElement = jQuery('#no-template-found-message');
         // bind displayed templates radios to hidden select values
         jQuery(".gofast_cmis_template_radio").on("change", function() {
             // get needed infos
@@ -111,17 +122,32 @@
             $this.find('input[type="radio"]').prop('checked', true).trigger("change");
             $this.addClass('selected').siblings().removeClass('selected'); 
         });
-    
+
+        /**
+         * Updates display after the list of templates has been updated, e.g.: after setting or un-setting filters.
+         * @param {number} displayedItemCount The number of template documents displayed
+         */
+        function onTemplateListUpdate(displayedItemCount) {
+            // show a message where the user would otherwise select a template
+            // to notify that there is no template available to select
+            $noTemplateMessageElement.toggle(displayedItemCount === 0);
+        }
 
         function gofastTemplateRefreshFilters() {
             const hasNoActiveFilters = Object.values(activeFilters).every(value => value.length < 3);
             // show everything if there is no value
             if (hasNoActiveFilters) {
-                jQuery("#gofastTemplateTable tr").show();
+                const templateDocumentRows = jQuery("#gofastTemplateTable tr");
+                templateDocumentRows.show();
+                onTemplateListUpdate(templateDocumentRows.length);
                 return;
             }
             const keys = Object.keys(activeFilters);
             const haystacks = {};
+
+            /** Count of the shown template options, in other words the number of items that matched the filters. */
+            let filterResultCount = 0;
+
             for (const tableRow of jQuery("#gofastTemplateTable tr")) {
                 const rowInfo = JSON.parse(jQuery(tableRow).find(".gofast_template_info").text());
                 haystacks.name = rowInfo.infos.title.toLowerCase();
@@ -136,10 +162,13 @@
                 }
                 if (mustNotBeFiltered) {
                     jQuery(tableRow).show();
+                    ++filterResultCount;
                 } else {
                     jQuery(tableRow).hide();
                 }
             }
+
+            onTemplateListUpdate(filterResultCount);
         }
 
         const activeFilters = {

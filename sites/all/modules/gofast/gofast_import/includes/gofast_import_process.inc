@@ -6,38 +6,130 @@
  */
 
 /**
+ * Type alias to of array structure that may be passed into the USM import
+ * processing function.
+ * @phpstan-type GfImportUsmProcessImportDataInput (
+ *  array{
+ *    users?: array{
+ *      type: GOFAST_IMPORT_MEMBER_TYPE_USER,
+ *      name: string,
+ *      last_name: string | null,
+ *      first_name: string | null,
+ *      email: string | null,
+ *      source_id: int,
+ *    }[],
+ *    user_lists?: array{
+ *      type: GOFAST_IMPORT_ITEM_TYPE_USERLIST,
+ *      name: string,
+ *      properties?: array{
+ *        description?: string,
+ *      },
+ *      source_id: int
+ *      memberships: array{
+ *        role: string,
+ *        member: array{
+ *          name: string,
+ *          type: string,
+ *          source_id: int,
+ *        },
+ *      }[],
+ *    }[],
+ *    spaces?: array{
+ *      type: GOFAST_IMPORT_ITEM_TYPE_EXTRANET
+ *        | GOFAST_IMPORT_ITEM_TYPE_GROUP
+ *        | GOFAST_IMPORT_ITEM_TYPE_ORGANISATION,
+ *      path: string,
+ *      properties?: array{
+ *        description?: string,
+ *      },
+ *      source_id: int,
+ *      memberships: array{
+ *        role: string,
+ *        member: array{
+ *          name: string,
+ *          type: string,
+ *          source_id: int,
+ *        },
+ *      }[],
+ *    }[],
+ *  }
+ * )
+ */
+
+/**
+ * Full description of the desired state after import of the platform.
+ *
+ * Built progressively through the processing function.
+ *
+ * @phpstan-type GfImportUsmProcessImportData (
+ *  array{
+ *    users?: array{
+ *      type: GOFAST_IMPORT_MEMBER_TYPE_USER,
+ *      name: string,
+ *      last_name: string | null,
+ *      first_name: string | null,
+ *      email: string | null,
+ *      source_id: int,
+ *      account?: object | null,
+ *    }[],
+ *    user_lists: array{
+ *      type: GOFAST_IMPORT_ITEM_TYPE_USERLIST,
+ *      name: string,
+ *      properties?: array{
+ *        description?: string,
+ *      },
+ *      source_id: int,
+ *      memberships: array{
+ *        role: string,
+ *        member: array{
+ *          name: string,
+ *          type: string,
+ *          source_id: int,
+ *        },
+ *      }[],
+ *      node?: object | null,
+ *    }[],
+ *    spaces: array{
+ *      type: GOFAST_IMPORT_ITEM_TYPE_EXTRANET
+ *        | GOFAST_IMPORT_ITEM_TYPE_GROUP
+ *        | GOFAST_IMPORT_ITEM_TYPE_ORGANISATION,
+ *      path: string,
+ *      properties?: array{
+ *        description?: string,
+ *      },
+ *      source_id: int,
+ *      memberships: array{
+ *        role: string,
+ *        member: array{
+ *          name: string,
+ *          type: string,
+ *          source_id: int,
+ *        },
+ *      }[],
+ *      name?: string,
+ *      parent_path?: string | null,
+ *      node?: object | null,
+ *      existing_admins?: array{
+ *        name: string,
+ *        type: string,
+ *      }[],
+ *      final_admins?: array{
+ *        name: string,
+ *        type: string,
+ *      }[],
+ *    }[],
+ *  }
+ * )
+ */
+
+/**
  * Import middle-end function, in charge of all common processing and validation
  * of imports. Dispatches the final processed data to the chosen back-end for
  * execution (e.g. logging through the dry-run backend).
  *
- * @param array{
- *  users?: array{
- *    type: GOFAST_IMPORT_MEMBER_TYPE_USER,
- *    name: string,
- *    last_name: string | null,
- *    first_name: string | null,
- *    email: string | null,
- *    account?: object | null,
- *  }[],
- *  user_lists?: array{
- *    type: GOFAST_IMPORT_ITEM_TYPE_USERLIST,
- *    name: string,
- *    description?: string,
- *    memberships: array{role: string, member: array{name: string, type: string}}[],
- *    node?: object | null,
- *  }[],
- *  spaces?: array{
- *    type: GOFAST_IMPORT_ITEM_TYPE_EXTRANET
- *      | GOFAST_IMPORT_ITEM_TYPE_GROUP
- *      | GOFAST_IMPORT_ITEM_TYPE_ORGANISATION,
- *    path: string,
- *    description?: string,
- *    memberships: array{role: string, member: array{name: string, type: string}}[],
- *    name?: string,
- *    parent_path?: string | null,
- *    node?: object | null,
- *  }[],
- * } $import_data Full description of the desired state after import of the platform.
+ * @param GfImportUsmProcessImportDataInput $import_data
+ *   Full description of the desired state after import of the platform.
+ *
  * @param array{
  *  logger?: callable(string $type, string $message, array $variables=, int<0,7> $severity=): void,
  *  output_logger?: callable(string $type, string $message, array $variables=, int<0,7> $severity=): void,
@@ -62,12 +154,15 @@ function gofast_import__process_import_data($import_data, $_options = []) {
   // Space normalization and validation.
   $errors[] = gofast_import__parse_and_normalize_space_paths($import_data);
   $errors[] = gofast_import__deduplicate_spaces($import_data);
-  $errors[] = gofast_import__new_space_add_support_if_no_admin($import_data);
   $errors[] = gofast_import__complete_space_parents($import_data);
   $errors[] = gofast_import__add_space_name_and_parent($import_data);
   $errors[] = gofast_import__load_space_nodes($import_data);
   $errors[] = gofast_import__add_child_members_to_missing_parents($import_data);
   $errors[] = gofast_import__fill_space_missing_properties_from_node($import_data);
+  $errors[] = gofast_import__new_space_add_support_if_no_admin($import_data);
+  $errors[] = gofast_import__load_spaces_admin_memberships($import_data);
+  $errors[] = gofast_import__compute_spaces_final_admin_members($import_data);
+  $errors[] = gofast_import__validate_spaces_will_have_enough_admins($import_data);
 
   // User list normalization and validation.
   $errors[] = gofast_import__deduplicate_user_lists($import_data);
@@ -94,34 +189,9 @@ function gofast_import__process_import_data($import_data, $_options = []) {
 /**
  * Applies default values to import data as a whole.
  *
- * @param array{
- *  users?: array{
- *    type: GOFAST_IMPORT_MEMBER_TYPE_USER,
- *    name: string,
- *    last_name: string | null,
- *    first_name: string | null,
- *    email: string | null,
- *    account?: object | null,
- *  }[],
- *  user_lists?: array{
- *    type: GOFAST_IMPORT_ITEM_TYPE_USERLIST,
- *    name: string,
- *    description?: string,
- *    memberships: array{role: string, member: array{name: string, type: string}}[],
- *    node?: object | null,
- *  }[],
- *  spaces?: array{
- *    type: GOFAST_IMPORT_ITEM_TYPE_EXTRANET
- *      | GOFAST_IMPORT_ITEM_TYPE_GROUP
- *      | GOFAST_IMPORT_ITEM_TYPE_ORGANISATION,
- *    path: string,
- *    description?: string,
- *    memberships: array{role: string, member: array{name: string, type: string}}[],
- *    name?: string,
- *    parent_path?: string | null,
- *    node?: object | null,
- *  }[],
- * } $import_data Full description of the desired state after import of the platform.
+ * @param GfImportUsmProcessImportData $import_data
+ *   Full description of the desired state after import of the platform.
+ *
  * @return array Array of errors, empty when no errors need reporting.
  */
 function gofast_import__apply_defaults(&$import_data) {
@@ -188,45 +258,9 @@ function gofast_import__parse_space_path($path, $type) {
 /**
  * Deduplicates users in import data.
  *
- * @param array{
- *  users: array{
- *    type: GOFAST_IMPORT_MEMBER_TYPE_USER,
- *    name: string,
- *    last_name: string | null,
- *    first_name: string | null,
- *    email: string | null,
- *    source_id: int,
- *    account?: object | null,
- *  }[],
- *  user_lists: array{
- *    type: GOFAST_IMPORT_ITEM_TYPE_USERLIST,
- *    name: string,
- *    description?: string,
- *    source_id: int,
- *    memberships: array{
- *      role: string,
- *      item_source_id: int,
- *      member: array{name: string, type: string, source_id: int}
- *    }[],
- *    node?: object | null,
- *  }[],
- *  spaces: array{
- *    type: GOFAST_IMPORT_ITEM_TYPE_EXTRANET
- *      | GOFAST_IMPORT_ITEM_TYPE_GROUP
- *      | GOFAST_IMPORT_ITEM_TYPE_ORGANISATION,
- *    path: string,
- *    description?: string,
- *    source_id: int,
- *    memberships: array{
- *      role: string,
- *      item_source_id: int,
- *      member: array{name: string, type: string, source_id: int},
- *    }[],
- *    name?: string,
- *    parent_path?: string | null,
- *    node?: object | null,
- *  }[],
- * } $import_data Full description of the desired state after import of the platform.
+ * @param GfImportUsmProcessImportData $import_data
+ *   Full description of the desired state after import of the platform.
+ *
  * @return array Array of errors, empty when no errors need reporting.
  */
 function gofast_import__deduplicate_users(&$import_data) {
@@ -283,45 +317,9 @@ function gofast_import__deduplicate_users(&$import_data) {
 /**
  * Deduplicates user lists in import data.
  *
- * @param array{
- *  users: array{
- *    type: GOFAST_IMPORT_MEMBER_TYPE_USER,
- *    name: string,
- *    last_name: string | null,
- *    first_name: string | null,
- *    email: string | null,
- *    source_id: int,
- *    account?: object | null,
- *  }[],
- *  user_lists: array{
- *    type: GOFAST_IMPORT_ITEM_TYPE_USERLIST,
- *    name: string,
- *    description?: string,
- *    source_id: int,
- *    memberships: array{
- *      role: string,
- *      item_source_id: int,
- *      member: array{name: string, type: string, source_id: int}
- *    }[],
- *    node?: object | null,
- *  }[],
- *  spaces: array{
- *    type: GOFAST_IMPORT_ITEM_TYPE_EXTRANET
- *      | GOFAST_IMPORT_ITEM_TYPE_GROUP
- *      | GOFAST_IMPORT_ITEM_TYPE_ORGANISATION,
- *    path: string,
- *    description?: string,
- *    source_id: int,
- *    memberships: array{
- *      role: string,
- *      item_source_id: int,
- *      member: array{name: string, type: string, source_id: int},
- *    }[],
- *    name?: string,
- *    parent_path?: string | null,
- *    node?: object | null,
- *  }[],
- * } $import_data Full description of the desired state after import of the platform.
+ * @param GfImportUsmProcessImportData $import_data
+ *   Full description of the desired state after import of the platform.
+ *
  * @return array Array of errors, empty when no errors need reporting.
  */
 function gofast_import__deduplicate_user_lists(&$import_data) {
@@ -360,45 +358,9 @@ function gofast_import__deduplicate_user_lists(&$import_data) {
  *
  * Needs normalized absolute paths.
  *
- * @param array{
- *  users: array{
- *    type: GOFAST_IMPORT_MEMBER_TYPE_USER,
- *    name: string,
- *    last_name: string | null,
- *    first_name: string | null,
- *    email: string | null,
- *    source_id: int,
- *    account?: object | null,
- *  }[],
- *  user_lists: array{
- *    type: GOFAST_IMPORT_ITEM_TYPE_USERLIST,
- *    name: string,
- *    description?: string,
- *    source_id: int,
- *    memberships: array{
- *      role: string,
- *      item_source_id: int,
- *      member: array{name: string, type: string, source_id: int}
- *    }[],
- *    node?: object | null,
- *  }[],
- *  spaces: array{
- *    type: GOFAST_IMPORT_ITEM_TYPE_EXTRANET
- *      | GOFAST_IMPORT_ITEM_TYPE_GROUP
- *      | GOFAST_IMPORT_ITEM_TYPE_ORGANISATION,
- *    path: string,
- *    description?: string,
- *    source_id: int,
- *    memberships: array{
- *      role: string,
- *      item_source_id: int,
- *      member: array{name: string, type: string, source_id: int},
- *    }[],
- *    name?: string,
- *    parent_path?: string | null,
- *    node?: object | null,
- *  }[],
- * } $import_data Full description of the desired state after import of the platform.
+ * @param GfImportUsmProcessImportData $import_data
+ *   Full description of the desired state after import of the platform.
+ *
  * @return array Array of errors, empty when no errors need reporting.
  */
 function gofast_import__deduplicate_spaces(&$import_data) {
@@ -436,45 +398,9 @@ function gofast_import__deduplicate_spaces(&$import_data) {
 /**
  * Deduplicates user lists in space memberships in import data.
  *
- * @param array{
- *  users: array{
- *    type: GOFAST_IMPORT_MEMBER_TYPE_USER,
- *    name: string,
- *    last_name: string | null,
- *    first_name: string | null,
- *    email: string | null,
- *    source_id: int,
- *    account?: object | null,
- *  }[],
- *  user_lists: array{
- *    type: GOFAST_IMPORT_ITEM_TYPE_USERLIST,
- *    name: string,
- *    description?: string,
- *    source_id: int,
- *    memberships: array{
- *      role: string,
- *      item_source_id: int,
- *      member: array{name: string, type: string, source_id: int}
- *    }[],
- *    node?: object | null,
- *  }[],
- *  spaces: array{
- *    type: GOFAST_IMPORT_ITEM_TYPE_EXTRANET
- *      | GOFAST_IMPORT_ITEM_TYPE_GROUP
- *      | GOFAST_IMPORT_ITEM_TYPE_ORGANISATION,
- *    path: string,
- *    description?: string,
- *    source_id: int,
- *    memberships: array{
- *      role: string,
- *      item_source_id: int,
- *      member: array{name: string, type: string, source_id: int},
- *    }[],
- *    name?: string,
- *    parent_path?: string | null,
- *    node?: object | null,
- *  }[],
- * } $import_data Full description of the desired state after import of the platform.
+ * @param GfImportUsmProcessImportData $import_data
+ *   Full description of the desired state after import of the platform.
+ *
  * @return array Array of errors, empty when no errors need reporting.
  */
 function gofast_import__deduplicate_space_user_list_members(&$import_data) {
@@ -548,29 +474,9 @@ function gofast_import__deduplicate_space_user_list_members(&$import_data) {
 /**
  * Parse space paths and normalize them on the import data structure.
  *
- * @param array{
- *  users: array{
- *    type: GOFAST_IMPORT_MEMBER_TYPE_USER,
- *    name: string,
- *    last_name: string | null,
- *    first_name: string | null,
- *    email: string | null,
- *  }[],
- *  user_lists: array{
- *    type: GOFAST_IMPORT_ITEM_TYPE_USERLIST,
- *    name: string,
- *    description?: string,
- *    memberships: array{role: string, member: array{name: string, type: string}}[],
- *  }[],
- *  spaces: array{
- *    type: GOFAST_IMPORT_ITEM_TYPE_EXTRANET
- *      | GOFAST_IMPORT_ITEM_TYPE_GROUP
- *      | GOFAST_IMPORT_ITEM_TYPE_ORGANISATION,
- *    path: string,
- *    description?: string,
- *    memberships: array{role: string, member: array{name: string, type: string}}[],
- *  }[],
- * } $import_data Full description of the desired state after import of the platform.
+ * @param GfImportUsmProcessImportData $import_data
+ *   Full description of the desired state after import of the platform.
+ *
  * @return array Array of errors, empty when no errors need reporting.
  */
 function gofast_import__parse_and_normalize_space_paths(&$import_data) {
@@ -601,30 +507,9 @@ function gofast_import__parse_and_normalize_space_paths(&$import_data) {
 /**
  * Adds the existing user account to the imported users when applicable.
  *
- * @param array{
- *  users: array{
- *    type: GOFAST_IMPORT_MEMBER_TYPE_USER,
- *    name: string,
- *    last_name: string | null,
- *    first_name: string | null,
- *    email: string | null,
- *    account?: object | null,
- *  }[],
- *  user_lists: array{
- *    type: GOFAST_IMPORT_ITEM_TYPE_USERLIST,
- *    name: string,
- *    description?: string,
- *    memberships: array{role: string, member: array{name: string, type: string}}[],
- *  }[],
- *  spaces: array{
- *    type: GOFAST_IMPORT_ITEM_TYPE_EXTRANET
- *      | GOFAST_IMPORT_ITEM_TYPE_GROUP
- *      | GOFAST_IMPORT_ITEM_TYPE_ORGANISATION,
- *    path: string,
- *    description?: string,
- *    memberships: array{role: string, member: array{name: string, type: string}}[],
- *  }[],
- * } $import_data Full description of the desired state after import of the platform.
+ * @param GfImportUsmProcessImportData $import_data
+ *   Full description of the desired state after import of the platform.
+ *
  * @return array Array of errors, empty when no errors need reporting.
  */
 function gofast_import__load_user_accounts(&$import_data) {
@@ -639,30 +524,9 @@ function gofast_import__load_user_accounts(&$import_data) {
 /**
  * Fills unspecified user fields from the account object.
  *
- * @param array{
- *  users: array{
- *    type: GOFAST_IMPORT_MEMBER_TYPE_USER,
- *    name: string,
- *    last_name: string | null,
- *    first_name: string | null,
- *    email: string | null,
- *    account: object | null,
- *  }[],
- *  user_lists: array{
- *    type: GOFAST_IMPORT_ITEM_TYPE_USERLIST,
- *    name: string,
- *    description?: string,
- *    memberships: array{role: string, member: array{name: string, type: string}}[],
- *  }[],
- *  spaces: array{
- *    type: GOFAST_IMPORT_ITEM_TYPE_EXTRANET
- *      | GOFAST_IMPORT_ITEM_TYPE_GROUP
- *      | GOFAST_IMPORT_ITEM_TYPE_ORGANISATION,
- *    path: string,
- *    description?: string,
- *    memberships: array{role: string, member: array{name: string, type: string}}[],
- *  }[],
- * } $import_data Full description of the desired state after import of the platform.
+ * @param GfImportUsmProcessImportData $import_data
+ *   Full description of the desired state after import of the platform.
+ *
  * @return array Array of errors, empty when no errors need reporting.
  */
 function gofast_import__fill_user_missing_properties_from_account(&$import_data) {
@@ -689,30 +553,9 @@ function gofast_import__fill_user_missing_properties_from_account(&$import_data)
 /**
  * Validates the user's properties.
  *
- * @param array{
- *  users: array{
- *    type: GOFAST_IMPORT_MEMBER_TYPE_USER,
- *    name: string,
- *    last_name: string | null,
- *    first_name: string | null,
- *    email: string | null,
- *    account: object | null,
- *  }[],
- *  user_lists: array{
- *    type: GOFAST_IMPORT_ITEM_TYPE_USERLIST,
- *    name: string,
- *    description?: string,
- *    memberships: array{role: string, member: array{name: string, type: string}}[],
- *  }[],
- *  spaces: array{
- *    type: GOFAST_IMPORT_ITEM_TYPE_EXTRANET
- *      | GOFAST_IMPORT_ITEM_TYPE_GROUP
- *      | GOFAST_IMPORT_ITEM_TYPE_ORGANISATION,
- *    path: string,
- *    description?: string,
- *    memberships: array{role: string, member: array{name: string, type: string}}[],
- *  }[],
- * } $import_data Full description of the desired state after import of the platform.
+ * @param GfImportUsmProcessImportData $import_data
+ *   Full description of the desired state after import of the platform.
+ *
  * @return array Array of errors, empty when no errors need reporting.
  */
 function gofast_import__validate_user_properties(&$import_data) {
@@ -757,29 +600,9 @@ function gofast_import__validate_user_properties(&$import_data) {
 /**
  * Add entries in imported spaces for missing parents of specified spaces.
  *
- * @param array{
- *  users: array{
- *    type: GOFAST_IMPORT_MEMBER_TYPE_USER,
- *    name: string,
- *    last_name: string | null,
- *    first_name: string | null,
- *    email: string | null,
- *  }[],
- *  user_lists: array{
- *    type: GOFAST_IMPORT_ITEM_TYPE_USERLIST,
- *    name: string,
- *    description?: string,
- *    memberships: array{role: string, member: array{name: string, type: string}}[],
- *  }[],
- *  spaces: array{
- *    type: GOFAST_IMPORT_ITEM_TYPE_EXTRANET
- *      | GOFAST_IMPORT_ITEM_TYPE_GROUP
- *      | GOFAST_IMPORT_ITEM_TYPE_ORGANISATION,
- *    path: string,
- *    description?: string,
- *    memberships: array{role: string, member: array{name: string, type: string}}[],
- *  }[],
- * } $import_data Full description of the desired state after import of the platform.
+ * @param GfImportUsmProcessImportData $import_data
+ *   Full description of the desired state after import of the platform.
+ *
  * @return array Array of errors, empty when no errors need reporting.
  */
 function gofast_import__complete_space_parents(&$import_data) {
@@ -823,29 +646,9 @@ function gofast_import__complete_space_parents(&$import_data) {
  * Validate that import data does not contain a user list which has a member of
  * user list type.
  *
- * @param array{
- *  users: array{
- *    type: GOFAST_IMPORT_MEMBER_TYPE_USER,
- *    name: string,
- *    last_name: string | null,
- *    first_name: string | null,
- *    email: string | null,
- *  }[],
- *  user_lists: array{
- *    type: GOFAST_IMPORT_ITEM_TYPE_USERLIST,
- *    name: string,
- *    description?: string,
- *    memberships: array{role: string, member: array{name: string, type: string}}[],
- *  }[],
- *  spaces: array{
- *    type: GOFAST_IMPORT_ITEM_TYPE_EXTRANET
- *      | GOFAST_IMPORT_ITEM_TYPE_GROUP
- *      | GOFAST_IMPORT_ITEM_TYPE_ORGANISATION,
- *    path: string,
- *    description?: string,
- *    memberships: array{role: string, member: array{name: string, type: string}}[],
- *  }[],
- * } $import_data Full description of the desired state after import of the platform.
+ * @param GfImportUsmProcessImportData $import_data
+ *   Full description of the desired state after import of the platform.
+ *
  * @return array Array of errors, empty when no errors need reporting.
  */
 function gofast_import__validate_user_list_members_are_not_user_lists($import_data) {
@@ -872,34 +675,9 @@ function gofast_import__validate_user_list_members_are_not_user_lists($import_da
 /**
  * Adds support users to a new space with no administrators.
  *
- * @param @param array{
- *  users: array{
- *    type: GOFAST_IMPORT_MEMBER_TYPE_USER,
- *    name: string,
- *    last_name: string | null,
- *    first_name: string | null,
- *    email: string | null,
- *    account?: object | null,
- *  }[],
- *  user_lists: array{
- *    type: GOFAST_IMPORT_ITEM_TYPE_USERLIST,
- *    name: string,
- *    description?: string,
- *    memberships: array{role: string, member: array{name: string, type: string}}[],
- *    node?: object | null,
- *  }[],
- *  spaces: array{
- *    type: GOFAST_IMPORT_ITEM_TYPE_EXTRANET
- *      | GOFAST_IMPORT_ITEM_TYPE_GROUP
- *      | GOFAST_IMPORT_ITEM_TYPE_ORGANISATION,
- *    path: string,
- *    description?: string,
- *    memberships: array{role: string, member: array{name: string, type: string}}[],
- *    name?: string,
- *    parent_path?: string | null,
- *    node?: object | null,
- *  }[],
- * } $import_data Full description of the desired state after import of the platform.
+ * @param GfImportUsmProcessImportData $import_data
+ *   Full description of the desired state after import of the platform.
+ *
  * @return array Array of errors, empty when no errors need reporting.
  */
 function gofast_import__new_space_add_support_if_no_admin(&$import_data) {
@@ -987,32 +765,9 @@ function gofast_import__convert_space_import_item_type_to_space_node_type($type)
  * matches the imported item type. If not do not load and report the mismatch as
  * an error.
  *
- * @param array{
- *  users: array{
- *    type: GOFAST_IMPORT_MEMBER_TYPE_USER,
- *    name: string,
- *    last_name: string | null,
- *    first_name: string | null,
- *    email: string | null,
- *    account?: object | null,
- *  }[],
- *  user_lists: array{
- *    type: GOFAST_IMPORT_ITEM_TYPE_USERLIST,
- *    name: string,
- *    description?: string,
- *    memberships: array{role: string, member: array{name: string, type: string}}[],
- *    node?: object | null,
- *  }[],
- *  spaces: array{
- *    type: GOFAST_IMPORT_ITEM_TYPE_EXTRANET
- *      | GOFAST_IMPORT_ITEM_TYPE_GROUP
- *      | GOFAST_IMPORT_ITEM_TYPE_ORGANISATION,
- *    path: string,
- *    description?: string,
- *    memberships: array{role: string, member: array{name: string, type: string}}[],
- *    node?: object | null,
- *  }[],
- * } $import_data Full description of the desired state after import of the platform.
+ * @param GfImportUsmProcessImportData $import_data
+ *   Full description of the desired state after import of the platform.
+ *
  * @return array Array of errors, empty when no errors need reporting.
  */
 function gofast_import__load_space_nodes(&$import_data) {
@@ -1054,32 +809,9 @@ function gofast_import__load_space_nodes(&$import_data) {
  * Add members to parent spaces that do not yet exist on the platform and have
  * no members specified.
  *
- * @param array{
- *  users: array{
- *    type: GOFAST_IMPORT_MEMBER_TYPE_USER,
- *    name: string,
- *    last_name: string | null,
- *    first_name: string | null,
- *    email: string | null,
- *    account?: object | null,
- *  }[],
- *  user_lists: array{
- *    type: GOFAST_IMPORT_ITEM_TYPE_USERLIST,
- *    name: string,
- *    description?: string,
- *    memberships: array{role: string, member: array{name: string, type: string}}[],
- *    node?: object | null,
- *  }[],
- *  spaces: array{
- *    type: GOFAST_IMPORT_ITEM_TYPE_EXTRANET
- *      | GOFAST_IMPORT_ITEM_TYPE_GROUP
- *      | GOFAST_IMPORT_ITEM_TYPE_ORGANISATION,
- *    path: string,
- *    description?: string,
- *    memberships: array{role: string, member: array{name: string, type: string}}[],
- *    node?: object | null,
- *  }[],
- * } $import_data Full description of the desired state after import of the platform.
+ * @param GfImportUsmProcessImportData $import_data
+ *   Full description of the desired state after import of the platform.
+ *
  * @return array Array of errors, empty when no errors need reporting.
  */
 function gofast_import__add_child_members_to_missing_parents(&$import_data) {
@@ -1118,32 +850,9 @@ function gofast_import__add_child_members_to_missing_parents(&$import_data) {
 /**
  * Loads missing properties in space import items with data from node when possible.
  *
- * @param array{
- *  users: array{
- *    type: GOFAST_IMPORT_MEMBER_TYPE_USER,
- *    name: string,
- *    last_name: string | null,
- *    first_name: string | null,
- *    email: string | null,
- *    account?: object | null,
- *  }[],
- *  user_lists: array{
- *    type: GOFAST_IMPORT_ITEM_TYPE_USERLIST,
- *    name: string,
- *    description?: string,
- *    memberships: array{role: string, member: array{name: string, type: string}}[],
- *    node?: object | null,
- *  }[],
- *  spaces: array{
- *    type: GOFAST_IMPORT_ITEM_TYPE_EXTRANET
- *      | GOFAST_IMPORT_ITEM_TYPE_GROUP
- *      | GOFAST_IMPORT_ITEM_TYPE_ORGANISATION,
- *    path: string,
- *    description?: string,
- *    memberships: array{role: string, member: array{name: string, type: string}}[],
- *    node?: object | null,
- *  }[],
- * } $import_data Full description of the desired state after import of the platform.
+ * @param GfImportUsmProcessImportData $import_data
+ *   Full description of the desired state after import of the platform.
+ *
  * @return array Array of errors, empty when no errors need reporting.
  */
 function gofast_import__fill_space_missing_properties_from_node(&$import_data) {
@@ -1159,13 +868,16 @@ function gofast_import__fill_space_missing_properties_from_node(&$import_data) {
 
     foreach ($fillable_properties as $property_key) {
       $property = $descriptors[$property_key];
+      $property_path = (array) $property['name'];
+      $property_value = drupal_array_get_nested_value($space, $property_path);
+
       // Is property set?
-      if (!empty($space[$property['name']])) {
+      if (!empty($property_value)) {
         continue;
       }
 
       // Fill missing property.
-      $space[$property['name']] = $property['node']['get']($space['node']);
+      drupal_array_set_nested_value($space, $property_path, $property['node']['get']($space['node']));
     }
   }
   unset($space);
@@ -1175,32 +887,9 @@ function gofast_import__fill_space_missing_properties_from_node(&$import_data) {
 /**
  * Loads user list nodes onto user list import items when possible
  *
- * @param array{
- *  users: array{
- *    type: GOFAST_IMPORT_MEMBER_TYPE_USER,
- *    name: string,
- *    last_name: string | null,
- *    first_name: string | null,
- *    email: string | null,
- *    account?: object | null,
- *  }[],
- *  user_lists: array{
- *    type: GOFAST_IMPORT_ITEM_TYPE_USERLIST,
- *    name: string,
- *    description?: string,
- *    memberships: array{role: string, member: array{name: string, type: string}}[],
- *    node?: object | null,
- *  }[],
- *  spaces: array{
- *    type: GOFAST_IMPORT_ITEM_TYPE_EXTRANET
- *      | GOFAST_IMPORT_ITEM_TYPE_GROUP
- *      | GOFAST_IMPORT_ITEM_TYPE_ORGANISATION,
- *    path: string,
- *    description?: string,
- *    memberships: array{role: string, member: array{name: string, type: string}}[],
- *    node?: object | null,
- *  }[],
- * } $import_data Full description of the desired state after import of the platform.
+ * @param GfImportUsmProcessImportData $import_data
+ *   Full description of the desired state after import of the platform.
+ *
  * @return array Array of errors, empty when no errors need reporting.
  */
 function gofast_import__load_user_list_nodes(&$import_data) {
@@ -1241,32 +930,9 @@ function gofast_import__load_user_list_nodes(&$import_data) {
 /**
  * Adds support users for new user lists without an admin user.
  *
- * @param array{
- *  users: array{
- *    type: GOFAST_IMPORT_MEMBER_TYPE_USER,
- *    name: string,
- *    last_name: string | null,
- *    first_name: string | null,
- *    email: string | null,
- *    account?: object | null,
- *  }[],
- *  user_lists: array{
- *    type: GOFAST_IMPORT_ITEM_TYPE_USERLIST,
- *    name: string,
- *    description?: string,
- *    memberships: array{role: string, member: array{name: string, type: string}}[],
- *    node?: object | null,
- *  }[],
- *  spaces: array{
- *    type: GOFAST_IMPORT_ITEM_TYPE_EXTRANET
- *      | GOFAST_IMPORT_ITEM_TYPE_GROUP
- *      | GOFAST_IMPORT_ITEM_TYPE_ORGANISATION,
- *    path: string,
- *    description?: string,
- *    memberships: array{role: string, member: array{name: string, type: string}}[],
- *    node?: object | null,
- *  }[],
- * } $import_data Full description of the desired state after import of the platform.
+ * @param GfImportUsmProcessImportData $import_data
+ *   Full description of the desired state after import of the platform.
+ *
  * @return array Array of errors, empty when no errors need reporting.
  */
 function gofast_import__new_user_list_add_support_if_no_admin_member(&$import_data) {
@@ -1319,32 +985,9 @@ function gofast_import__new_user_list_add_support_if_no_admin_member(&$import_da
 /**
  * Loads missing properties in user list import items with data from node when possible.
  *
- * @param array{
- *  users: array{
- *    type: GOFAST_IMPORT_MEMBER_TYPE_USER,
- *    name: string,
- *    last_name: string | null,
- *    first_name: string | null,
- *    email: string | null,
- *    account?: object | null,
- *  }[],
- *  user_lists: array{
- *    type: GOFAST_IMPORT_ITEM_TYPE_USERLIST,
- *    name: string,
- *    description?: string,
- *    memberships: array{role: string, member: array{name: string, type: string}}[],
- *    node?: object | null,
- *  }[],
- *  spaces: array{
- *    type: GOFAST_IMPORT_ITEM_TYPE_EXTRANET
- *      | GOFAST_IMPORT_ITEM_TYPE_GROUP
- *      | GOFAST_IMPORT_ITEM_TYPE_ORGANISATION,
- *    path: string,
- *    description?: string,
- *    memberships: array{role: string, member: array{name: string, type: string}}[],
- *    node?: object | null,
- *  }[],
- * } $import_data Full description of the desired state after import of the platform.
+ * @param GfImportUsmProcessImportData $import_data
+ *   Full description of the desired state after import of the platform.
+ *
  * @return array Array of errors, empty when no errors need reporting.
  */
 function gofast_import__fill_user_list_missing_properties_from_node(&$import_data) {
@@ -1360,13 +1003,16 @@ function gofast_import__fill_user_list_missing_properties_from_node(&$import_dat
 
     foreach ($fillable_properties as $property_key) {
       $property = $descriptors[$property_key];
+      $property_path = (array) $property['name'];
+      $property_value = drupal_array_get_nested_value($user_list, $property_path);
+
       // Is property set?
-      if (!empty($user_list[$property['name']])) {
+      if (!empty($property_value)) {
         continue;
       }
 
       // Fill missing property.
-      $user_list[$property['name']] = $property['node']['get']($user_list['node']);
+      drupal_array_set_nested_value($user_list, $property_path, $property['node']['get']($user_list['node']));
     }
   }
   unset($user_list);
@@ -1376,34 +1022,9 @@ function gofast_import__fill_user_list_missing_properties_from_node(&$import_dat
 /**
  * Adds a name and parent_path property on space items based on their path.
  *
- * @param array{
- *  users: array{
- *    type: GOFAST_IMPORT_MEMBER_TYPE_USER,
- *    name: string,
- *    last_name: string | null,
- *    first_name: string | null,
- *    email: string | null,
- *    account?: object | null,
- *  }[],
- *  user_lists: array{
- *    type: GOFAST_IMPORT_ITEM_TYPE_USERLIST,
- *    name: string,
- *    description?: string,
- *    memberships: array{role: string, member: array{name: string, type: string}}[],
- *    node?: object | null,
- *  }[],
- *  spaces: array{
- *    type: GOFAST_IMPORT_ITEM_TYPE_EXTRANET
- *      | GOFAST_IMPORT_ITEM_TYPE_GROUP
- *      | GOFAST_IMPORT_ITEM_TYPE_ORGANISATION,
- *    path: string,
- *    description?: string,
- *    memberships: array{role: string, member: array{name: string, type: string}}[],
- *    name?: string,
- *    parent_path?: string | null,
- *    node?: object | null,
- *  }[],
- * } $import_data Full description of the desired state after import of the platform.
+ * @param GfImportUsmProcessImportData $import_data
+ *   Full description of the desired state after import of the platform.
+ *
  * @return array Array of errors, empty when no errors need reporting.
  */
 function gofast_import__add_space_name_and_parent(&$import_data) {
@@ -1434,45 +1055,9 @@ function gofast_import__add_space_name_and_parent(&$import_data) {
  * - Is specified in the import data (not as a member).
  * - It already exists on the platform, and is unambiguous.
  *
- * @param array{
- *  users: array{
- *    type: GOFAST_IMPORT_MEMBER_TYPE_USER,
- *    name: string,
- *    last_name: string | null,
- *    first_name: string | null,
- *    email: string | null,
- *    source_id: int,
- *    account?: object | null,
- *  }[],
- *  user_lists: array{
- *    type: GOFAST_IMPORT_ITEM_TYPE_USERLIST,
- *    name: string,
- *    description?: string,
- *    source_id: int,
- *    memberships: array{
- *      role: string,
- *      item_source_id: int,
- *      member: array{name: string, type: string, source_id: int}
- *    }[],
- *    node?: object | null,
- *  }[],
- *  spaces: array{
- *    type: GOFAST_IMPORT_ITEM_TYPE_EXTRANET
- *      | GOFAST_IMPORT_ITEM_TYPE_GROUP
- *      | GOFAST_IMPORT_ITEM_TYPE_ORGANISATION,
- *    path: string,
- *    description?: string,
- *    source_id: int,
- *    memberships: array{
- *      role: string,
- *      item_source_id: int,
- *      member: array{name: string, type: string, source_id: int},
- *    }[],
- *    name?: string,
- *    parent_path?: string | null,
- *    node?: object | null,
- *  }[],
- * } $import_data Full description of the desired state after import of the platform.
+ * @param GfImportUsmProcessImportData $import_data
+ *   Full description of the desired state after import of the platform.
+ *
  * @return array Array of errors, empty when no errors need reporting.
  */
 function gofast_import__validate_user_list_members_will_exist(&$import_data) {
@@ -1536,36 +1121,162 @@ function gofast_import__validate_user_list_members_will_exist(&$import_data) {
 }
 
 /**
+ * Loads the list of current admin memberships on all imported space items
+ * matching an existing space node.
+ *
+ * Space items without an existing node (new spaces) will have an empty list set
+ * as default on the newly created 'final_admins' field.
+ *
+ * This step requires that the space node, if it exists, is already loaded onto
+ * the space import items.
+ *
+ * @see gofast_import__load_space_nodes() To load space nodes.
+ *
+ * @param GfImportUsmProcessImportData $import_data
+ *   Full description of the desired state after import of the platform.
+ *
+ * @return array Array of errors, empty when no errors need reporting.
+ */
+function gofast_import__load_spaces_admin_memberships(&$import_data) {
+  $errors = [];
+
+  $descriptors = gofast_import__get_space_property_descriptors();
+
+  foreach ($import_data['spaces'] as &$space) {
+    // Always initialise array.
+    $space['existing_admins'] = [];
+
+    // If new space, cannot have admins so we skip.
+    if (!isset($space['node'])) {
+      continue;
+    }
+
+    // Load list of node admins.
+    $memberships = $descriptors['memberships']['node']['get']($space['node']);
+    $memberships = array_filter($memberships, fn($m) => $m['role'] === GOFAST_IMPORT_SPACE_MEMBERSHIP_ROLE_ADMIN);
+    $memberships = array_map(fn($m) => $m['member'], $memberships);
+    $space['existing_admins'] = $memberships;
+  }
+  unset($space);
+
+  return $errors;
+}
+
+/**
+ * Computes a list of expected admin users after the import and stores it on
+ * each space import item.
+ *
+ * For new spaces, this is effectively filtering the list of memberships by the
+ * admin role.
+ *
+ * For existing spaces, this takes into account existing admin users, which may
+ * change roles due to the import as well as added admins.
+ *
+ * The computed list of admins after the import is stored in a 'final_admins'
+ * field on the space import items.
+ *
+ * This step requires that the list of existing admins, if any, is already
+ * loaded onto the space import item.
+ *
+ * @see gofast_import__load_spaces_admin_memberships() To load the list of
+ *  existing admins.
+ *
+ * @param GfImportUsmProcessImportData $import_data
+ *   Full description of the desired state after import of the platform.
+ *
+ * @return array Array of errors, empty when no errors need reporting.
+ */
+function gofast_import__compute_spaces_final_admin_members(&$import_data) {
+  $errors = [];
+
+  foreach ($import_data['spaces'] as &$space) {
+    // Merge existing admins and import membership updates.
+    $final_admins = [];
+
+    foreach ($space['existing_admins'] as $existing) {
+      $final_admins[$existing['type']][$existing['name']] = $existing;
+    }
+
+    foreach ($space['memberships'] as $membership) {
+      $member = $membership['member'];
+      // Membership is not admin ? Then the possibly already existing admin will
+      // no longer be one. Otherwise add the admin to the ones we already have.
+      // The structure of the array ensures unicity.
+      if ($membership['role'] !== GOFAST_IMPORT_SPACE_MEMBERSHIP_ROLE_ADMIN) {
+        unset($final_admins[$member['type']][$member['name']]);
+      } else {
+        $final_admins[$member['type']][$member['name']] = $member;
+      }
+    }
+
+    // Flatten back to array of admin members.
+    $space['final_admins'] = array_merge(
+      ...array_values(
+        array_map(
+          array_values(...),
+          $final_admins,
+        ),
+      ),
+    );
+  }
+  unset($space);
+
+  return $errors;
+}
+
+/**
+ * Validates that all spaces will have enough admins after import.
+ *
+ * The raised errors are returned as fatal errors.
+ *
+ * This step requires that the final list of admin memberships is loaded onto
+ * the spaces import items.
+ *
+ * @see GOFAST_IMPORT_MINIMUM_SPACE_ADMIN_COUNT For the definition of the
+ *  minimum number of admins
+ * @see gofast_import__compute_spaces_final_admin_members() To load the final
+ *  list of admins.
+ *
+ * @param GfImportUsmProcessImportData $import_data
+ *   Full description of the desired state after import of the platform.
+ *
+ * @return array Array of errors, empty when no errors need reporting.
+ */
+function gofast_import__validate_spaces_will_have_enough_admins(&$import_data) {
+  $errors = [];
+
+  foreach ($import_data['spaces'] as $space) {
+    $admin_count = count($space['final_admins']);
+    // Space will have admins ? No error to report.
+    if ($admin_count >= GOFAST_IMPORT_MINIMUM_SPACE_ADMIN_COUNT) {
+      continue;
+    }
+
+    // Space will no longer have admin users: Report an error.
+    // This typically should only ever happen with updated spaces, as new spaces
+    // should have support users added as admins automatically.
+    $errors[] = [
+      'type' => 'error',
+      'code' => 'space_missing_admin_members',
+      'message' => 'Space at "@path" would have @admin_count admin members after'
+        . ' import. A minimum of @minimum admins is required.',
+      'variables' => [
+        '@path' => $space['path'],
+        '@admin_count' => $admin_count,
+        '@minimum' => GOFAST_IMPORT_MINIMUM_SPACE_ADMIN_COUNT,
+      ],
+    ];
+  }
+
+  return $errors;
+}
+
+/**
  * Transforms import data into an array of simple commands to execute.
  *
- * @param array{
- *  users: array{
- *    type: GOFAST_IMPORT_MEMBER_TYPE_USER,
- *    name: string,
- *    last_name: string | null,
- *    first_name: string | null,
- *    email: string | null,
- *    account?: object | null,
- *  }[],
- *  user_lists: array{
- *    type: GOFAST_IMPORT_ITEM_TYPE_USERLIST,
- *    name: string,
- *    description?: string,
- *    memberships: array{role: string, member: array{name: string, type: string}}[],
- *    node?: object | null,
- *  }[],
- *  spaces: array{
- *    type: GOFAST_IMPORT_ITEM_TYPE_EXTRANET
- *      | GOFAST_IMPORT_ITEM_TYPE_GROUP
- *      | GOFAST_IMPORT_ITEM_TYPE_ORGANISATION,
- *    path: string,
- *    description?: string,
- *    memberships: array{role: string, member: array{name: string, type: string}}[],
- *    name?: string,
- *    parent_path?: string | null,
- *    node?: object | null,
- *  }[],
- * } $import_data Full description of the desired state after import of the platform.
+ * @param GfImportUsmProcessImportData $import_data
+ *   Full description of the desired state after import of the platform.
+ *
  * @return array{type:string}[] Commands array destined to be used in back-end. Describes
  *  sequential steps to apply to get desired import result.
  */
@@ -1590,34 +1301,9 @@ function gofast_import__transform_import_data_to_sequential_commands($import_dat
 /**
  * Generate import commands for users.
  *
- * @param array{
- *  users: array{
- *    type: GOFAST_IMPORT_MEMBER_TYPE_USER,
- *    name: string,
- *    last_name: string | null,
- *    first_name: string | null,
- *    email: string | null,
- *    account?: object | null,
- *  }[],
- *  user_lists: array{
- *    type: GOFAST_IMPORT_ITEM_TYPE_USERLIST,
- *    name: string,
- *    description?: string,
- *    memberships: array{role: string, member: array{name: string, type: string}}[],
- *    node?: object | null,
- *  }[],
- *  spaces: array{
- *    type: GOFAST_IMPORT_ITEM_TYPE_EXTRANET
- *      | GOFAST_IMPORT_ITEM_TYPE_GROUP
- *      | GOFAST_IMPORT_ITEM_TYPE_ORGANISATION,
- *    path: string,
- *    description?: string,
- *    memberships: array{role: string, member: array{name: string, type: string}}[],
- *    name?: string,
- *    parent_path?: string | null,
- *    node?: object | null,
- *  }[],
- * } $import_data Full description of the desired state after import of the platform.
+ * @param GfImportUsmProcessImportData $import_data
+ *   Full description of the desired state after import of the platform.
+ *
  * @return array{type:string}[] Commands array destined to be used in back-end. Describes
  *  sequential steps to apply to get desired import result.
  */
@@ -1678,34 +1364,9 @@ function gofast_import__generate_user_commands($import_data) {
 /**
  * Generate import commands for user lists.
  *
- * @param array{
- *  users: array{
- *    type: GOFAST_IMPORT_MEMBER_TYPE_USER,
- *    name: string,
- *    last_name: string | null,
- *    first_name: string | null,
- *    email: string | null,
- *    account?: object | null,
- *  }[],
- *  user_lists: array{
- *    type: GOFAST_IMPORT_ITEM_TYPE_USERLIST,
- *    name: string,
- *    description?: string,
- *    memberships: array{role: string, member: array{name: string, type: string}}[],
- *    node?: object | null,
- *  }[],
- *  spaces: array{
- *    type: GOFAST_IMPORT_ITEM_TYPE_EXTRANET
- *      | GOFAST_IMPORT_ITEM_TYPE_GROUP
- *      | GOFAST_IMPORT_ITEM_TYPE_ORGANISATION,
- *    path: string,
- *    description?: string,
- *    memberships: array{role: string, member: array{name: string, type: string}}[],
- *    name?: string,
- *    parent_path?: string | null,
- *    node?: object | null,
- *  }[],
- * } $import_data Full description of the desired state after import of the platform.
+ * @param GfImportUsmProcessImportData $import_data
+ *   Full description of the desired state after import of the platform.
+ *
  * @return array{type:string}[] Commands array destined to be used in back-end. Describes
  *  sequential steps to apply to get desired import result.
  */
@@ -1714,12 +1375,13 @@ function gofast_import__generate_user_list_commands($import_data) {
 
   $descriptors = gofast_import__get_user_list_property_descriptors();
   foreach ($import_data['user_lists'] as $user_list) {
+    $description = drupal_array_get_nested_value($user_list, $descriptors['description']['name']);
     // User list does not exist, create it from scratch
     if (!isset($user_list['node'])) {
       $commands[] = [
         'type' => GOFAST_IMPORT_COMMAND_TYPE_USER_LIST_CREATE,
         'name' => $user_list['name'],
-        'description' => $user_list['description'],
+        'description' => $description,
       ];
       foreach ($user_list['memberships'] as $membership) {
         $commands[] = [
@@ -1736,10 +1398,10 @@ function gofast_import__generate_user_list_commands($import_data) {
     $property_updates = [];
 
     $node_description = $descriptors['description']['node']['get']($user_list['node']);
-    if ($node_description !== $user_list['description']) {
+    if (!empty($description) && $node_description !== $description) {
       $property_updates[] = [
         'property' => 'description',
-        'value' => $user_list['description'],
+        'value' => $description,
         'old_value' => $node_description,
       ];
     }
@@ -1822,34 +1484,9 @@ function gofast_import__generate_user_list_commands($import_data) {
 /**
  * Generate import commands for spaces.
  *
- * @param array{
- *  users: array{
- *    type: GOFAST_IMPORT_MEMBER_TYPE_USER,
- *    name: string,
- *    last_name: string | null,
- *    first_name: string | null,
- *    email: string | null,
- *    account?: object | null,
- *  }[],
- *  user_lists: array{
- *    type: GOFAST_IMPORT_ITEM_TYPE_USERLIST,
- *    name: string,
- *    description?: string,
- *    memberships: array{role: string, member: array{name: string, type: string}}[],
- *    node?: object | null,
- *  }[],
- *  spaces: array{
- *    type: GOFAST_IMPORT_ITEM_TYPE_EXTRANET
- *      | GOFAST_IMPORT_ITEM_TYPE_GROUP
- *      | GOFAST_IMPORT_ITEM_TYPE_ORGANISATION,
- *    path: string,
- *    description?: string,
- *    memberships: array{role: string, member: array{name: string, type: string}}[],
- *    name?: string,
- *    parent_path?: string | null,
- *    node?: object | null,
- *  }[],
- * } $import_data Full description of the desired state after import of the platform.
+ * @param GfImportUsmProcessImportData $import_data
+ *   Full description of the desired state after import of the platform.
+ *
  * @return array{type:string}[] Commands array destined to be used in back-end. Describes
  *  sequential steps to apply to get desired import result.
  */
@@ -1892,6 +1529,7 @@ function gofast_import__generate_space_commands($import_data) {
   // Issue space import commands, they should be in the right order to not care
   // about missing dependencies.
   foreach ($space_schedule as $space) {
+    $description = drupal_array_get_nested_value($space, $descriptors['description']['name']);
     // Space is new.
     if (!isset($space['node'])) {
       $commands[] = [
@@ -1900,7 +1538,7 @@ function gofast_import__generate_space_commands($import_data) {
         'name' => $space['name'],
         'path' => $space['path'],
         'parent_path' => $space['parent_path'],
-        'description' => $space['description'],
+        'description' => $description,
       ];
       foreach ($space['memberships'] as $membership) {
         $commands[] = [
@@ -1921,10 +1559,10 @@ function gofast_import__generate_space_commands($import_data) {
 
     // Diff description.
     $node_description = $descriptors['description']['node']['get']($space['node']);
-    if ($node_description !== $space['description']) {
+    if (!empty($description) && $node_description !== $description) {
       $property_updates[] = [
         'property' => 'description',
-        'value' => $space['description'],
+        'value' => $description,
         'old_value' => $node_description,
       ];
     }

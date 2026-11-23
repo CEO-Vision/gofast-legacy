@@ -28,7 +28,7 @@
 <!-- Comments -->
 <?php global $base_url; ?>
 <?php foreach ($content as $group) : ?>
-    <?php foreach ($group["items"] as $item) : ?>
+    <?php foreach ($group["items"] as $item) : if (!empty($item['events'])): ?>
         <!--[if mso | IE]><table align="center" border="0" cellpadding="0" cellspacing="0" class="" role="presentation" style="width:992px;" width="992" bgcolor="transparent" ><tr><td style="line-height:0px;font-size:0px;mso-line-height-rule:exactly;"><![endif]-->
         <div style="background:transparent;background-color:transparent;margin:0px auto;max-width:992px;">
             <table align="center" border="0" cellpadding="0" cellspacing="0" role="presentation" style="background:transparent;background-color:transparent;width:100%;">
@@ -100,7 +100,7 @@
             ));
             $mail_loop_count++;
         } ?>
-    <?php endforeach; ?>
+    <?php endif;endforeach; ?>
 <?php endforeach; ?>
 <!--[if mso | IE]><table align="center" border="0" cellpadding="0" cellspacing="0" class="" role="presentation" style="width:992px;" width="992" bgcolor="transparent" ><tr><td style="line-height:0px;font-size:0px;mso-line-height-rule:exactly;"><![endif]-->
 <div style="background:transparent;background-color:transparent;margin:0px auto;max-width:992px;">

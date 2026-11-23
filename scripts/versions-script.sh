@@ -5,7 +5,7 @@
 # Author: CEO-Vision
 # Date: 01.08.2024
 # Version  1.0
-# GoFAST Version: 4.3.0_r2
+# GoFAST Version: 4.5.0
 # Description: Version Script for GoFAST MAIN
 # ==================================================================
 
@@ -18,12 +18,13 @@ echo -e GoFAST: ' \t '' \t ' ${gofast_version} ' \t ' Free and Open-source licen
 cd
 echo -e GoFAST File Browser: ' \t ' ${gofast_version} ' \t ' Free and Open-source licence GPL-2.0+
 
-ajax_library_version=$(cat /var/www/d7/sites/all/libraries/ajax_file_browser/version.txt)
+ajax_library_version=$(cat /var/www/d7/sites/all/libraries/ajax_file_browser/ITHitWebDAVClient.js | grep -E "IT Hit WebDAV Ajax Library.*" | grep -oE "[0-9\.]+$")
 echo -e WebDAV Ajax Library: ' \t ' $ajax_library_version ' \t ' Free and Open-source licence GPL-2.0+
 
 drupal_version=$(drush-d7 @d7 status | grep "Drupal version")
 drupal_version=${drupal_version#*:}
-echo -e Drupal: ' \t '' \t ' $drupal_version ' \t ' Free and Open-source licence GPL-2.0+
+drupal_version="$(echo "$drupal_version" | sed -Ee 's/^\s*|\s*$//g')" # trim drupal version for presentation
+echo -e "Drupal: \t \t  $drupal_version \t  Free and Open-source licence GPL-2.0+ \t Long-term Security Support by Tag1 D7ES"
 
 almalinux_version=$(cat /etc/almalinux-release | grep -o '[0-9]\.[0-9]')
 echo -e Almalinux: ' \t '' \t ' $almalinux_version ' \t ' ' \t ' Free and Open-source licence GPL-2.0+
@@ -42,15 +43,15 @@ openldap_version=$(yum info openldap | grep "Version" | head -1)
 openldap_version=${openldap_version#*:}
 echo -e OpenLDAP: ' \t '' \t '  $openldap_version ' \t ' Public licence OpenLDAP Public License version 2.8
 
-libreoffice_version=$(find /opt -wholename *libreoffice7*program/soffice)
+libreoffice_version=$(find /opt -wholename *libreoffice*program/soffice)
 libreoffice_version=$($libreoffice_version --version | sed 's/[^0-9]*\([0-9.]*\).*/\1/')
 echo -e Libre Office: ' \t '' \t ' $libreoffice_version ' \t ' Free licence LGPL-3.0+ and MPL-2.0
 
 mysql_version=$(mysql -V | grep -o -E "([0-9]+\.?){3}")
 echo -e MySQL: ' \t '' \t ' $mysql_version ' \t ' Free and Open-source licence GNU GPL
 
-jquery_last_version_folder=$(ls -r /var/www/d7/sites/all/modules/jquery_update/replace/jquery | head -n1)
-jquery_version=$(grep 'jQuery JavaScript Library v' /var/www/d7/sites/all/modules/jquery_update/replace/jquery/$jquery_last_version_folder/jquery.js | sed 's/[^0-9.]*\([0-9.]*\).*/\1/')
+jquery_last_version_folder=$(ls -r /var/www/d7/sites/all/modules/tag1d7es_jquery_update/replace/jquery | head -n1)
+jquery_version=$(grep 'jQuery JavaScript Library v' /var/www/d7/sites/all/modules/tag1d7es_jquery_update/replace/jquery/$jquery_last_version_folder/jquery.js | sed 's/[^0-9.]*\([0-9.]*\).*/\1/')
 echo -e jQuery: ' \t '' \t ' $jquery_version ' \t ' '\t ' Free licence MIT
 
 pdfjs_version=$(grep 'pdfjsVersion' /var/www/d7/sites/all/libraries/pdf/build/pdf.js | head -n 1 | awk -F "'" '{print $2}')

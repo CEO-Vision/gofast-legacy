@@ -9,7 +9,7 @@
     // Override onclick with implementation to prevent any other handler from applying
     // if link is disabled.
     if ($disabled) {
-      $on_click_impl = 'event.preventDefault();event.stopImmediatePropagation()';
+      $on_click_impl = "if(this.classList.contains('disabled')){event.preventDefault();event.stopImmediatePropagation();}";
     }
 
     print 'class="navi-link ' . $link_class .' '. (!empty($disabled) ? "disabled" : "").'" '

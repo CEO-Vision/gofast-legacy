@@ -1,0 +1,21 @@
+Tag1 D7ES jQuery Update 7.x-4.x, xxxx-xx-xx (development version)
+-----------------------
+
+Tag1 D7ES jQuery Update 7.x-4.5, 2026-01-14
+-----------------------
+- Improve setup/install docs, especially around how to safely replace legacy jquery_update
+  with the empty jquery_update bundled with this project.
+- Fixed jQuery library version reporting for proper compatibility detection by modules.
+- Add requirements check to detect legacy copies of jquery_update that need to be cleaned up.
+
+Tag1 D7ES jQuery Update 7.x-4.4, 2025-03-12
+-----------------------
+- Create an empty jquery_update module as a workaround for dependencies required by many modules.
+
+Tag1 D7ES jQuery Update 7.x-4.3, 2025-01-15
+-----------------------
+- Fixed failing tests.
+
+Tag1 D7ES jQuery Update 7.x-4.2, 2025-01-06
+-----------------------
+- Add option to use the latest version of jQuery 3.5.2 and jQuery UI 1.14.0.

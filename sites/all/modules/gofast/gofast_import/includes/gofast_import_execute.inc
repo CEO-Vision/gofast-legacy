@@ -594,7 +594,7 @@ function _gofast_import__execute_space_set_properties($command, &$context) {
     return;
   }
 
-  _gofast_import__update_user_list_context_with_node($context, $node);
+  _gofast_import__update_space_context_with_node($context, $node);
 }
 
 /**

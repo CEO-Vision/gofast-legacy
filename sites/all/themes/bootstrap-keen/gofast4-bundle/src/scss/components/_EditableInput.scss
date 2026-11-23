@@ -174,3 +174,40 @@
     background-size: cover;
     background-repeat: no-repeat;
 }
+
+.gofast__comment-tag{
+    border: 1px solid transparent;
+    border-radius: 20px;
+    cursor: pointer;
+    padding: 0px 0.3em 0px 0.23em;
+    text-decoration: none;
+    background-color: rgba(0,0,0,.1);
+    color: #2e2f32;
+}
+
+.gofast__comment-tag::after {
+    content: " ";
+    white-space: pre;
+}
+
+.gofast__comment-tag:hover {
+    color: black;
+}
+
+.gofast__comment-tag:hover .gofast__comment-tag-icon {
+    transform: scale(1.2);
+}
+
+.gofast__comment-tag-icon {
+    vertical-align: top;
+    border-style: none;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    overflow: hidden;
+    background: #EEE;
+    outline: none;
+    transition: .1s ease-out;
+    padding: 1px;
+    margin: 1px;
+}

@@ -58,4 +58,3 @@ window.InlineEditor = __webpack_require__(/*! @ckeditor/ckeditor5-build-inline/b
 
 /******/ })()
 ;
-//# sourceMappingURL=ckeditor-inline.bundle.js.map

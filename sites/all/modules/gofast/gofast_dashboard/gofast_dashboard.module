@@ -44,7 +44,7 @@ function gofast_dashboard_menu(){
   );
 
    $items['modal/%ctools_js/dashboard_add_to_dashboard'] = array(
-    'title' => t('Add as shortcut on dashboard', array(), array('context' => 'gofast_dashboard')),
+    'title' => 'Add a shortcut to bookmarks',
     'page callback' => 'gofast_dashboard_dashboard_add_shortcut',
     'type' => MENU_CALLBACK,
     'page arguments' => array(1),
@@ -58,7 +58,7 @@ function gofast_dashboard_menu(){
   );
 
    $items['modal/%ctools_js/dashboard_add_content_to_dashboard'] = array(
-    'title' => t('Add as shortcut on dashboard', array(), array('context' => 'gofast_dashboard')),
+    'title' => 'Add a shortcut to bookmarks',
     'page callback' => 'gofast_dashboard_dashboard_add_content',
     'type' => MENU_CALLBACK,
     'page arguments' => array(1),
@@ -72,7 +72,7 @@ function gofast_dashboard_menu(){
   );
 
    $items['modal/%ctools_js/dashboard_add_folder_to_dashboard'] = array(
-    'title' => t('Add as folder shortcut on dashboard', array(), array('context' => 'gofast_dashboard')),
+    'title' => 'Add a folder shortcut to bookmarks',
     'page callback' => 'gofast_dashboard_dashboard_add_folder',
     'type' => MENU_CALLBACK,
     'page arguments' => array(1),
@@ -194,7 +194,7 @@ function gofast_dashboard_display(){
     'toolbar' => $favorite_spaces_toolbar,
     'id' => 'dashboard_block_favorites_spaces'
   );
-  
+
   $favorite_folders_toolbar = "";
   $favorite_folders_toolbar = theme("dashboard_favorite_folders_toolbar");
 
@@ -203,7 +203,7 @@ function gofast_dashboard_display(){
     'toolbar' => $favorite_folders_toolbar,
     'id' => 'dashboard_block_favorites_folders'
   );
-  
+
   $favorite_content_toolbar = "";
   $favorite_content_toolbar = theme("dashboard_favorite_content_toolbar");
 
@@ -724,6 +724,26 @@ function gofast_dashboard_dashboard_element($element){
 
 ##### START TEMPLATE PREPROCESS SECTION #####
 
+function template_preprocess_dashboard_block_in_charge_spaces(&$variables) {
+  global $user;
+
+  // Get only what we need: field_person_in_charge, field_date and node title
+  $in_charge_spaces = db_select("field_data_field_person_in_charge", "pic")
+    ->fields("pic", []);
+  $in_charge_spaces->innerJoin("node", "n", "n.nid = pic.entity_id");
+  $in_charge_spaces->addField("n", "title");
+  $in_charge_spaces->leftJoin("field_data_field_date", "fcd", "fcd.entity_id = pic.entity_id");
+  $in_charge_spaces->addField("fcd", "field_date_value");
+  $in_charge_spaces = $in_charge_spaces->condition("n.status", 0, ">")
+    ->condition('pic.bundle', ["group", "extranet", "organisation"], "IN")
+    ->condition("pic.field_person_in_charge_target_id", $user->uid)
+    ->execute()->fetchAll();
+  $variables["in_charge_spaces"] = $in_charge_spaces;
+
+  // Bundle => icon mapping, should probably be put in a const and reused in ztree and filebrowser
+  $variables["bundle_icons"] = ["group" => "users", "extranet" => "globe", "organisation" => "sitemap"];
+}
+
 function template_preprocess_dashboard_block_favorites_folders(&$variables){
       global $user;
       global $base_url;
@@ -942,6 +962,10 @@ function gofast_dashboard_theme() {
     'dashboard_block_favorites_spaces' => array(
       'template' => 'tpl/blocks/dashboard-block-favorites-spaces'
     ),
+
+    'dashboard_block_in_charge_spaces' => array(
+      'template' => 'tpl/blocks/dashboard-block-in-charge-spaces'
+    ),
     
     'dashboard_block_favorites_folders' => array(
       'template' => 'tpl/blocks/dashboard-block-favorites-folders'
@@ -1019,7 +1043,7 @@ function gofast_dashboard_query_get_upcoming_meetings($account = NULL){
   $query->condition('n.status', '1', '=');
   
   // Get only conference my user is participating or conference my user is organizing
-  $query->innerJoin('field_data_field_existing_participants', 'fep', 'fep.entity_id = n.nid');
+  $query->leftJoin('field_data_field_existing_participants', 'fep', 'fep.entity_id = n.nid');
   $or = db_or();
   $or->condition('fep.field_existing_participants_target_id', $account->uid, '=');
   $or->condition('n.uid', $account->uid);
@@ -1028,10 +1052,77 @@ function gofast_dashboard_query_get_upcoming_meetings($account = NULL){
   // Get only conference whose the deadline has not been reached
   $query->innerJoin('field_data_field_date', 'fdate', 'fdate.entity_id = n.nid');
   $query->fields('fdate', array('field_date_value'));
-  $query->where('fdate.field_date_value >= DATE_SUB(NOW(), INTERVAL 1 DAY)');
+  $date_or = db_or();
+  $date_or->where('fdate.field_date_value >= DATE_SUB(NOW(), INTERVAL 1 DAY)');
   $query->orderBy('fdate.field_date_value', 'ASC');
-  
+
+  // Get conference end date as well for possible recurrence processing.
+  $query->innerJoin('field_data_field_end_date', 'fedate', 'fedate.entity_id = n.nid');
+  $query->fields('fedate', ['field_end_date_value']);
+
+  // Support recurrent meetings:
+  // Join on recurrence field and include conferences whose recurrence has not
+  // ended more than 1 day ago.
+  $recurrence_end_value_column = 'field_recurrence_end_date_value';
+  $query->leftJoin('field_data_field_recurrence_end_date', 'fred', "n.nid = fred.entity_id AND fred.entity_type = 'node'");
+  $query->leftJoin('field_data_field_recurrence', 'fr', "n.nid = fr.entity_id AND fr.entity_type = 'node'");
+  $query->addField('fred', $recurrence_end_value_column, 'recurrence_end_date_time');
+  $query->addField('fr', 'field_recurrence_value', 'recurrence_pattern');
+  $query->addExpression("fred.$recurrence_end_value_column IS NOT NULL", 'has_recurrence');
+  $date_or->condition(db_and()
+    ->isNotNull("fred.$recurrence_end_value_column")
+    ->where("fred.$recurrence_end_value_column >= DATE_SUB(NOW(), INTERVAL 1 DAY)"),
+  );
+
+  $query->condition($date_or);
+
   $meetings = $query->distinct()->execute()->fetchAll();
+
+  // Post process for recurrent meetings:
+  $time_zone = new DateTimeZone('UTC');
+  $one_day_ago = (new DateTime('now', $time_zone))->sub(new DateInterval('P1D'));
+
+  $process_recurrent_meetings = function($meeting) use ($one_day_ago, $time_zone) {
+    // Keep non-recurrent meetings as-is.
+    if (!$meeting->has_recurrence) {
+      return [$meeting];
+    }
+
+    $date_start = DateTimeImmutable::createFromFormat(
+      MYSQL_DATETIME_FORMAT,
+      $meeting->field_date_value,
+      $time_zone,
+    );
+    $date_end = DateTimeImmutable::createFromFormat(
+      MYSQL_DATETIME_FORMAT,
+      $meeting->field_end_date_value,
+      $time_zone,
+    );
+    $duration = $date_end->diff($date_start);
+
+    $recurrence = new \RRule\RRule($meeting->recurrence_pattern, $date_start);
+    // Only let the current, next or last occurrence be known.
+    $occurrence = gofast_conference__recurrence_get_current_next_or_last_occurrence($recurrence, $duration);
+
+    // If occurrence is outside of the range of events we are searching for,
+    // discard the meeting.
+    if ($occurrence < $one_day_ago) {
+      return [];
+    }
+
+    return [
+      (object) array_replace(
+        (array) $meeting,
+        ['field_date_value' => $occurrence->format(MYSQL_DATETIME_FORMAT)],
+      ),
+    ];
+  };
+
+  // Flat map processing function to allow filtering and mapping at the same time.
+  $meetings = array_merge(...array_map($process_recurrent_meetings, $meetings));
+  // Restore expected meeting order which may be messed up due to recurrent meetings:
+  usort($meetings, fn($a, $b) => $a->field_date_value <=> $b->field_date_value);
+  // End post processing for recurrent meetings.
 
   return $meetings;
 }

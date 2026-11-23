@@ -169,22 +169,21 @@ function gofast_cmis_node_get_base_path($node) {
  * @package gofast_cmis
  * This method returns the item id associated to a specified node.
  *
- * @param type $node the node on which we want its remote store id
- * @return string the node item id, null otherwise
+ * @param numeric|object|EntityDrupalWrapper $node the node on which we want its remote store id
+ * @return ?string the node item id, null otherwise
  */
 function gofast_cmis_node_get_item_id($node) {
+  /** @var EntityDrupalWrapper */
   $wrapper = entity_metadata_wrapper('node', $node);
-  if ($node->type === 'alfresco_item' || $node->type == 'article') {
+  if (in_array($wrapper->getBundle(), ['alfresco_item', 'article'])) {
     return $wrapper->{GOFAST_CMIS_REFERENCE_FIELD}->value();
   }
-  else {
-    if (gofast_og_is_space($node)) {
-      return $wrapper->{GOFAST_CMIS_FOLDER_REFERENCE_FIELD}->value();
-    }
-    else {
-      return null;
-    }
+
+  if (gofast_og_is_space($wrapper->value())) {
+    return $wrapper->{GOFAST_CMIS_FOLDER_REFERENCE_FIELD}->value();
   }
+
+  return null;
 }
 
 /**
@@ -469,6 +468,10 @@ function gofast_cmis_item_get_properties($item_id, $asAdmin = TRUE) {
  * @return $updated_item the item that has been updated
  */
 function gofast_cmis_item_update_properties($item_id, $properties, $asAdmin = TRUE, $force_js = FALSE) {
+  global $after_replication;
+  if ($after_replication) {
+    return;
+  }
   $repository_id = gofast_cmis_get_repository();
 
   if (!$repository_id) {
@@ -667,9 +670,9 @@ function gofast_cmis_item_get($item_id, $asAdmin = FALSE, $useCache = TRUE) {
  *
  * @param string $path the path to use
  * @param boolean $asAdmin execute as admin? Defaults to TRUE.
- * @return Object the item object from alfresco
+ * @return object|false the item object from alfresco, or false on error.
  */
-function gofast_cmis_item_get_by_path($path, $asAdmin = TRUE) {
+function gofast_cmis_item_get_by_path(string $path, bool $asAdmin = TRUE): object | false {
   $repository_id = gofast_cmis_get_repository();
 
   if (!$repository_id) {
@@ -693,6 +696,7 @@ function gofast_cmis_item_get_by_path($path, $asAdmin = TRUE) {
 
   global $cmis_sudo_admin;
   $cmis_sudo_admin = $asAdmin;
+  $path = str_replace("\'", "'", $path);
   $item = cmisapi_getObjectByPath($repository_id, rawurlencode($path));
 
   if (isset($item->properties['alfcmis:nodeRef'])) {
@@ -986,6 +990,16 @@ function gofast_cmis_get_raw_item_id($item_id) {
     return str_replace("workspace://SpacesStore/", "", $item_id);
   }
   return $item_id;
+}
+
+/**
+ * @package gofast_cmis
+ * Checks that a value is a plain Alfresco node reference (workspace://SpacesStore/<uuid>).
+ * @param string $node_ref the value to check
+ * @return bool
+ */
+function gofast_cmis_is_valid_node_ref($node_ref) {
+  return is_string($node_ref) && preg_match('#^workspace://SpacesStore/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$#i', $node_ref) === 1;
 }
 
 /**
@@ -1358,9 +1372,13 @@ function gofast_cmis_aspect_get_drupal_origin_reset_property() {
   }
 
   if ($node_ref !== NULL) {
+    // The id names the temporary file written below: only accept a node uuid
+    if (!gofast_cmis_is_valid_node_ref($node_ref)) {
+      return LANGUAGE_NONE;
+    }
+    $file_id = gofast_cmis_get_raw_item_id($node_ref);
     // Get the remote file content so we can extract language
     $content = gofast_cmis_item_get_content($node_ref);
-    $file_id = gofast_cmis_get_raw_item_id($node_ref);
 
     $public_path = DRUPAL_ROOT . '/' . variable_get('file_public_path', conf_path() . '/files');
     $file_path = "{$public_path}/{$file_id}";
@@ -1389,7 +1407,7 @@ function gofast_cmis_aspect_get_drupal_origin_reset_property() {
     }
   }
 
-  $command = sprintf('java -jar %s --language %s', GOFAST_TIKA_PATH, $file_path);
+  $command = gofast_tika_command('--language', $file_path);
 
   // Activate "tika_runs" flags.
   global $tika_runs;
@@ -1469,7 +1487,14 @@ function gofast_cmis_node_archive($node, $manually = false) {
       gofast_cmis_webservice_item_archive($node_ref);
     }
     if ($manually == false) {
-      node_save($node);
+        $node = gofast_prepare_node_save_technically($node);
+        $ruid = $node->revision_uid;
+        node_save($node);
+        db_update('node_revision')
+          ->fields(array('uid' => $ruid))
+          ->condition('nid', $node->nid)
+          ->execute();
+        cache_clear_all("field:node:$node->nid", 'cache_field');
     }
     return $node;
   }
@@ -1557,9 +1582,13 @@ function ceo_vision_archive_group($group) {
  */
 function gofast_cmis_item_eml_extract_name($node_ref) {
   if ($node_ref !== NULL) {
+    // The id names the temporary file written below: only accept a node uuid
+    if (!gofast_cmis_is_valid_node_ref($node_ref)) {
+      return '';
+    }
+    $file_id = gofast_cmis_get_raw_item_id($node_ref);
     // Get the remote file content so we can extract the subject
     $content = gofast_cmis_item_get_content($node_ref);
-    $file_id = gofast_cmis_get_raw_item_id($node_ref);
 
     $public_path = DRUPAL_ROOT . '/' . variable_get('file_public_path', conf_path() . '/files');
     $file_path = "{$public_path}/{$file_id}";
@@ -1568,7 +1597,7 @@ function gofast_cmis_item_eml_extract_name($node_ref) {
     fclose($written_file);
   }
 
-  $command = sprintf('java -jar %s -x %s', GOFAST_TIKA_PATH, $file_path);
+  $command = gofast_tika_command('-x', $file_path);
 
   // Activate "tika_runs" flags.
   global $tika_runs;
@@ -1847,7 +1876,7 @@ function gofast_cmis_detect_pdf_image($node){
     $file = fopen($file_path, "w+");
     fwrite($file, $content);
     fclose($file);
-    $command = sprintf('java -jar %s -T %s', GOFAST_TIKA_PATH, $file_path);
+    $command = gofast_tika_command('-T', $file_path);
     $result = array();
     try{
        ini_set('memory_limit', '-1');
@@ -1999,7 +2028,6 @@ function gofast_cmis_converted_async($node) {
   $new_mimetype = gofast_cmis_get_mimetype_extension_match_array()[$file_type];
   if ($new_mimetype) {
     $cmis_object = gofast_cmis_node_edit_item_get($node);
-    $new_mimetype = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
     $item_id = $cmis_object->properties["alfcmis:nodeRef"];
     $properties = array("cmis:mimetype" => $new_mimetype);
     gofast_cmis_item_update_properties($item_id, $properties, FALSE, TRUE);
@@ -2012,6 +2040,10 @@ function gofast_cmis_converted_async($node) {
 
   // Finally we change the extension on the Drupal node
   $new_title = str_replace(".".$extension, ".".$file_type, $node->title);
+  // GOFAST-14435 - We need to be able to change the document name for the
+  // extension to fit the document content type regardless of whether a naming
+  // rule is present or not.
+  gofast_cmis_webservice_item_update_properties($item_id, ["gofast:preventRename" => "false"]);
   $node->title = $new_title;
   $new_filename = str_replace(".".$extension, ".".$file_type, $node->field_filename[LANGUAGE_NONE][0]["value"]);
   $node->field_filename[LANGUAGE_NONE][0]["value"] = $new_filename;
@@ -2060,12 +2092,6 @@ function gofast_cmis_restore_document_alfresco_into_private_space($node){
     $buffer = curl_exec($ch);
 
 
- // Si le document n'est pas "exclu" on créé un fichier dans lequel on met
-  // le contenu brut du document afin que Tika puisse en extraire le texte.
-  $file_path = DRUPAL_ROOT . '/' . variable_get('file_public_path', conf_path() . '/files');
-  $file = fopen("{$file_path}/_gofast_restore_deleted_tmp", 'w+');
-  fwrite($file, $buffer);
-  fclose($file);
 
     $inserted_item = gofast_cmis_item_content_insert($destination_item_id, $node->title, $buffer, file_get_mimetype($node->title), array(), false);
     if(isset($inserted_item->properties["alfcmis:nodeRef"])){
@@ -2130,8 +2156,14 @@ function gofast_cmis_restore_document_alfresco_into_private_space($node){
 // check if a path is mirrored without checking if it's inside a mirrored location
 function gofast_cmis_check_mirroring($path) {
   $item = gofast_cmis_item_get_by_path($path);
-  $reference = $item->properties['alfcmis:nodeRef'];
+  $reference = isset($item->properties['alfcmis:nodeRef']) ? $item->properties['alfcmis:nodeRef'] : NULL;
+  if (empty($reference)) {
+    return FALSE;
+  }
   $folder_parents = gofast_cmis_webservice_get_node_parents($reference);
+  if (!is_array($folder_parents)) {
+    return FALSE;
+  }
   $nb_parents = count($folder_parents);
   if($nb_parents > 1){
     return TRUE;
@@ -2168,12 +2200,18 @@ function gofast_cmis_is_path_mirrored_api_callback() {
  * Note: calls CMIS API and gofast_cmis_webservice_get_node_parents
  *
  * @param string $path Path of the item
- * @return string[] Paths of the parents
+ * @return string[]|null Paths of the parents. May be null in the case the path does not exist or other error conditions.
  */
 function gofast_cmis_get_path_parents($path) {
   $item = gofast_cmis_item_get_by_path($path);
+  // Check that we retrieved an actual item/that the item exists.
+  if (!isset($item->id)) {
+    return NULL;
+  }
+
   $reference = $item->properties['alfcmis:nodeRef'];
-  return gofast_cmis_webservice_get_node_parents($reference);
+
+  return gofast_cmis_webservice_get_node_parents($reference) ?: NULL;
 }
 
 /**
@@ -2185,32 +2223,31 @@ function gofast_cmis_get_path_parents($path) {
  * 2. '/foo/bar'
  * 3. '/foo/bar/baz'
  *
- * Stops checking once the $search value is found, an entry in the cache is not
- * set, or after all paths have been checked.
+ * Stops checking once one of the $search value is found, an entry in the cache
+ * is not set, or after all paths have been checked.
  *
  * @template TDefault
  * @param string[] $path_segments The split path to check for.
- * @param array<string,bool|null> $cache The cache array
- * @param bool $search The searched value, defaults to TRUE
- * @param TDefault $default The default value when not found, defaults to NULL.
- * @return bool|TDefault The found value in cache or default
+ * @param array<string,array{value:bool|null}|null> $cache The cache array
+ * @param array<bool|null> $search The searched values, defaults to TRUE and NULL
+ * @return array{value:bool}|null The found value in cache or default
  */
-function _gofast_cmis_get_value_from_prefix_cache($path_segments, $cache, $search = TRUE, $default = NULL) {
+function _gofast_cmis_get_value_from_prefix_cache($path_segments, $cache, $search = [TRUE, NULL]) {
   $prefix = '';
   for ($i = 0; $i < count($path_segments); ++$i) {
     $prefix .= '/' . $path_segments[$i];
     if (!isset($cache[$prefix])) {
-      return $default; // not in cache
+      return NULL; // not in cache
     }
-    if ($cache[$prefix] === $search) {
-      return $search; // is searched value
+    if (in_array($cache[$prefix]['value'], $search, TRUE)) {
+      return $cache[$prefix]; // is searched value
     }
   }
   return $cache[$prefix]; // not searched value
 }
 
 /**
- * check if a path is mirrored _or_ inside a mirrored location
+ * Check if a path is mirrored _or_ inside a mirrored location.
  *
  * The passed-in path must start with /Sites, and have each segment separated
  * by a single slash (/)
@@ -2219,7 +2256,8 @@ function _gofast_cmis_get_value_from_prefix_cache($path_segments, $cache, $searc
  * using this function on a document's parent(s) to check for mirrored folders.
  *
  * @param string $location_path The path to check if it is within a mirrored location
- * @return bool True if the path is mirrored, false otherwise.
+ * @return bool|null True if the path is mirrored, false otherwise. Returns NULL
+ *  when some element along the path does not exist.
  */
 function gofast_cmis_is_path_mirrored($location_path) {
   // Cached implementation relies on these invariants:
@@ -2235,19 +2273,17 @@ function gofast_cmis_is_path_mirrored($location_path) {
   // cache on the fly
   if (!isset($drupal_static_fast['prefix_cache'])) {
     $drupal_static_fast['prefix_cache'] = &drupal_static(__FUNCTION__, [
-      '/Sites' => FALSE,
-      '/Sites/_Groups' => FALSE,
-      '/Sites/_Extranet' => FALSE,
-      '/Sites/_Public' => FALSE,
+      '/Sites' => ['value' => FALSE],
     ]);
   }
+  /** @var (array<string, array{ value: bool | null } | null>) $cache */
   $cache = &$drupal_static_fast['prefix_cache'];
 
   // try get cached value
   $location_segments = explode('/', trim($location_path, '/'));
   $cached_value = _gofast_cmis_get_value_from_prefix_cache($location_segments, $cache);
-  if ($cached_value !== NULL) {
-    return $cached_value;
+  if (!empty($cached_value)) {
+    return $cached_value['value'];
   }
   // cache miss, compute path mirror status and update cache
 
@@ -2264,7 +2300,7 @@ function gofast_cmis_is_path_mirrored($location_path) {
   for ($i = 0; $i < $space_segments_length; ++$i) {
     $prefix .=  '/' . $location_segments[$i];
     if (!isset($cache[$prefix])) {
-      $cache[$prefix] = FALSE; // space cannot be mirrored
+      $cache[$prefix]['value'] = FALSE; // space cannot be mirrored
     }
   }
 
@@ -2276,23 +2312,63 @@ function gofast_cmis_is_path_mirrored($location_path) {
     $prefix .= '/' . $location_segments[$i];
     if (isset($cache[$prefix])) {
       // in case previously mirrored path was added but some parents were missing.
-      $is_mirrored = $cache[$prefix];
+      $is_mirrored = $cache[$prefix]['value'];
       continue;
     }
 
     // check current path mirroring
     $prefix_parents = gofast_cmis_get_path_parents($prefix);
+    $prefix_locations = NULL;
+    if (!isset($prefix_parents)) {
+      // Write to cache and early-return for non-existent path.
+      // We assume non-existent paths are mirrored for safety
+      // (usually more restrictions on mirrored paths)
+      $cache[$prefix]['value'] = NULL;
+      return NULL;
+    }
+
     $is_mirrored = count($prefix_parents) > 1;
+    $prefix_locations = array_map(fn($l) => $l . '/' . $location_segments[$i], $prefix_parents);
+
     // add all retrieved values to cache
-    foreach ($prefix_parents as $prefix_parent) {
-      $prefix_parent .= '/' . $location_segments[$i];
-      if (!isset($cache[$prefix_parent])) {
-        $cache[$prefix_parent] = $is_mirrored;
+    foreach ($prefix_locations as $prefix_location) {
+      if (!isset($cache[$prefix_location])) {
+        $cache[$prefix_location]['value'] = $is_mirrored;
       }
     }
   }
 
   return $is_mirrored;
+}
+
+/**
+ * Check if an alfresco node (document, folder) has multiple parents using Alfresco's API.
+ *
+ * This can tell if a document is multi-filed or if a folder is itself mirrored.
+ * It does *not* detect if a node is within a mirrored location.
+ *
+ * @see gofast_cmis_is_path_mirrored() to check if a given path is in a mirrored
+ *  location.
+ * @see gofast_cmis_webservice_get_node_parents() To get a list of a node's
+ *  locations from its reference, allowing to know if it is in a mirrored
+ *  location or multi-filed.
+ *
+ * @param string $node_reference The alfresco reference of the node or node UUID.
+ * @return bool Whether the node has multiple locations.
+ */
+function gofast_cmis_alfresco_node_has_multiple_parents($node_reference) {
+  // Attempt to fetch just one secondary parent, which only exists if the folder
+  // node has multiple parents, meaning it is mirrored.
+  // We need to call the API as the admin to prevent getting an unexpected
+  // permission denied API error when the user cannot access the folder's main
+  // location.
+  $node_parent_results = gofast_cmis_alfresco_api_call_get_node_parents($node_reference, [
+    'as_admin' => TRUE,
+    'include' => [],
+    'max_items' => 1,
+    'where' => '(isPrimary=false)',
+  ]);
+  return $node_parent_results->list->pagination->count !== 0;
 }
 
 /** this is a temporary logic, we should add a "path" column to gofast_bookmark_folder to avoid such heavy treatment and get the actual location which was selected instead of a location with the same content */
@@ -2353,9 +2429,7 @@ function gofast_cmis_get_tid_from_nid($nid){
  * @return bool
  */
 function gofast_cmis_is_node_confidential(int $nid) {
-  // Load the term by tid and check for name of Confidential data
-  $tid = gofast_cmis_get_tid_from_nid($nid);
-  return (isset($tid) && taxonomy_term_load($tid)->name == "Confidential Data"); 
+  return gofast_taxonomy_is_node_confidential($nid);
 }
 
 /**
@@ -2365,9 +2439,7 @@ function gofast_cmis_is_node_confidential(int $nid) {
  * @return bool
  */ 
 function gofast_cmis_is_node_internal(int $nid): bool {
-  $tid = gofast_cmis_get_tid_from_nid($nid);
-  return (isset($tid) && taxonomy_term_load($tid)->name == "Internal Distribution"); 
-  
+  return gofast_taxonomy_is_node_criticity_internal($nid);
 }
 
 /**
@@ -2413,11 +2485,13 @@ function gofast_cmis_is_node_internal(int $nid): bool {
 /**
  * Get a CMIS item's parent spaces, taking mirroring into account
  * @param string $item_id The CMIS item id to get the space parents of
+ * @param object|null $account User account object for which the yielded parent
+ *  spaces should be accessible.
  * @return Generator<int, array{path: string, cmis_item: object, segments_to_parent: string[]}>
  *  A generator of arrays of space path, space CMIS item, and remaining path segments to parents.
  */
-function gofast_cmis_item_get_mirrored_parent_spaces($item_id) {
-  $node_parents = gofast_cmis_webservice_get_node_parents($item_id);
+function gofast_cmis_item_get_mirrored_parent_spaces($item_id, $account = NULL) {
+  $node_parents = gofast_cmis_webservice_get_node_parents($item_id, $account);
 
   foreach ($node_parents as $parent_path) {
     $segments = explode("/", $parent_path);
@@ -2465,6 +2539,127 @@ function gofast_cmis_node_get_mirrored_parent_spaces($node) {
 }
 
 /**
+ * Given the Alfresco raw node reference of the parent item and a collection of filenames
+ * Check if there is any non-folder item missing the gofast:nid prop
+ */
+function gofast_cmis_has_unreplicated_items($raw_parent_ref, $filenames) {
+  if (empty($filenames)) {
+    return FALSE;
+  }
+  gofast_cmis_activate_alfresco_connection();
+
+  // Get GoFAST Aspect ID
+  $namespace_id = db_select('alf_namespace', 'a', ["target" => "alfresco"])
+    ->fields('a', ['id'])
+    ->condition('uri', 'gofast.model', '=')
+    ->execute()->fetchField();
+  $qname_id = db_select('alf_qname', 'qn', ["target" => "alfresco"])
+    ->fields('qn', ['id'])
+    ->condition('local_name', 'nid', '=')
+    ->condition('ns_id', $namespace_id, '=')
+    ->execute()
+    ->fetchField();
+
+  // Get parent item ID(s)
+  $parent_id = db_select('alf_node', 'an_sub', ["target" => "alfresco"])
+      ->fields('an_sub', ['id'])
+      ->condition('uuid', $raw_parent_ref, '=')
+      ->execute()->fetchCol();
+
+  // Main query
+  $query = db_select('alf_node', 'n', ["target" => "alfresco"])
+      ->distinct()
+      ->fields('n', ['id', 'uuid']);
+  $query->addField('np', 'string_value', 'node_name');
+  $query->addField('np_nid', 'long_value', 'nid');
+  $query->join('alf_node_properties', 'np', 'n.id = np.node_id');
+  $query->join('alf_qname', 'qn', 'np.qname_id = qn.id');
+  $query->join('alf_child_assoc', 'ca', 'n.id = ca.child_node_id');
+  $query->leftJoin('alf_node_properties', 'np_nid', 'n.id = np_nid.node_id AND np_nid.qname_id = :qname_id', [
+      ':qname_id' => $qname_id
+  ]);
+  $query->addExpression("CASE WHEN np_nid.long_value IS NOT NULL AND np_nid.long_value > 0 THEN 1 ELSE 0 END", 'has_gofast_nid');  $query->condition('qn.local_name', 'name', '=');
+  $query->condition('np.string_value', $filenames, 'IN');
+  $query->condition('ca.parent_node_id', $parent_id, 'IN');
+  $results = $query->execute()->fetchAll();
+
+  // Will return TRUE if at least 1 item is unreplicated
+  foreach ($results as $result) {
+    if ($result->has_gofast_nid == 0) {
+      return TRUE;
+    }
+  }
+  return FALSE;
+}
+
+/**
+ * Given a parent item and a collection of filenames
+ * Check if there is any mirrored folder
+ */
+function gofast_cmis_has_mirrored_items($raw_parent_ref, $filenames) {
+  if (empty($filenames)) {
+    return FALSE;
+  }
+  gofast_cmis_activate_alfresco_connection();
+
+  // Get parent item ID(s)
+  $parent_id = db_select('alf_node', 'an_sub', ["target" => "alfresco"])
+    ->fields('an_sub', array('id'))
+    ->condition('uuid', $raw_parent_ref, '=')
+    ->execute()->fetchCol();
+
+  // Get documents IDs
+  $query = db_select('alf_node', 'n', ["target" => "alfresco"])
+    ->distinct()
+    ->fields('n', ['id']);
+  $query->join('alf_node_properties', 'np', 'n.id = np.node_id');
+  $query->join('alf_child_assoc', 'ca', 'n.id = ca.child_node_id');
+  $query->condition('np.string_value', $filenames, 'IN');
+  $query->condition('ca.parent_node_id', $parent_id, 'IN');
+  $documents_ids = $query->execute()->fetchCol();
+
+  if (empty($documents_ids)) {
+    return FALSE;
+  }
+
+  // Get all relationships
+  $query = db_select('alf_child_assoc', 'ca', ["target" => "alfresco"])
+    ->distinct()
+    ->fields('ca', ['child_node_id', 'parent_node_id']);
+  // Join to get parent node details
+  $query->join('alf_node', 'p', 'ca.parent_node_id = p.id');
+  $query->addField('p', 'uuid', 'parent_uuid');
+  // Left join to fetch grandparent-child relationships (if they exist)
+  $query->leftJoin('alf_child_assoc', 'gca', 'p.id = gca.child_node_id');
+  $query->leftJoin('alf_node', 'gp', 'gca.parent_node_id = gp.id');
+  $query->addField('gp', 'id', 'grandparent_id');
+  $query->condition('ca.child_node_id', $documents_ids, 'IN');
+  // Group by parent ID and grandparent ID to remove duplicates
+  $query->groupBy('ca.parent_node_id');
+  $query->groupBy('gp.id');
+  $relationships = $query->execute()->fetchAll();
+
+  $parent_grandparent_count = [];
+  foreach ($relationships as $relationship) {
+      $parent_id = $relationship->parent_node_id;
+      if (!isset($parent_grandparent_count[$parent_id])) {
+          $parent_grandparent_count[$parent_id] = 0;
+      }
+      if ($relationship->grandparent_id) {
+          $parent_grandparent_count[$parent_id]++;
+      }
+  }
+  // Detect if any parent has more than one grandparent
+  foreach ($parent_grandparent_count as $parent_id => $count) {
+      if ($count > 1) {
+          return TRUE;
+      }
+  }
+
+  return FALSE;
+}
+
+/**
  * Given an Alfresco prop name, get the matching QName ID.
  */
 function gofast_cmis_get_qname_id($prop_name, $namespace = FALSE) {
@@ -2502,4 +2697,19 @@ function gofast_cmis_get_file_size($nid){
 
 function gofast_cmis_node_can_preview_dwg($nid){
   return gofast_cmis_get_file_size($nid) < GOFAST_CMIS_DWG_PREVIEW_MAX_SIZE;
+}
+
+/**
+ * Get the current Alfresco version label of a node
+ *
+ * @param object $node
+ *
+ * @return string
+ *   The version label, empty when Alfresco did not answer
+ */
+function gofast_cmis_get_document_version($node)
+{
+  $versions = gofast_cmis_webservice_item_get_versions(gofast_cmis_node_get_item_id($node), TRUE, TRUE);
+
+  return is_array($versions) ? $versions[0]->label : "";
 }

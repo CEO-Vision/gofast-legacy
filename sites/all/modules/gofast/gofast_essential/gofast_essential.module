@@ -357,6 +357,7 @@ function gofast_essential_get_node_content_part($part, $nid){
       module_load_include('inc', 'apachesolr','apachesolr_search.pages');
       $_GET["content_part"] = TRUE;
       $content = drupal_render(apachesolr_search_custom_page("core_search", $text));
+      $content .= ob_get_clean();
       $content .= "
         <script src='/sites/all/modules/facetapi/facetapi.js'></script>
         <script src='/sites/all/modules/gofast/gofast_search/js/facetapi_collapsible.js'></script>

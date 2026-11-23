@@ -1,14 +1,38 @@
 <div class="card card-custom ">
     <div class="card-body p-0">
         <div class="pt-0 px-8 pb-4">
-            <div class="gutter-b mt-4 d-flex">
+            <div class="gutter-b mt-6 d-flex">
                 <div class="position-relative GofastUserProfile__picture" style="width:40%">
                     <?php empty($account->picture->filename) ? $filename = "/sites/all/themes/bootstrap-keen/keenv2/assets/media/users/blank.png" : $filename = "/sites/default/files/pictures/" . $account->picture->filename ; ?>
-                    <img class="img-responsive h-100px w-100px p-0 symbol symbol-100" src="<?php echo $filename; ?>"></img>
-                    <?php if ($self || user_access("gofast administer users")) :?>
-                    <div class="position-absolute bottom-0" style="z-index: 1; left: 70px; <?php if ($self || !isset($profile_account_settings)):  ?>margin-right:20px; <?php endif; ?>">
-                        <a href="/gofast/nojs/user/edit-avatar/<?= $account->uid ?>" class="ctools-use-modal GofastUserProfile__avatar--icon p-1">
-                            <i class="fas fa-pen-square fa-2x p-1"></i>
+                    <img class="img-responsive h-100px w-100px p-0 symbol symbol-100 image-input-outline" src="<?php echo $filename; ?>"></img>
+                    <?php if ($self || gofast_user_is_business_admin()) :?>
+                    <div
+                        class="position-absolute right-0 top-0"
+                        style="
+                            z-index: 1;
+                            left: 70px;
+                            <?php if ($self || !isset($profile_account_settings)):  ?>margin-right:20px; <?php endif; ?>
+                            "
+                    >
+                        <a
+                            href="/gofast/nojs/user/edit-avatar/<?= $account->uid ?>"
+                            class="ctools-use-modal"
+                        >
+                            <label
+                                id="gofastUserAvatarButton"
+                                class="
+                                    btn btn-xs btn-icon btn-circle btn-white
+                                    btn-hover-text-primary btn-shadow
+                                    position-absolute right-0 top-0
+                                    transform-center-to-top-right
+                                "
+                                data-action="change"
+                                data-toggle="tooltip"
+                                title=""
+                                data-original-title="<?= t('Change user avatar', [], ["context" => "gofast:gofast_user"]) ?>"
+                            >
+                                <i class="fas fa-edit icon-sm text-muted"></i>
+                            </label>
                         </a>
                     </div>
                     <?php endif; ?>

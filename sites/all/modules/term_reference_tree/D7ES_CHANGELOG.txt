@@ -1,0 +1,7 @@
+Term Reference Tree 7.x-1.x, xxxx-xx-xx (development version)
+------------------------
+
+Term Reference Tree 7.x-1.12, 2026-02-25
+-----------------------
+- Fix PHP 8.4 compatibility by correcting count() function syntax in _term_reference_tree_output_list_level()
+- Use check_plain() for entity title, not filter_xss().

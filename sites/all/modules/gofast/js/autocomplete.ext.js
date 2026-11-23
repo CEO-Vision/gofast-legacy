@@ -52,6 +52,7 @@
       var xACLab = $(this).find('.xAC-label'),
           link = xACLab.length && xACLab.find('a[href!="#"]'),
           href = link.length && link.attr('href');
+      xACLab.remove();
 
       if (href) {
         Gofast.processAjax(href, false);
@@ -489,6 +490,7 @@
         var $label = $node.clone().addClass('xAC-label');
         $label.insertAfter($input);
       }
+      this.input.value = "";
 
       $(this.input).trigger('autocompleteSelect', [node]);
     },

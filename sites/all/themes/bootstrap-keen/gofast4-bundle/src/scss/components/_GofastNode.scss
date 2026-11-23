@@ -170,7 +170,7 @@
     margin-top: -22px;
     position: absolute;
     right: 100%;
-    top: 40%;
+    top: 45%;
     transition: width 0.5s, background-color 0.5s, padding-left 0.5s;
     width: 33px;
     z-index: 112;
@@ -205,6 +205,16 @@
 
 .card.card-custom.card-simplified{
     box-shadow: rgb(82 63 105 / 5%) -10px 0px 20px 0px;
+}
+
+
+// Bootstrap only goes up to 12, so we declare those to go beyond
+.order-13 {
+    order: 13;
+}
+
+.order-14 {
+    order: 14;
 }
 
 .sideContent.reduced .gofastTab .nav-item .nav-link .nav-text {
@@ -262,4 +272,13 @@ html i:where(.fa, .fas, .far, .fal, .fad, .fab){ // but we still want Font Aweso
 
 .ck-dropdown__arrow {
     z-index: 1 !important;
+}
+
+.ck-content {
+    min-height: auto !important;
+}
+
+#manage-locations.xeditable-trigger.disabled {
+  pointer-events: visible;
+  cursor: not-allowed;
 }

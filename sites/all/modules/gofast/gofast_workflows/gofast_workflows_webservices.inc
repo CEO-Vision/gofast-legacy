@@ -243,83 +243,150 @@ function gofast_workflows_api_validate_access_path() {
     exit;
 }
 
+/**
+ * Computes a translated string for the assignation type.
+ *
+ * @param string $assignation_type One of 'work', 'validation' or 'signature'
+ * @return string The translated associated human readable label in lowercase.
+ */
+function gofast_workflows_get_human_readable_assignation_type($assignation_type) {
+    return match ($assignation_type) {
+        'work' => t('work', [], ['context' => 'gofast:gofast_workflows']),
+        'validation' => t('validation', [], ['context' => 'gofast:gofast_workflows']),
+        'signature' => t('signature', [], ['context' => 'gofast:gofast_workflows']),
+        // let the match throw if the given value is not mapped.
+    };
+}
 
-function gofast_workflows_api_validate_access_document(){
-    $return = array("node_access" => "false");
+/**
+ * Endpoint handler for bonita's standard process initialization form to verify
+ * if a user needs exceptional access to a document to warn the process' creator
+ *
+ * Expects GET parameters:
+ * - reference
+ * - uid
+ * - selected_assignation_types
+ * @return never Prints response body to stdout and exits
+ */
+function gofast_workflows_api_validate_access_document() {
+    // Ensure we were passed the needed GET parameters
+    if (!isset($_GET["reference"], $_GET["uid"], $_GET['selected_assignation_types'])) {
+        print 0;
+        exit;
+    }
 
-    if(isset($_GET["reference"]) && isset($_GET["uid"])){
-
-        //on verifie le type de parametre reference que l'on a recu
-        //car on peut aussi bien recevoir une reference de doc ou une url
-        $type_file_param = $_GET["type_file_param"];
-        if($type_file_param == "url"){
-            $node_infos = gofast_workflows_get_node_infos_from_url($_GET["reference"]);
-            if($node_infos == null){
-                $nid = null;
-            //$node_infos = $node_infos = array("node_title" => "", 'node_path' => "", 'node_nid' => "", 'node_reference' => "workspace://SpacesStore/");
-            }else{
-                $reference = $node_infos["node_reference"];
-                $nid = gofast_ajax_file_browser_get_nid_from_reference($reference);
-            }
-
-        }else{
-            //on recupere le nid de la reference recu
-            //on split la chaine de reference recu car potentiellement on peut recevoir plusieurs documents
-            $array_ref = explode(";", $_GET["reference"]);
-            if($array_ref[0] == ""){
-                unset($array_ref[0]);
-            }
-
-            $nid = array();
-            if(count($array_ref) > 0){
-                foreach($array_ref as $key_ref=>$ref){
-                    if($ref != ""){
-                        $nid[] = $ref;
-                    }
-                }
-            }
-
+    //on verifie le type de parametre reference que l'on a recu
+    //car on peut aussi bien recevoir une reference de doc ou une url
+    $type_file_param = $_GET["type_file_param"];
+    if ($type_file_param == "url") {
+        $node_infos = gofast_workflows_get_node_infos_from_url($_GET["reference"]);
+        if ($node_infos == null) {
+            $nid = null;
+        //$node_infos = $node_infos = array("node_title" => "", 'node_path' => "", 'node_nid' => "", 'node_reference' => "workspace://SpacesStore/");
+        } else {
+            $reference = $node_infos["node_reference"];
+            $nid = gofast_ajax_file_browser_get_nid_from_reference($reference);
         }
-        //on split le parametre uid selon le caractere ; car on est succeptible d'en recevoir plusieurs
-        //$array_uids = split(";", $_GET["uid"]);
-        $array_uids = explode(";", $_GET["uid"]);
-        if(count($array_uids) > 0){
-            foreach($array_uids as $uid){
-                if($uid != ""){
-                    $account = user_load_by_name(trim($uid));
-                    //if no account is found, make sure no success ("0") value is returned to Bonita
-                    if (!$account) {
-                        print ""; exit;
-                    }
-                    if(is_array($nid)){
-                        foreach($nid as $mynid){
-                            $node = node_load(trim($mynid));
-                            if(node_access('view', $node, $account)){
-                                $return = array("node_access" => "true");
-                            }else{
-                                $return = t("The @title document is not available for @username. If the user were to view the document, the document would be made exceptionally available to the user for the duration of the task. Please be sure to know what you're doing before submitting.", ["@title" => $node->title, "@username" => ($account->ldap_user_givenname[LANGUAGE_NONE][0]["value"] . " " . $account->ldap_user_sn[LANGUAGE_NONE][0]["value"])], ["context" => "gofast:gofast_workflows"]);
-                                  print $return;
-                                 exit;
-                            }
-                        }
-                    }else{
-                        if($nid){
-                            $node = node_load(trim($nid));
-                            if(node_access('view', $node, $account)){
-                                $return = array("node_access" => "true");
-                            }else{
-                                $return = t("The @title document is not available for @username. If the user were to view the document, the document would be made exceptionally available to the user for the duration of the task. Please be sure to know what you're doing before submitting.", ["@title" => $node->title, "@username" => ($account->ldap_user_givenname[LANGUAGE_NONE][0]["value"] . " " . $account->ldap_user_sn[LANGUAGE_NONE][0]["value"])], ["context" => "gofast:gofast_workflows"]);
-                                 print $return;
-                                 exit;
-                            }
-                        }
-                    }
+
+    } else {
+        //on recupere le nid de la reference recu
+        //on split la chaine de reference recu car potentiellement on peut recevoir plusieurs documents
+        $array_ref = explode(";", $_GET["reference"]);
+        if ($array_ref[0] == "") {
+            unset($array_ref[0]);
+        }
+
+        $nid = array();
+        if (!empty($array_ref)) {
+            foreach ($array_ref as $key_ref => $ref) {
+                if($ref != ""){
+                    $nid[] = $ref;
                 }
+            }
+        }
+
+    }
+    //on split le parametre uid selon le caractere ; car on est succeptible d'en recevoir plusieurs
+    //$array_uids = split(";", $_GET["uid"]);
+    $array_uids = explode(";", $_GET["uid"]);
+    $array_uids = array_unique($array_uids);
+    $array_uids = array_filter($array_uids, fn($uid) => $uid !== '');
+
+    // Do not process userlist ids. The following code was designed to handle users only.
+    $array_uids = array_filter($array_uids, fn($uid) => !preg_match("/^ul_\d+$/", $uid));
+
+    if (empty($array_uids)) {
+        print 0;
+        exit;
+    }
+
+    // Parse assignation types parameter. The following comment describes the
+    // expected type before additional parsing operations.
+    /** @var stdClass&object{types:string[],users:object} */
+    $selected_assignation_types_raw_decoded = json_decode($_GET['selected_assignation_types']);
+
+    // Construct new parsed object by applying the following operations:
+    // - Cast users from stdClass to array because it represents a key-value mapping from 'uid'
+    // (actually username) to additional info
+    // - Rename keys to snake_case to keep a consistent casing
+    // The following comment represents the expected type after parsing
+    /** @var stdClass&object{types:string[],users:array<string,stdClass&object{assignation_types:string[]}>} */
+    $selected_assignation_types = (object)[
+        'types' => $selected_assignation_types_raw_decoded->types,
+        'users' => array_map(
+            fn($u) => (object)['assignation_types' => $u->assignationTypes],
+            (array)$selected_assignation_types_raw_decoded->users,
+        ),
+    ];
+
+    $output = [];
+    foreach ($array_uids as $uid) {
+        $account = user_load_by_name(trim($uid));
+        //if no account is found, make sure no success ("0") value is returned to Bonita
+        if (!$account) {
+            print ""; exit;
+        }
+        // if nid is a single string or scalar, it is wrapped in a single element array,
+        // if it is an array then the value is unchanged. Other data types should be irrelevant.
+        $nid = (array) $nid;
+        foreach ($nid as $mynid) {
+            $node = node_load(trim($mynid));
+            if (!node_access('view', $node, $account)) {
+                $assignation_terms = array_map(
+                    'gofast_workflows_get_human_readable_assignation_type',
+                    $selected_assignation_types->users[$uid]->assignation_types,
+                );
+
+                $assignation_terms_html = array_map(
+                    fn($t) => "<b>$t</b>",
+                    $assignation_terms,
+                );
+
+                $assignation_list = gofast_format_enumerated_list($assignation_terms_html);
+                $username = gofast_user_display_name($account);
+                $output['users'][$uid]['exceptional_availability_message'] = t(
+                    "The !title document is not available for @username. If the user were to view the document, the document would be made exceptionally available to the user for the duration of their !assignation_list. Please be sure to know what you're doing before submitting.",
+                    [
+                        "!title" => format_string(
+                            '<b>@title</b>',
+                            ['@title' => $node->title],
+                        ),
+                        "@username" => $username,
+                        "!assignation_list" => $assignation_list,
+                    ],
+                    ["context" => "gofast:gofast_workflows"],
+                );
             }
         }
     }
 
-     print 0; exit;
+    if (empty($output)) {
+        print 0;
+        exit;
+    }
+
+    // exits
+    gofast_api_success($output);
 }
 
 
@@ -427,7 +494,7 @@ function gofast_workflows_api_sendmail(){
               'body' => str_replace("+", " ", rawurldecode($message_author)),
               'title' => "GOFAST",
               'subject' => str_replace("+", " ", rawurldecode($subject_author)),
-              'footer' => t('Workflow powered by GoFAST', array(), array('context' => 'gofast:gofast_workflows')),
+              'footer' => t('Workflow powered by @sitename', array('@sitename' => variable_get('site_name', 'GoFAST')), array('context' => 'gofast:gofast_workflows')),
             );
             gofast_mail_queue_api_queue_ext($mail,  $recpt, time());
 
@@ -561,7 +628,7 @@ function gofast_workflow_api_sendmail_taskdone_send($destinataire, $step, $title
         'body' => $message,
         'title' => t("Workflow", array(), array('langcode' => $destinataire_object->language, 'context' => "gofast:gofast_workflows")),
         'subject' => $subject,
-        'footer' =>  t('Workflow powered by GoFAST', array(), array('langcode' => $destinataire_object->language, 'context' => 'gofast:gofast_workflows')),
+        'footer' =>  t('Workflow powered by @sitename', array('@sitename' => variable_get('site_name', 'GoFAST')), array('langcode' => $destinataire_object->language, 'context' => 'gofast:gofast_workflows')),
     );
     
     gofast_mail_queue_api_queue_ext($mail,  $recpt, time());
@@ -1457,7 +1524,7 @@ function gofast_api_get_workflow_profil($params){
     }
 
    //load profil
-   $profil = gofast_workflows_profil_get($id);
+   $profil = reset(gofast_workflows_profil_get($id));
 
    if(!isset($profil->id)){
         gofast_api_internal_server_error("Unable to load a wf profil with id : " . $id);
@@ -1480,7 +1547,7 @@ function gofast_api_get_workflow_profil($params){
 
         //TODO manage version param
          //load profil
-        $profils = gofast_workflows_profil_get_all_from_type_wf($type);
+        $profils = gofast_workflows_profil_get(type_wf: $type);
 
         if(count($profils) == 0){
              gofast_api_internal_server_error("Unable to load profils with type : " . $type);
@@ -1706,4 +1773,42 @@ function gofast_workflows_api_validate_contribute_document(){
   }
     
   gofast_api_success($output);
+}
+
+/**
+ * Trigger a full redirect to vanilla Bonita resource for History BDM.
+ *
+ * @param int $case_id
+ * @return void
+ */
+function gofast_workflows_legacy_details($case_id) {
+    $process_current = gofast_workflows_get_processcurrent_from_pid($case_id);
+    $process_history_infos = gofast_workflows_get_processhistory_infos_from_pid($case_id)[0];
+
+    $documents = array();
+    foreach($process_current as $content_current){
+        switch($content_current->NAME){
+            case "Document":
+                $documents[] = trim($content_current->CONTENT_VALUE);
+                break;
+            default:
+                break;
+        }
+    }
+    
+    gofast_workflows_activate_bonita_connection();
+    $type = db_select("arch_process_instance", "api", ["target" => "bonita"])
+        ->fields("api", ["name"])
+        ->condition("id", $process_history_infos->persistenceId)
+        ->execute()->fetchCol()[0] ?? "";
+
+    $_GET["details"] = TRUE;
+    $_GET["pid"] = $case_id;
+    $_GET["hid"] = $process_history_infos->persistenceId;
+    $_GET["title"] = $process_history_infos->TITLE;
+    $_GET["type"] = $type;
+    $_GET["documents"] = json_encode($documents);
+
+    $output = theme("workflow_complete_dashboard_details");
+    return gofast_create_page_content($output, "content-fluid");
 }

@@ -19,22 +19,11 @@ function gofast_ajax_file_browser_init() {
      return;
   }
 
-  if(!isset($_SESSION['archived_spaces'])){
-    $request_field_archived = db_query("SELECT * FROM {field_data_field_archive} where field_archive_value = 1");
-    $fields_archived = $request_field_archived->fetchAll();
-    $archived_spaces=array();
-    foreach($fields_archived as $field_archived ){
-        array_push($archived_spaces , '/alfresco/webdav/Sites' .  str_replace('/', '/_' , gofast_cmis_space_get_drupal_path($field_archived->entity_id))) ;
-    }
-    $_SESSION['archived_spaces'] = json_encode($archived_spaces);
-  }else{
-    $archived_spaces = json_decode($_SESSION['archived_spaces']);
-  }
-  
-  $params['gofast_ajax_file_browser']['archived_spaces'] = $archived_spaces;
   $params['alfresco']['alf_ticket'] = gofast_cmis_get_user_ticket();
   global $user;
   $params['gofast_ajax_file_browser']['private_space_nid'] = gofast_og_get_user_private_space($user, FALSE);;
+  $documents_form_defaults = variable_get("documents_form_defaults", []);
+  $params["gofast_ajax_file_browser"]["has_upload_modal"] = $documents_form_defaults["gofast_metadata_has_upload_modal"] ?? 0;
   drupal_add_js($params,'setting');
 
   libraries_load('ztree');
@@ -223,8 +212,51 @@ function gofast_ajax_file_browser_preprocess_page(&$vars) {
           'MOBILE_BROWSER_UPLOAD_STATUS_DOCUMENT_ERROR' => MOBILE_BROWSER_UPLOAD_STATUS_DOCUMENT_ERROR
         ),
         'maxUploadSize' => file_upload_max_size(),
-        'ticket' => gofast_cmis_ticket_validate()
+        'maxSpaceNameLength' => GOFAST_CMIS_MAX_FOLDER_NAME_LENGTH,
+        'ticket' => gofast_cmis_ticket_validate(),
+        'timezone' => variable_get('date_default_timezone', date_default_timezone_get()),
           ), 'setting');
+
+      // Exposed to the browser by IT Hit's design: WebDAV Drive reads it from the dav11 URL
+      $ithit_license_id = variable_get('gofast_ithit_license_id', '');
+      if ($user->uid && !empty($ithit_license_id)) {
+        drupal_add_js(array('ithitLicenseId' => $ithit_license_id), 'setting');
+      }
+}
+
+/**
+ * Implements hook_cronapi().
+ */
+function gofast_ajax_file_browser_cronapi($op, $job = NULL) {
+  $items['gofast_ajax_file_browser_ithit_license'] = array(
+    'description' => 'Refresh the IT Hit license ID from the repository',
+    'rule' => '17 3 * * *',
+    'callback' => 'gofast_ajax_file_browser_refresh_ithit_license',
+  );
+  return $items;
+}
+
+/**
+ * Daily refresh, so that a license replaced on the repository reaches every platform without an update.
+ */
+function gofast_ajax_file_browser_refresh_ithit_license() {
+  if (!function_exists('gofast_update_get_enterprise_password')) {
+    return;
+  }
+
+  $response = drupal_http_request(GOFAST_REPOSITORY_SERVER . 'sources/gofast-standard/licenses/ithit_license_id', array(
+    'headers' => array('Authorization' => 'Basic ' . base64_encode(gofast_update_get_enterprise_user() . ':' . gofast_update_get_enterprise_password())),
+    'timeout' => 10,
+  ));
+  $license_id = isset($response->data) ? trim($response->data) : '';
+  if ($response->code != 200 || !preg_match('/^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i', $license_id)) {
+    watchdog('gofast_ajax_file_browser', 'IT Hit license ID not retrieved from the repository (HTTP @code)', array('@code' => $response->code), WATCHDOG_WARNING);
+    return;
+  }
+  if ($license_id != variable_get('gofast_ithit_license_id', '')) {
+    variable_set('gofast_ithit_license_id', $license_id);
+    watchdog('gofast_ajax_file_browser', 'IT Hit license ID updated from the repository', array(), WATCHDOG_NOTICE);
+  }
 }
 
 /**
@@ -491,13 +523,17 @@ function gofast_ajax_file_browser_get_nid_from_href($href = null, $as_admin = FA
       $href = $parent_path;
     }
     $gid = gofast_og_get_group_id_from_title_without_cmis($parent_path, TRUE);
-    gofast_cmis_create_node_programmatically($reference, $person, $name, FALSE, $language, FALSE, $gid, $href, "");    
-    $nid = db_select("node", "n")
-      ->fields("n", array("nid"))
-      ->condition("title", $name)
-      ->orderBy("created", "DESC")
-      ->range(0, 1)
-      ->execute()->fetchCol()[0];
+    // $gid might be null if not in a space, like the top-level
+    // "FOLDERS TEMPLATES" folder
+    if ($gid !== NULL) {
+      gofast_cmis_create_node_programmatically($reference, $person, $name, FALSE, $language, FALSE, $gid, $href, "");
+      $nid = db_select("node", "n")
+        ->fields("n", array("nid"))
+        ->condition("title", $name)
+        ->orderBy("created", "DESC")
+        ->range(0, 1)
+        ->execute()->fetchCol()[0];
+    }
   }
   if ($nid) {
     //check if nid exists
@@ -825,6 +861,12 @@ function gofast_ajax_file_browser_add_template_folder_form($form, &$form_state){
           )
         );
 
+        // Ensure object form property is initialised before use (does not
+        // happen automatically like with array)
+        if (!isset($form['#groups']['group_template_file'])) {
+          $form['#groups']['group_template_file'] = new stdClass();
+        }
+
         if (empty($list_templates)) {
           $form['empty_ztree_templates'] = array(
             '#markup' => t('There is no templates available yet.', array(), array('context' => 'gofast:gofast_cmis')),
@@ -835,9 +877,6 @@ function gofast_ajax_file_browser_add_template_folder_form($form, &$form_state){
         }
 
         $form['ztree_templates']['#group'] = 'group_template_file';
-        if (!isset($form['#groups']['group_template_file'])) {
-          $form['#groups']['group_template_file'] = new stdClass();
-        }
         $form['#groups']['group_template_file']->children[] = 'ztree_templates';
         $form['#group_children']['ztree_templates'] = 'group_template_file';
 
@@ -1272,7 +1311,7 @@ function gofast_ajax_file_browser_get_download_result() {
  * @param array $files
  *   An array of files to be downloaded.
  */
-function gofast_ajax_file_browser_initialize_file_download_process(array $files) {
+function gofast_ajax_file_browser_initialize_file_download_process(array $files, $options = []) {
   $process_uuid = $_POST["process_uuid"];
   
   // Validate the selected files before proceeding.
@@ -1288,8 +1327,8 @@ function gofast_ajax_file_browser_initialize_file_download_process(array $files)
   } else {
     // Otherwise, proceed with initializing node compression.
     try {
-      $options = array("download" => true, "AS_ADMIN" => true);
-      
+      $options['download'] = true;
+      $options['AS_ADMIN'] = true;
       $zip_node_ref = gofast_cmis_initialize_node_compression($validatedNodes->nodes->passedValidation, $options);
       // Create a COMPLETE result.
       $result = (object) [
@@ -1497,6 +1536,10 @@ function gofast_ajax_file_browser_get_disabled_tabs($nid = null) {
     if(gofast_og_is_user_private_space($node)){
       array_push($disabled_tabs, "users_stats");
       $tooltips["users_stats"] = t('No users statistics for private space', array(), array('context' => 'gofast:gofast_og'));
+    }
+    if (function_exists('gofast_stats_user_can_view_space_stats') && !gofast_stats_user_can_view_space_stats($node->nid)) {
+      array_push($disabled_tabs, "users_stats", "documents_stats");
+      $tooltips["users_stats"] = $tooltips["documents_stats"] = t('Reserved to the administrators of the space', array(), array('context' => 'gofast:gofast_stats'));
     }
     global $user;
     if (!in_array('administrator member', gofast_og_get_user_final_roles_for_space('node', $node->nid, $user->uid), true)) {

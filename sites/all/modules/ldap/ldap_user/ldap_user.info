@@ -22,3 +22,7 @@ files[] = tests/ldap_user.test
 
 stylesheets[all][] = ldap_user.css
 configure = admin/config/people/ldap/user
+
+version = 7.x-2.7
+project = ldap
+datestamp = 1775066467

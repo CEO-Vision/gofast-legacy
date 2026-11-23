@@ -51,6 +51,7 @@ define('GOFAST_IMPORT_MEMBER_COLUMN_MAPPING', [
  *  backend: string,
  *  sheet_index?: int,
  *  sheet_name?: string,
+ *  active_sheet: boolean,
  * } $options Spreadsheet import options.
  * @return array{0:array|null,1:null|mixed} A tuple with errors at
  *  index 0, and an array of commands at index 1.
@@ -59,10 +60,10 @@ function gofast_import__parse_user_space_membership_spreadsheet($options) {
   gofast_import__require_phpspreadsheet_autoload();
   $spreadsheet = gofast_import__open_spreadsheet($options);
 
-  if (isset($options['sheet_name'])) {
-    $spreadsheet->getSheetByName($options['sheet_name']);
-  } elseif (isset($options['sheet_index'])) {
-    $spreadsheet->setActiveSheetIndex($options['sheet_index']);
+  // Worksheet selection based on options.
+  [$errors, $worksheet] = gofast_import__select_worksheet($spreadsheet, $options);
+  if (gofast_import__is_errors_array_fatal($errors)) {
+    return [$errors, NULL];
   }
 
   // starting coordinates for parsing and iterating on the membership table
@@ -70,7 +71,6 @@ function gofast_import__parse_user_space_membership_spreadsheet($options) {
   $start_column = 'A';
   $start_row = 2;
 
-  $worksheet = $spreadsheet->getActiveSheet();
   $row_iter = $worksheet->getRowIterator($start_row);
 
   // parse type headers on first row, expects all cells in the row (except the
@@ -128,11 +128,18 @@ function gofast_import__parse_user_space_membership_spreadsheet($options) {
   }
   $row_iter->next();
 
-  // Parse userlist/group properties
-  // Parse description row
-  $description_row = $row_iter->current();
-  $aggregate_items_mapping = gofast_import__parse_description_row($description_row, $aggregate_items_mapping);
-  $row_iter->next();
+  // Parse userlist/group property rows.
+  // Property rows are all rows under the headers before the user number column
+  // lists incrementing user numbers. Properties listed here, such as the
+  // description for spaces and user lists are collected in an array in the
+  // 'properties' key of the item (space or user list) array.
+  // Prevent iterator from rewinding before used rows
+  $row_iter->resetStart($row_iter->current()->getRowIndex());
+  [$property_errors, $aggregate_items_mapping] = gofast_import__parse_property_rows($row_iter, $aggregate_items_mapping, $start_column);
+  $errors = [...$errors, ...$property_errors];
+  if (gofast_import__is_errors_array_fatal($errors)) {
+    return [$errors, NULL];
+  }
 
   // parse member/membership part (rest of the table)
   // members include user lists and users.
@@ -172,7 +179,7 @@ function gofast_import__parse_user_space_membership_spreadsheet($options) {
     ),
   ];
 
-  return [NULL, $import_data];
+  return [$errors, $import_data];
 }
 
 /**
@@ -190,6 +197,72 @@ function gofast_import__open_spreadsheet($options) {
       ->load($path),
     // implement other file import methods here (e.g.: gofast node)
   };
+}
+
+/**
+ * Selects the correct worksheet from the provided spreadsheet according to import options.
+ *
+ * @param PhpSpreadsheet\Spreadsheet $spreadsheet The spreadsheet from which to
+ *  get the worksheet.
+ * @param array{
+ *  file_path?: string|null,
+ *  logger?: callable(string $type, string $message, array $variables=, int<0,7> $severity=): void,
+ *  output_logger?: callable(string $type, string $message, array $variables=, int<0,7> $severity=): void,
+ *  runner_uid: numeric,
+ *  backend: string,
+ *  sheet_index?: int,
+ *  sheet_name?: string,
+ *  active_sheet: boolean,
+ * } $options Spreadsheet import options.
+ * @return array{0:array[],1:PhpSpreadsheet\Worksheet\Worksheet|NULL} A tuple of
+ *  errors and a worksheet result object.
+ */
+function gofast_import__select_worksheet($spreadsheet, $options) {
+  $worksheet = NULL;
+  $errors = [];
+  // Select by name:
+  if (isset($options['sheet_name'])) {
+    $worksheet = $spreadsheet->getSheetByName($options['sheet_name']);
+    if ($worksheet == NULL) {
+      $errors[] = [
+        'type' => 'error',
+        'code' => 'sheet_name_not_exists',
+        'message' => 'Sheet "@name" does not exist.',
+        'variables' => [
+          '@name' => $options['sheet_name'],
+        ],
+      ];
+      return [$errors, NULL];
+    }
+    return [$errors, $worksheet];
+  }
+
+  // Select by index:
+  if (isset($options['sheet_index'])) {
+    $sheet_count = $spreadsheet->getSheetCount();
+    if ($options['sheet_index'] >= $sheet_count) {
+      $errors[] = [
+        'type' => 'error',
+        'code' => 'sheet_index_out_of_bounds',
+        'message' => 'The sheet index @index is out of bounds, the maximum value is @max_index. (@sheet_count sheets)',
+        'variables' => [
+          '@index' => $options['sheet_index'],
+          '@max_index' => $sheet_count - 1,
+          '@sheet_count' => $sheet_count,
+        ]
+        ];
+      return [$errors, NULL];
+    }
+    return [$errors, $spreadsheet->getSheet($options['sheet_index'])];
+  }
+
+  // Select active sheet:
+  if ($options['active_sheet']) {
+    return [$errors, $spreadsheet->getActiveSheet()];
+  }
+
+  // Default: select first sheet.
+  return [$errors, $spreadsheet->getSheet(0)];
 }
 
 /**
@@ -367,9 +440,11 @@ function gofast_import__try_parse_element_identifiers_row($row, $column_type_map
 }
 
 /**
- * Parse user list and spaces description row.
+ * Parse user list and spaces property rows.
  *
- * @param PhpSpreadsheet\Worksheet\Row $row Description row
+ * @param PhpSpreadsheet\Worksheet\RowIterator $row_iterator Iterator on rows
+ *  starting at the first row possibly containing the property data. This
+ *  iterator may be updated by the execution of this function.
  * @param array<
  *    string,
  *    array{
@@ -382,7 +457,8 @@ function gofast_import__try_parse_element_identifiers_row($row, $column_type_map
  *      memberships: array{role: string, member: array{name: string, type: string}}[],
  *    }
  *  > $aggregate_items_mapping Previous mapping.
- * @return array<
+ * @param string $table_start_column Column identifier of the first table column.
+ * @return array{0: array[], 1: array<
  *    string,
  *    array{
  *      type: GOFAST_IMPORT_ITEM_TYPE_USERLIST
@@ -392,24 +468,53 @@ function gofast_import__try_parse_element_identifiers_row($row, $column_type_map
  *      name?: string,
  *      path?: string,
  *      memberships: array{role: string, member: array{name: string, type: string}}[],
- *      description?: string,
+ *      properties?: array<string, string>,
  *    }
- *  > New mapping with added description based on contents of provided row.
+ *  >} Tuple of errors and new mapping with added properties based on contents of iterated rows.
  */
-function gofast_import__parse_description_row($row, $aggregate_items_mapping) {
-  // Row class does not implement indexing or any method for random access of cells.
-  $row_cell_iter = $row->getCellIterator();
-  foreach ($aggregate_items_mapping as $column => &$aggregate_item) {
-    $row_cell_iter->seek($column);
-    $cell = $row_cell_iter->current();
-    $value = $cell->getValue();
-    if (!empty($value)) {
-      $aggregate_item['description'] = $value;
-    }
-  }
-  unset($aggregate_item);
+function gofast_import__parse_property_rows($row_iterator, $aggregate_items_mapping, $table_start_column) {
+  $seen_names = [];
+  $duplicated_properties = [];
+  $errors = [];
 
-  return $aggregate_items_mapping;
+  foreach ($row_iterator as $row) {
+    $row_cell_iterator = $row->getCellIterator($table_start_column);
+    $property_name_cell = $row_cell_iterator->current();
+    $property_name = $property_name_cell->getValue();
+
+    // We have reached the end of the property rows.
+    if (is_numeric($property_name) || empty($property_name)) {
+      break;
+    }
+
+    if (isset($seen_names[$property_name])) {
+      $duplicated_properties[$property_name] = $property_name;
+    }
+    $seen_names[$property_name] = TRUE;
+
+    // Get value inside row for all columns with an aggregate item.
+    foreach ($aggregate_items_mapping as $column => &$aggregate_item) {
+      $row_cell_iterator->seek($column);
+      $property_value = $row_cell_iterator->current()->getValue();
+      if (!empty($property_value)) {
+        $aggregate_item['properties'][$property_name] = $property_value;
+      }
+    }
+    unset($aggregate_item);
+  }
+
+  foreach ($duplicated_properties as $name) {
+    $errors[] = [
+      'type' => 'warning',
+      'code' => 'duplicated_property',
+      'message' => 'Property row "@property_name" is duplicated, only the last specified values will be used.',
+      'variables' => [
+        '@property_name' => $name,
+      ],
+    ];
+  }
+
+  return [$errors, $aggregate_items_mapping];
 }
 
 /**
@@ -607,7 +712,7 @@ function gofast_import__parse_membership_value($value, $item_type) {
  *      name?: string,
  *      path?: string,
  *      memberships: array{role: string, member: array{name: string, type: string}}[],
- *      description?: string,
+ *      properties: array{ description?: string },
  *    }
  *  > &$aggregate_items_mapping The mapping of columns to aggregate entities.
  *  Used to lookup the specific cells we need, memberships are added as they are

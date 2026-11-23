@@ -22,7 +22,7 @@ $link_default_value = isset($xeditable_vars['link_value']) ? $xeditable_vars['li
 print '>'.$link_default_value.'</a>';
 if($xeditable_vars['delegated'] == 'true') {
   print '<span class="xeditable-values"></span>';
-  if($xeditable_vars['name'] !='body' && !in_array('manual_ckeditor' ,$xeditable_vars['wrapper_class']) ){
+  if($xeditable_vars['name'] !='body'){
     if(gofast_essential_is_essential() && ($detect->isMobile() || $detect->isTablet())){
       print '<span class="xeditable-trigger btn btn-xs btn-default" alt="' . t('Edit', array(), array('context' => 'gofast')) . '"><span class="fa fa-pencil" ></span></span>';
     }else{

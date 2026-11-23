@@ -219,7 +219,10 @@ function gofast_mobile_theme()
     ),
     'gofast_mobile_landscape_mode_page' => array(
       'template' => 'tpl/gofast-mobile-landscape-mode-page'
-    )
+    ),
+    'gofast_mobile_home_page_webform_browser' => array(
+      'template' => 'tpl/gofast-mobile-home-page-webform-browser',
+    ),
   );
 
   return $themes;
@@ -1350,12 +1353,17 @@ function gofast_mobile_get_node_info($node)
     $info .= '<p class="text-danger bg-warning">' . t("This document is archived, you can't change its content", array(), array('context' => 'gofast:gofast_retention')) . '</p>';
   }
 
-  $is_confidential = isset($node->field_criticity['und'][0]['tid']) && taxonomy_term_load($node->field_criticity['und'][0]['tid'])->name == "Confidential Data";
+  $is_confidential = gofast_taxonomy_is_node_confidential($node);
   if ($is_confidential) {
-    $info .= '<p class="text-danger bg-warning">' . t("This document is confidential: you can't download and share it", array(), array('context' => 'gofast:gofast_cmis')) . '</p>';
+    $info .= '<p class="text-danger bg-warning">' . gofast_og_is_space($node) ? t("This space is confidential", array(), array('context' => 'gofast:gofast_cmis')) : t("This document is confidential: you can't download and share it", array(), array('context' => 'gofast:gofast_cmis')) . '</p>';
   }
 
-  $is_internal = isset($node->field_criticity['und'][0]['tid']) && taxonomy_term_load($node->field_criticity['und'][0]['tid'])->name == "Internal Distribution";
+  $is_internal = gofast_taxonomy_is_node_criticity_internal($node);
+
+  if ($is_confidential && $is_internal) {
+    $info['message'] .= "<br>";
+  }
+
   if ($is_internal) {
     $info .= '<p class="text-danger bg-warning">' . t("This document is for Internal Distribution: you can't download and share it", array(), array('context' => 'gofast:gofast_cmis')) . '</p>';
   }
@@ -1496,24 +1504,27 @@ function gofast_mobile_home_page_navigation()
     'dashboard' => [
       'icon' => 'fas fa-tachometer-alt',
       'id' => 'mobileHomeTab_dashboard',
-      'label' => t('Dashboard'),
       'href' => 'navDashboard',
       'content' => gofast_dashboard_container_display()
     ],
     'filebrowser' => [
       'icon' => 'fas fa-folder-open',
       'id' => 'mobileHomeTab_filebrowser',
-      'label' => t('Spaces and documents', array(), array('context' => 'gofast:gofast_mobile')),
       'href' => 'navBrowser',
       'content' => gofast_mobile_is_phone() ? theme('gofast_mobile_ajax_file_browser') : theme('ajax_file_browser', array('browser' => TRUE))
     ],
     'activity' => [
       'icon' => 'fas fa-list-alt',
       'id' => 'mobileHomeTab_activity',
-      'label' => t('Activity feed'),
       'href' => 'navActivity',
       'content' => gofast_activity_feed_display_page(FALSE)
-    ]
+    ],
+    'webforms' => [
+      'icon' => 'fas fa-file-signature',
+      'id' => 'mobileHomeTab_webforms',
+      'href' => 'navWebforms',
+      'content' => theme('gofast_mobile_home_page_webform_browser'),
+    ],
   ];
 
   return theme('gofast_mobile_activity_dashboard_browser_page', array('links' => $tabs));
@@ -1561,11 +1572,10 @@ function gofast_calendar_simplified()
   $deadlines = $query->execute()->fetchAll();
 
   // Meetings
-  $private_space_gid = $user->{GOFAST_OG_USER_PRIVATE_SPACE}[LANGUAGE_NONE][0]['target_id'];
   $filters = [["field" => "n.type", "value" => "conference"]];
   $start_date = date('Y-m-d H:i:s', strtotime("-1 day"));
   $end_date = date('Y-m-d H:i:s', strtotime("+1 year"));
-  $meetings = gofast_calendar_get_conferences_and_tasks_query($private_space_gid, $start_date, $end_date, TRUE, $available_gids, $filters);
+  $meetings = gofast_calendar_get_conferences_and_tasks_query($start_date, $end_date, TRUE, $available_gids, $filters);
 
   return theme('gofast_mobile_simplified_calendar', array('deadlines'=> $deadlines, 'meetings' => $meetings));
 }
@@ -1640,105 +1650,3 @@ function template_preprocess_gofast_mobile_panel(&$variables)
     $variables['context'] = 'search';
   }
 }
-
-/************************************************************************
- * OVERRIDE CKEDITOR BEHAVIOUR
- *
- * Mandatory to be able to load a different profile on mobile version
- ************************************************************************/
-
-/**
- * Override Ckeditor default pre_render_function
- * To be able to handle special mobile version for all textarea fields
- *
- * @param type $element
- */
-function gofast_mobile_pre_render_text_format($element)
-{
-  static $init = FALSE;
-  if (!isset($element['#format'])) {
-    return $element;
-  }
-
-  module_load_include('inc', 'ckeditor', 'includes/ckeditor.lib');
-
-  if ($init === FALSE) {
-    $input_formats = gofast_mobile_ckeditor_profiles_compile();
-    drupal_add_js(array('ckeditor' => array('input_formats' => $input_formats, 'plugins' => array())), 'setting');
-    $init = TRUE;
-  }
-
-  if (isset($element['value'])) {
-    if (!isset($element['format'])) {
-      return $element;
-    }
-    if (isset($element['summary'])) {
-      $element['value'] = ckeditor_load_by_field($element['value'], $element['format']['format'], TRUE, $element['summary']['#id']);
-      $element['summary'] = ckeditor_load_by_field($element['summary'], $element['format']['format'], FALSE);
-    } else {
-      $element['value'] = ckeditor_load_by_field($element['value'], $element['format']['format']);
-    }
-  } else {
-    $element = ckeditor_load_by_field($element, $element['#format']);
-  }
-
-  return $element;
-}
-
-/**
- * Implementation of hook_element_info_alter().
- *
- * Replace the textarea with CKEditor using a callback function (ckeditor_pre_render_text_format).
- */
-function gofast_mobile_element_info_alter(&$types)
-{
-
-  if (gofast_mobile_is_phone() == TRUE) {
-    $types['text_format']['#pre_render'][] = 'gofast_mobile_pre_render_text_format';
-  }
-}
-
-/**
- * Compile ckeditor profile (which profile for which field type)
- * /!\ it overrides ckeditor default function for GoFAST mobile needs
- * @staticvar boolean $compiled
- * @staticvar array $_ckeditor_compiled
- * @param type $input_format
- * @param type $clear
- * @return type
- */
-function gofast_mobile_ckeditor_profiles_compile($input_format = FALSE, $clear = FALSE)
-{
-  static $compiled = FALSE;
-  static $_ckeditor_compiled = array();
-
-  if ($clear !== FALSE && $compiled !== FALSE) {
-    $compiled = FALSE;
-  }
-
-  if ($compiled === TRUE) {
-    return ($input_format === FALSE) ? $_ckeditor_compiled : (isset($_ckeditor_compiled[$input_format]) ? $_ckeditor_compiled[$input_format] : array());
-  }
-
-  $global_profile = ckeditor_profile_load('CKEditor Global Profile');
-
-  //$profiles_list = ckeditor_profile_input_formats();
-  $profiles_list = array(
-    "Mobile" => array("filtered_html", "full_html")
-  );
-
-  foreach ($profiles_list as $_profile => $_inputs) {
-    $profile = ckeditor_profile_load($_profile);
-    $setting = ckeditor_profile_settings_compile($global_profile, $profile);
-
-    foreach ($_inputs as $_input) {
-      $_ckeditor_compiled[$_input] = $setting;
-    }
-  }
-  $compiled = TRUE;
-
-  return ($input_format === FALSE) ? $_ckeditor_compiled : $_ckeditor_compiled[$input_format];
-}
-
-/************************************************************************
- ************************************************************************/

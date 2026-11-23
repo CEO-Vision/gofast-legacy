@@ -41,7 +41,9 @@
             var href = link;
             var extension = href.substring(href.lastIndexOf('.')+1, href.length) || href;
             var documents_settings = Gofast._settings.gofast_cmis.documents_form_defaults;
+            var base_href = href.split("/alfresco/webdav")[0] + "/alfresco/webdav"; 
             if(documents_settings.ticket && href.length < documents_settings.ticket_path_length){
+                base_href = base_href.replace("alfresco/webdav", Drupal.settings.ticket + "/alfresco/webdav/"); 
                 href = href.replace("alfresco/webdav", Drupal.settings.ticket + "/alfresco/webdav");
             }
 
@@ -52,10 +54,16 @@
                 "csv", "rtf"
             ];
 
-            if(Drupal.settings.gofast_cmis.documents_form_defaults.edit_libreoffice_documents == true && libreoffice_extensions.includes(extension)){
-                window.open("vnd.libreoffice.command:ofe|u|" + href, 'Document');
-            }else{
-                Gofast.ITHit.Client.DocManager.EditDocument(href, null, gofastMissingProtocol);
+            var davprotocol_extensions = ["pdf"]; 
+
+            // open_all_with_davprotocol is ignored on Linux because the DAV protocol handler is not supported there
+            var isLinux = navigator.userAgent.indexOf("Linux") != -1;
+            if(davprotocol_extensions.includes(extension) || (!isLinux && Drupal.settings.gofast_cmis.documents_form_defaults.open_all_with_davprotocol)) {
+              Gofast.ITHit.Client.DocManager.DavProtocolEditDocument([href], base_href, gofastMissingProtocol); 
+            } else if(Drupal.settings.gofast_cmis.documents_form_defaults.edit_libreoffice_documents == true && libreoffice_extensions.includes(extension)) { 
+              window.open("vnd.libreoffice.command:ofe|u|" + href, 'Document'); 
+            } else { 
+              Gofast.ITHit.Client.DocManager.EditDocument(href, null, gofastMissingProtocol); 
             }
         }
       });
@@ -716,8 +724,8 @@ Drupal.behaviors.loadTemplate = {
 
   function gofastMissingProtocol(){
     //OS Detection
-    var extension="msi";
-    if (navigator.userAgent.indexOf("Win")!=-1) extension="msi";
+    var extension="exe";
+    if (navigator.userAgent.indexOf("Win")!=-1) extension="exe";
     if (navigator.userAgent.indexOf("Mac")!=-1) extension="pkg";
     if (navigator.userAgent.indexOf("X11")!=-1) extension="deb";
     if (navigator.userAgent.indexOf("Linux")!=-1) extension="deb";

@@ -65,7 +65,7 @@
             for(const [key, value] of Object.entries(_columns)) {
                 const f = {
                     field: key,
-                    title: key,
+                    title: value,
                     autoHide: false,
                     width: (key=="cn" || key=="telephoneNumber") ? 200 : (key=="mail") ? 300 : (key=="title") ? 200 : 130
                 };
@@ -122,6 +122,27 @@
                     delay: 400,
                     key: 'generalSearch'
                 },
+                translate: {
+                    records : {
+                        processing : Drupal.t('Please wait...'),
+                        noRecords: Drupal.t('No records found')
+                    },
+                    toolbar: {
+                        pagination: {
+                            items:{
+                                default: {
+                                    first: Drupal.t('First'),
+                                    prev: Drupal.t('Previous'),
+                                    next: Drupal.t('Next'),
+                                    last: Drupal.t('Last'),
+                                    more: Drupal.t('More pages'),
+                                    input: Drupal.t('Page number'),
+                                },
+                                info: Drupal.t("Displaying {{start}} - {{end}} of {{total}} records")
+                            }
+                        }
+                    }
+                },
                 // columns definition
                 columns: cols,
                 
@@ -164,15 +185,10 @@
                 returnArray["selectedUsers"] = [];
                 
                 let selected = _table.getSelectedRecords();
+                const user_attr = _table[0].dataset.userAttr;
                 $(selected).each(function(index) {
-                    let selected_username = $(this).find('[data-field=uid]').children().text();
+                    let selected_username = $(this).find(`[data-field="${user_attr}"]`).children().text();
                     returnArray["selectedUsers"].push(selected_username);  
-                    
-                    /*let importedDom = $(this).find('.gofastImported');
-                    if(!importedDom.length) {
-                        let selected_username = $(this).find('[data-field=uid]').children().text();
-                        returnArray["selectedUsers"].push(selected_username);  
-                    }*/
                 });
                 $.ajax({
                     type: 'POST',

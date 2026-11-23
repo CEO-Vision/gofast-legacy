@@ -9,6 +9,23 @@
  */
 
 /**
+ * @var int Maximum possible URL length
+ *
+ * based on answers found here:
+ * https://stackoverflow.com/questions/417142/what-is-the-maximum-length-of-a-url-in-different-browsers
+ */
+define('GOFAST_SSO_URL_MAX_LENGTH', 2000);
+
+/**
+ * @var int Maximum allowed size of login/logout URL.
+ *
+ * Based on DB column type lengths.
+ */
+define('GOFAST_SSO_IDP_URL_MAX_LENGTH', 255);
+
+define('GOFAST_SMTP_PASSWORD_PLACEHOLDER', '__GOFAST_SMTP_PASSWORD_UNCHANGED__');
+
+/**
  * Gofast configuration form
  * General vtab definitions.
  * fields are set in form_alter
@@ -111,6 +128,15 @@ function gofast_admin_settings() {
     '#collapsed' => FALSE,
     '#group' => 'vt',
     '#attributes' => array('class' => array('edit-visibility')),
+  );
+  
+  $form['license'] = array(
+    '#title' => t('License', array(), array('context' => 'gofast')),
+    '#type' => 'fieldset',
+    '#collapsible' => FALSE,
+    '#collapsed' => FALSE,
+    '#group' => 'vt',
+    '#attributes' => array('class' => array('edit-license')),
   );
 
   $form['indexing'] = array(
@@ -331,6 +357,17 @@ function gofast_admin_settings_tabs() {
                 'title' => t('Visibility', array(), array('context' => 'gofast')),
                 'attributes' => array('class' => 'edit-visibility'),
                 'icon' => 'flaticon-visible'
+            );
+        }
+    }
+    
+    $sub_path = $tab_path . "/edit-license";
+    if ($router_item = menu_get_item($sub_path)) {
+        if ($router_item['access']) {
+            $gofastAdminTabs['license'] = array(
+                'title' => t('License', array(), array('context' => 'gofast')),
+                'attributes' => array('class' => 'edit-license'),
+                'icon' => 'flaticon-users'
             );
         }
     }
@@ -614,7 +651,7 @@ function gofast_admin_menu(){
     'title' => t('Gofast Configuration', array(), array('context' => 'gofast')),
     'page callback' => array('gofast_admin_categories_settings_page'),
     'access arguments' => array('administer categories configuration'),
-    'delivery callback' => 'gofast_admin_deliver_form_html',
+    'delivery callback' => 'gofast_admin_deliver_page',
     'type' => MENU_NORMAL_ITEM,
     'file' => 'gofast.admin.inc'
   );
@@ -624,6 +661,16 @@ function gofast_admin_menu(){
     'page callback' => 'drupal_get_form',
     'page arguments' => array('gofast_admin_visibility_settings_form'),
     'access arguments' => array('administer visibility configuration'),
+    'delivery callback' => 'gofast_admin_deliver_page',
+    'type' => MENU_NORMAL_ITEM,
+    'file' => 'gofast.admin.inc'
+  );
+  
+  $items['admin/config/gofast/global/getform/edit-license'] = array(
+    'title' => t('Gofast Configuration', array(), array('context' => 'gofast')),
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('gofast_admin_license_settings_form'),
+    'access arguments' => array('administer license configuration'),
     'delivery callback' => 'gofast_admin_deliver_page',
     'type' => MENU_NORMAL_ITEM,
     'file' => 'gofast.admin.inc'
@@ -1467,49 +1514,49 @@ function gofast_admin_ldap_settings_form() {
     '#type' => 'textfield',
     '#default_value' => $sync_settings['mapping']['lastname'],
     '#disabled' => !($server_status || $sync),
-
   );
+
   $form['ldap_sync']['fields_mapping']['fullname'] = array(
     '#title' => t('Full name', array(), array('context' => 'gofast:gofast_ldap')),
     '#type' => 'textfield',
     '#default_value' => $sync_settings['mapping']['fullname'],
     '#disabled' => !($server_status || $sync),
     '#description' => t("If this field is mapped, first name and last name fields won't be used.", array(), array('context' => 'gofast:gofast_ldap')),
-
   );
+
   $form['ldap_sync']['fields_mapping']['email'] = array(
     '#title' => t('E-mail address *', array(), array('context' => 'gofast:gofast_ldap')),
     '#type' => 'textfield',
     '#default_value' => $sync_settings['mapping']['email'],
     '#disabled' => !($server_status || $sync),
   );
+
   $form['ldap_sync']['fields_mapping']['title'] = array(
     '#title' => t('Function', array(), array('context' => 'gofast:gofast_ldap')),
     '#type' => 'textfield',
     '#default_value' => $sync_settings['mapping']['title'],
     '#disabled' => !($server_status || $sync),
-
   );
+
   $form['ldap_sync']['fields_mapping']['company'] = array(
     '#title' => t('Entity', array(), array('context' => 'gofast:gofast_ldap')),
     '#type' => 'textfield',
     '#default_value' => $sync_settings['mapping']['company'],
     '#disabled' => !($server_status || $sync),
-
   );
+
   $form['ldap_sync']['fields_mapping']['phone'] = array(
     '#title' => t('Phone number', array(), array('context' => 'gofast:gofast_ldap')),
     '#type' => 'textfield',
     '#default_value' => $sync_settings['mapping']['phone'],
     '#disabled' => !($server_status || $sync),
-
   );
+
   $form['ldap_sync']['fields_mapping']['mobile_phone'] = array(
     '#title' => t('Mobile phone number', array(), array('context' => 'gofast:gofast_ldap')),
     '#type' => 'textfield',
     '#default_value' => $sync_settings['mapping']['mobile_phone'],
     '#disabled' => !($server_status || $sync),
-
   );
 
   //Filters
@@ -1668,15 +1715,15 @@ function gofast_admin_ldap_settings_form_submit(&$form, &$form_state) {
   
   $sync_config = array();
   $sync_config['interval'] = $form_state['values']['interval'];
-  $sync_config['mapping']['uid'] = $form_state['values']['uid'];
-  $sync_config['mapping']['firstname'] = $form_state['values']['firstname'];
-  $sync_config['mapping']['lastname'] = $form_state['values']['lastname'];
-  $sync_config['mapping']['fullname'] = $form_state['values']['fullname'];
-  $sync_config['mapping']['email'] = $form_state['values']['email'];
-  $sync_config['mapping']['title'] = $form_state['values']['title'];
-  $sync_config['mapping']['company'] = $form_state['values']['company'];
-  $sync_config['mapping']['phone'] = $form_state['values']['phone'];
-  $sync_config['mapping']['mobile_phone'] = $form_state['values']['mobile_phone'];
+  $sync_config['mapping']['uid'] = strtolower($form_state['values']['uid']);
+  $sync_config['mapping']['firstname'] = strtolower($form_state['values']['firstname']);
+  $sync_config['mapping']['lastname'] = strtolower($form_state['values']['lastname']);
+  $sync_config['mapping']['fullname'] = strtolower($form_state['values']['fullname']);
+  $sync_config['mapping']['email'] = strtolower($form_state['values']['email']);
+  $sync_config['mapping']['title'] = strtolower($form_state['values']['title']);
+  $sync_config['mapping']['company'] = strtolower($form_state['values']['company']);
+  $sync_config['mapping']['phone'] = strtolower($form_state['values']['phone']);
+  $sync_config['mapping']['mobile_phone'] = strtolower($form_state['values']['mobile_phone']);
 
   $filters = $form_state['values']['filters'];
   $filters = explode("\n", $filters);
@@ -1792,10 +1839,12 @@ function gofast_admin_users_settings_form() {
 
   $min_password_lifetime_days = (int) $password_policy_settings["min_password_lifetime"]/60/60/24;
   $max_password_lifetime_days = (int) $password_policy_settings["max_password_lifetime"]/60/60/24;
+  $notify_password_expiration_days = (int) $password_policy_settings["notify_password_expiration"]/60/60/24;
 
    $form["password_policy"] = array(
         '#title' => t('Password policy', array(), array('context' => 'gofast:gofast_ldap')),
         '#type' => 'fieldset',
+        '#access' => gofast_user_is_adm(),
         '#collapsible' => FALSE,
         '#collapsed' => FALSE,
         'password_policy_history_limit' => array(
@@ -1837,7 +1886,7 @@ function gofast_admin_users_settings_form() {
             ' type' => 'number',
           ),
           '#title' => t("Number of days before expiration when users shall be notified", array(), array('context' => 'gofast:gofast_ldap')),
-          '#default_value' => $password_policy_settings["notify_password_expiration"],
+          '#default_value' => $notify_password_expiration_days,
         ),
     );
 
@@ -1852,22 +1901,64 @@ function gofast_admin_users_settings_form() {
  * Users settings (from Gofast admin form) validate callback
  */
 function gofast_admin_users_settings_form_validate($form, &$form_state) {
-     //validate password settings
-    $min_password_lifetime = (int) $form_state['values']["password_policy_min_password_lifetime"];
-    $max_password_lifetime = (int) $form_state['values']["password_policy_max_password_lifetime"];
+  $pwd_min_values = gofast_ldap_get_password_policy_minimum_values();
 
-    if(!is_numeric($min_password_lifetime) || $min_password_lifetime < 0){
-                 form_set_error('password_policy_min_password_lifetime', t('Minimum password lifetime must be an integer', array(), array('context' => 'gofast:gofast_ldap')));
-    }
+  if ($pwd_min_values === NULL) {
+    form_set_error('no_pwd_min_values', t('An error has occurred. Please contact the site administrator.', array(), array('context' => 'gofast:gofast_ldap')));
+  }
 
-    if(!is_numeric($max_password_lifetime) || $max_password_lifetime < 0){
-                 form_set_error('password_policy_max_password_lifetime', t('Maximum password lifetime must be an integer', array(), array('context' => 'gofast:gofast_ldap')));
-    }
-    if($min_password_lifetime > $max_password_lifetime){
-         form_set_error('password_policy_min_password_lifetime', t('Minimum password lifetime must be smaller than Maximum password lifetime', array(), array('context' => 'gofast:gofast_ldap')));
-    }
+  //validate password settings
+  $history_limit = $form_state['values']["password_policy_history_limit"];
+  $min_password_length = $form_state['values']["password_policy_min_password_length"];
+  $min_password_lifetime_seconds = $form_state['values']["password_policy_min_password_lifetime"]*60*60*24;
+  $max_password_lifetime_seconds = $form_state['values']["password_policy_max_password_lifetime"]*60*60*24;
+  $notify_password_expiration_seconds = $form_state['values']["password_policy_notify_password_expiration"]*60*60*24;
 
-    return;
+  // Check if values are numeric.
+  if(!is_numeric($history_limit)){
+    form_set_error('password_policy_history_limit', t('Maximum password history must be an integer', array(), array('context' => 'gofast:gofast_ldap')));
+  }
+  if(!is_numeric($min_password_length)){
+    form_set_error('password_policy_min_password_length', t('Minimum password length must be an integer', array(), array('context' => 'gofast:gofast_ldap')));
+  }
+  if(!is_numeric($min_password_lifetime_seconds)){
+    form_set_error('password_policy_min_password_lifetime', t('Minimum password lifetime must be an integer', array(), array('context' => 'gofast:gofast_ldap')));
+  }
+  if(!is_numeric($max_password_lifetime_seconds)){
+    form_set_error('password_policy_max_password_lifetime', t('Maximum password lifetime must be an integer', array(), array('context' => 'gofast:gofast_ldap')));
+  }
+  if(!is_numeric($notify_password_expiration_seconds)){
+    form_set_error('password_policy_notify_password_expiration', t('Days number before warning must be an integer', array(), array('context' => 'gofast:gofast_ldap')));
+  }
+
+  // Check if values is equal or greater than the minimum a policy can be.
+  if($history_limit < $pwd_min_values['history_limit']){
+    form_set_error('password_policy_history_limit', t('The password policy value for « Number of passwords stored into history » must be a minimum of : @value', array('@value' => $pwd_min_values['history_limit']), array('context' => 'gofast:gofast_ldap')));
+  }
+  if($min_password_length < $pwd_min_values['min_password_length']){
+    form_set_error('password_policy_min_password_length', t('The password policy value for « Minimum password length » must be a minimum of : @value', array('@value' => $pwd_min_values['min_password_length']), array('context' => 'gofast:gofast_ldap')));
+  }
+  if($min_password_lifetime_seconds < $pwd_min_values['min_password_lifetime']){
+    form_set_error('password_policy_min_password_lifetime', t('The password policy value for « Minimum password lifetime » must be a minimum of : @value', array('@value' => $pwd_min_values['min_password_lifetime']/60/60/24), array('context' => 'gofast:gofast_ldap')));
+  }
+  if($max_password_lifetime_seconds < $pwd_min_values['max_password_lifetime']){
+    form_set_error('password_policy_max_password_lifetime', t('The password policy value for « Maximum password lifetime » must be a minimum of : @value', array('@value' => $pwd_min_values['max_password_lifetime']/60/60/24), array('context' => 'gofast:gofast_ldap')));
+  }
+  if($notify_password_expiration_seconds < $pwd_min_values['notify_password_expiration']){
+    form_set_error('password_policy_notify_password_expiration', t('The password policy value for « Number of days before expiration when users shall be notified » must be a minimum of : @value', array('@value' => $pwd_min_values['notify_password_expiration']/60/60/24), array('context' => 'gofast:gofast_ldap')));
+  }
+
+  // Check if the min password lifetime is greater than the max password lifetime.
+  if($min_password_lifetime_seconds > $max_password_lifetime_seconds){
+    form_set_error('password_policy_min_password_lifetime', t('Minimum password lifetime must be smaller than Maximum password lifetime', array(), array('context' => 'gofast:gofast_ldap')));
+  }
+
+  // Check if the number of days before notification is greater than the max password lifetime.
+  if($notify_password_expiration_seconds > $max_password_lifetime_seconds) {
+    form_set_error('password_policy_notify_password_expiration', t('The password policy value for « Number of days before expiration when users shall be notified » should not be greater than the value of « Maximum password lifetime »', array(), array('context' => 'gofast:gofast_ldap')));
+  }
+
+  return;
 }
 
 /**
@@ -1886,13 +1977,14 @@ function gofast_admin_users_settings_form_submit(&$form, &$form_state) {
     //unset password policy settings before save
     $min_password_lifetime_seconds = $user_form_defaults["password_policy_min_password_lifetime"]*60*60*24;
     $max_password_lifetime_seconds = $user_form_defaults["password_policy_max_password_lifetime"]*60*60*24;
+    $notify_password_expiration_seconds = $user_form_defaults["password_policy_notify_password_expiration"]*60*60*24;
 
     $ldap_policy_settings = array(
       "history_limit" => $user_form_defaults['password_policy_history_limit'],
       "min_password_length" => $user_form_defaults['password_policy_min_password_length'],
       "min_password_lifetime" => $min_password_lifetime_seconds, 
       "max_password_lifetime" => $max_password_lifetime_seconds,
-      "notify_password_expiration" => $user_form_defaults['password_policy_notify_password_expiration'],
+      "notify_password_expiration" => $notify_password_expiration_seconds,
     );
 
     gofast_ldap_set_password_policy_settings($ldap_policy_settings);
@@ -1917,6 +2009,8 @@ function gofast_admin_documents_settings_form() {
       'ticket_path_length' => 200,
       'gofast_onlyoffice_ro_preview' => TRUE,
       'edit_libreoffice_documents' => FALSE,
+      'open_all_with_davprotocol' => FALSE, 
+      'gofast_metadata_has_upload_modal' => FALSE,
       'xss_whitelist' => [],
   );
   $documents_form_defaults = variable_get("documents_form_defaults", $default_documents_form_configuration);
@@ -1924,6 +2018,8 @@ function gofast_admin_documents_settings_form() {
   $form['documents_edition_form'] = array(
     '#title' => t('Document edition', array(), array('context' => 'gofast')),
     '#type' => 'fieldset',
+    // Technical platform settings: super administrators only.
+    '#access' => gofast_user_is_adm(),
     '#collapsible' => FALSE,
     '#collapsed' => FALSE
   );
@@ -1952,7 +2048,15 @@ function gofast_admin_documents_settings_form() {
     '#description' => t("Check this if Microsoft Office has never been installed so ms protocols are not available to open documents", array(), array('context' => 'gofast'))
   );
 
+  $form['documents_edition_form']['open_all_with_davprotocol'] = array( 
+    '#type' => 'checkbox', 
+    '#title' => t("Use DAV protocol to open documents", array(), array('context' => 'gofast')), 
+    '#default_value' => $documents_form_defaults['open_all_with_davprotocol'], 
+    '#description' => t("Check this if you need to use your default system handler for editing documents", array(), array('context' => 'gofast')) 
+  );
+
   $form['documents_preview_form'] = array(
+    '#access' => gofast_user_is_adm(),
     '#title' => t('Document preview', array(), array('context' => 'gofast')),
     '#type' => 'fieldset',
     '#collapsible' => FALSE,
@@ -1978,6 +2082,53 @@ function gofast_admin_documents_settings_form() {
     '#default_value' => GOFAST_METADATA_CUSTOM_DATE_LABEL,
   );
 
+  $form['document_reference_field'] = array(
+    '#title' =>  t("Document reference", array(), array('context' => 'gofast')),
+    '#type' => 'fieldset',
+    '#collapsible' => FALSE,
+    '#collapsed' => FALSE
+  );
+
+  $form['document_reference_field']['gofast_metadata_document_reference_label']= array(
+    '#title' => t("Name of the document reference field", array(), array('context' => 'gofast')),
+    '#type' => 'textfield',
+    '#default_value' => GOFAST_METADATA_DOCUMENT_REFERENCE_LABEL,
+  );
+
+  $form['classification'] = [
+    '#title' => t('Classification', [], ['context' => 'gofast']),
+    '#type' => 'fieldset',
+    '#collapsible' => FALSE,
+    '#collapsed' => FALSE
+  ];
+
+  $form['classification']['classification_metadata_label'] = [
+    '#title' => t('Classification metadata label', [], ['context' => 'gofast']),
+    '#type' => 'textfield',
+    '#default_value' => variable_get(GOFAST_METADATA_CLASSIFICATION_LABEL_VARIABLE_NAME),
+    '#attributes' => [
+      'placeholder' => GOFAST_METADATA_CLASSIFICATION_LABEL_DEFAULT_VALUE,
+    ],
+    '#description' => t(
+      'Optional label to display instead of the classification metadata label. When this field is empty, the default label is used.',
+      [],
+      ['context' => 'gofast'],
+    ),
+  ];
+
+  $form['document_has_upload_modal'] = array(
+    '#title' => t('Metadata pre-fill', array(), array('context' => 'gofast')),
+    '#type' => 'fieldset',
+    '#collapsible' => FALSE,
+    '#collapsed' => FALSE
+  );
+
+  $form['document_has_upload_modal']['gofast_metadata_has_upload_modal'] = array(
+    '#type' => 'checkbox',
+    '#title' => t("Fill metadata before documents upload", array(), array('context' => 'gofast')),
+    '#default_value' => $documents_form_defaults['gofast_metadata_has_upload_modal'],
+  );
+
   $form['documents_security'] = array(
     '#title' => t('Document security', array(), array('context' => 'gofast')),
     '#type' => 'fieldset',
@@ -1993,6 +2144,8 @@ function gofast_admin_documents_settings_form() {
   $form['documents_security']['xss'] = array(
     '#title' => t("XSS filtering whitelist", array(), array('context' => 'gofast')),
     '#type' => 'textfield',
+    // Technical platform setting: super administrators only.
+    '#access' => gofast_user_is_adm(),
     '#maxlength' => 999999,
     '#default_value' => json_encode($xss_whitelist),
     '#attributes' => array(
@@ -2007,36 +2160,8 @@ function gofast_admin_documents_settings_form() {
   );
 
   if (!module_exists("gofast_community")) {
-    $form['retention'] = array(
-      '#title' => t('Retention', array(), array('context' => 'gofast')),
-      '#type' => 'fieldset',
-      '#collapsible' => FALSE,
-      '#collapsed' => FALSE
-    );
-  
-    $list_recipient = array();
-    $recipients = array();
-    if ( NULL != variable_get(GOFAST_RETENTION_PERIOD_RECIPIENTS_VAR) ) {
-      $list_recipient = variable_get(GOFAST_RETENTION_PERIOD_RECIPIENTS_VAR);
-  
-      foreach($list_recipient as $recipient){
-        $recipient_user =  user_load($recipient->id);
-        $recipients[] = gofast_ac_format_value_json('user', $recipient_user);
-      }
-    }
-  
-    $form['retention']['ac-list-tags-list-recipients'] = array(
-      '#type' => 'textfield',
-      '#title' => t('Current list of mail recipients', array(), array('context' => 'gofast:gofast_retention')),
-      '#default_value' => json_encode($recipients),
-      '#id' => 'edit-field-tags',
-      '#maxlength' => 999999,
-      '#attributes' => [
-        'class' => ['form-control-tags js-tagify'],
-        'data-user' => '', // show ac users
-      ],
-    );
     $form['documents_external_links'] = array(
+      '#access' => gofast_user_is_adm(),
       '#title' => t('External links', array(), array('context' => 'gofast')),
       '#type' => 'fieldset',
       '#collapsible' => FALSE,
@@ -2067,17 +2192,7 @@ function gofast_admin_documents_settings_form() {
  * Documents settings (from Gofast admin form) validate callback
  */
 function gofast_admin_documents_settings_form_validate($form, &$form_state) {
-  // TODO (GOFAST-11700 @tom): remove this when removing the duplicated archivist field
-  // validate that at least one archivist is given when retention is used
-  if (module_exists('gofast_retention') && gofast_retention_is_app_using_retention()) {
-    $archivists = json_decode($form_state['values']['ac-list-tags-list-recipients']);
-    if (!is_array($archivists) || empty($archivists)) {
-      form_set_error(
-        'ac-list-tags-list-recipients',
-        t('At least one archivist is required when using retention', [], ['context' => 'gofast']),
-      );
-    }
-  }
+  return;
 }
 
 /**
@@ -2093,8 +2208,28 @@ function gofast_admin_documents_settings_form_submit(&$form, &$form_state) {
     unset($documents_form_defaults['op']);
 
     //Custom fields
-    variable_set("gofast_metadata_custom_date_label", $documents_form_defaults["gofast_metadata_custom_date_label"]);
+    variable_set(
+      "gofast_metadata_custom_date_label",
+      gofast_xss_clean($documents_form_defaults["gofast_metadata_custom_date_label"]),
+    );
     unset($documents_form_defaults['gofast_metadata_custom_date_label']);
+    variable_set(
+      "document_reference_label",
+      gofast_xss_clean($documents_form_defaults["gofast_metadata_document_reference_label"]),
+    );
+    unset($documents_form_defaults['gofast_metadata_document_reference_label']);
+    // Handle classification metadata label variable/configuration.
+    $classification_metadata_label = $documents_form_defaults['classification_metadata_label'];
+    if (!empty($classification_metadata_label)) {
+      variable_set(
+        GOFAST_METADATA_CLASSIFICATION_LABEL_VARIABLE_NAME,
+        gofast_xss_clean($classification_metadata_label),
+      );
+    } else {
+      variable_del(GOFAST_METADATA_CLASSIFICATION_LABEL_VARIABLE_NAME);
+    }
+    unset($documents_form_defaults['classification_metadata_label']);
+    cache_clear_all('facetapi:facet_info:', 'cache', TRUE); // otherwise display of search filters will not be updated
 
     //XSS Filtering
     $input_xss = json_decode($form_state['input']['ac-list-tags-xss']);
@@ -2106,26 +2241,6 @@ function gofast_admin_documents_settings_form_submit(&$form, &$form_state) {
     }
 
     variable_set("documents_form_defaults", $documents_form_defaults);
-
-    if (!module_exists("gofast_community")) {
-      $recipients = $form_state['values']['ac-list-tags-list-recipients'];
-      $array_dest = json_decode($recipients);
-      if (is_array($array_dest) && count($array_dest) > 0) {
-        $json_list_recipients = array();
-        foreach($array_dest as $dest_json){
-          $account = user_load($dest_json->value);
-          $account_obj = new stdClass();
-          $account_obj->id = $dest_json->value;
-          $account_obj->address = $account->mail;
-          $account_obj->name = $account->name;
-          $account_obj->type = "user";
-          $json_list_recipients[] = $account_obj;
-        }
-        variable_set(GOFAST_RETENTION_PERIOD_RECIPIENTS_VAR, $json_list_recipients);
-      } else {
-        variable_del(GOFAST_RETENTION_PERIOD_RECIPIENTS_VAR);
-      }
-    }
     variable_set("enable_automatic_external_link_title", $form_state['values']['enable_automatic_renaming']);
     variable_set("use_http_link", $form_state['values']['allow_http']);
 }
@@ -2196,7 +2311,20 @@ function gofast_admin_spaces_settings_form() {
   );
 
   $classification_field_array = ["_none" => t("- None -")];
-  foreach (taxonomy_term_load_multiple(FALSE, array('vid' => taxonomy_vocabulary_get_names()['classification']->vid)) as $term) {
+  $classification_options_properties = [
+    '_none' => [
+      '#attributes' => ['data-confidentiality' => "false"],
+    ],
+  ];
+  $classification_terms = taxonomy_term_load_multiple(FALSE, array('vid' => taxonomy_vocabulary_get_names()['classification']->vid));
+  // Classification terms may not be in order after load, ensure correct order
+  // by sorting the array.
+  uasort($classification_terms, fn($a, $b) => $a->weight <=> $b->weight);
+  foreach ($classification_terms as $term) {
+    // Filter terms to only get those allowed on spaces.
+    if (!gofast_taxonomy_classification_allowed($term, ['content_type' => 'space'])) {
+      continue;
+    }
     $type_tid = $term->field_classification_type[LANGUAGE_NONE][0]['tid'];
     $type_term = taxonomy_term_load($type_tid);
     $localized_term = i18n_taxonomy_localize_terms($term);
@@ -2204,17 +2332,38 @@ function gofast_admin_spaces_settings_form() {
     if(!isset($classification_field_array[$localized_type_term->name])){
       $classification_field_array[$localized_type_term->name] = [];
     }
-    $classification_field_array[$localized_type_term->name][$term->tid] = $localized_term->name;
+    $type_name = $localized_type_term->name;
+    $term_id = $term->tid;
+    $classification_field_array[$type_name][$term_id] = $localized_term->name;
+    $classification_options_properties[$type_name]['#children'][$term_id] = [
+      '#attributes' => [
+        'data-confidentiality' => json_encode(gofast_taxonomy_get_term_confidentiality($term)),
+      ],
+    ];
   }
 
-  // $classification_field_array["test group"] = array(0 => "test");
+  $is_default_classification_confidential = !in_array($spaces_defaults['field_classification'], [NULL, '_none'], TRUE) ?
+    gofast_taxonomy_is_term_confidential($spaces_defaults['field_classification'])
+    : FALSE;
   $form["spaces_metadata"]["field_classification"] = array(
     "#title" => t("Classification field", array(), array('context' => 'gofast')),
     "#type" => "select",
     "#options" => $classification_field_array,
+    "#options_properties" => $classification_options_properties,
     "#default_value" => $spaces_defaults["field_classification"],
+    "#description" => '<span class="'
+      . (!$is_default_classification_confidential ? 'd-none ' : '')
+      . 'text-danger default-confidentiality-warning">'
+      . t(
+        'When the default classification for spaces is set to a confidential '
+          . 'classification, the default will only be applied if the user '
+          . 'creating the space has the appropriate clearance.',
+        [],
+        ['context' => 'gofast'],
+      )
+      . '</span>',
   );
-  
+
   $form['submit'] = array(
     '#type' => 'submit',
     '#value' => t('Save', array(), array('context' => 'gofast')),
@@ -2383,6 +2532,8 @@ function gofast_admin_sso_settings_form() {
     );
 
     $form['actions'] = [
+      '#prefix' => '<div class="d-flex flex-row align-items-start gap-3 mb-5 form-actions">',
+      '#suffix' => '</div>',
       '#weight' => 1000,
     ];
 
@@ -2392,13 +2543,16 @@ function gofast_admin_sso_settings_form() {
         '#attributes' => array('onclick' => array('jQuery("#edit-delete-request").prop("checked", false);'))
     );
 
-    if ($idp !== null) {
-        $form['actions']['disable_sso'] = array(
-            '#type' => 'submit',
-            '#value' => t('Disable SSO', array(), array('context' => 'gofast:gofast_sso')),
-            '#attributes' => array('onclick' => array('jQuery("#edit-delete-request").prop("checked", true);'))
-        );
-    }
+    $form['actions']['disable_sso'] = array(
+        '#type' => 'submit',
+        '#value' => t('Disable SSO', array(), array('context' => 'gofast:gofast_sso')),
+        '#attributes' => [
+          'onclick' => array('jQuery("#edit-delete-request").prop("checked", true);'),
+          'class' => [
+            ...($idp === null ? ['d-none'] : []),
+          ],
+        ],
+    );
     return $form;
 }
 
@@ -2441,9 +2595,9 @@ function gofast_admin_sso_format_idp_form($idp_form){
     $idp_form["entity_id"]["#description"] = t($idp_form["entity_id"]["#description"], array(), array('context' => 'gofast:gofast_sso'));
     $idp_form["app_name"]["#description"] = t($idp_form["app_name"]["#description"], array(), array('context' => 'gofast:gofast_sso'));
     $idp_form["idp_login_url"]["#description"] = t($idp_form["idp_login_url"]["#description"], array(), array('context' => 'gofast:gofast_sso'));
-    $idp_form["idp_login_url"]["#maxlength"] = NULL; // "no" maxlength
+    $idp_form["idp_login_url"]["#maxlength"] = GOFAST_SSO_IDP_URL_MAX_LENGTH; // max length of fields in DB.
     $idp_form["idp_logout_url"]["#description"] = t($idp_form["idp_logout_url"]["#description"], array(), array('context' => 'gofast:gofast_sso'));
-    $idp_form["idp_logout_url"]["#maxlength"] = NULL; // "no" maxlength
+    $idp_form["idp_logout_url"]["#maxlength"] = GOFAST_SSO_IDP_URL_MAX_LENGTH; // max length of fields in DB.
     $idp_form["idp_x509_certs"]["#description"] = t($idp_form["idp_x509_certs"]["#description"], array(), array('context' => 'gofast:gofast_sso'));
 
     foreach($idp_form["idp_x509_certs"] as $k => &$field){
@@ -2526,13 +2680,13 @@ function gofast_admin_sso_format_sp_form($sp_form){
 
     $sp_form['saml_sp__security']['security_pub'] = array(
         '#type' => "textarea",
-        '#default_value' => file_get_contents("/var/www/d7/sites/default/files/gofastx509.crt"),
+        '#default_value' => file_get_contents(GOFAST_SSO_SERVICE_PROVIDER_CERTIFICATE_PATH),
         '#title' => t('Signing public key', array(), array('context' => 'gofast:gofast_keycloak')),
     );
 
     $sp_form['saml_sp__security']['security_ppk'] = array(
         '#type' => "textarea",
-        '#default_value' => file_get_contents("/var/www/d7/sites/default/files/gofastx509.key"),
+        '#default_value' => file_get_contents(GOFAST_SSO_SERVICE_PROVIDER_PRIVATE_KEY_PATH),
         '#title' => t('Signing private key', array(), array('context' => 'gofast:gofast_keycloak')),
     );
 
@@ -2542,6 +2696,67 @@ function gofast_admin_sso_format_sp_form($sp_form){
     $sp_form['metadata']['#keen-accordion'] = TRUE;
 
     return $sp_form;
+}
+
+/**
+ * Validate that a given value is a valid URL with valid length.
+ *
+ * Calls form_set_error for each detected and enabled validation. A validation
+ * is enabled when it's message callback is passed in $options.
+ * @param ?string $value The URL value to validate
+ * @param array{
+ *       field_name: string,
+ *       max_length?: int,
+ *       url_too_long_message?: callable(int $max, int $length): string,
+ *       invalid_url_message?: callable(): string,
+ *       required_message?: callable(): string,
+ *     } $options Options array
+ *    - `field_name`: name of the form field on which to set the error
+ *    - `max_length?`: max URL length, defaults to GOFAST_SSO_URL_MAX_LENGTH
+ *    - `url_too_long_message?`: callback to format the error message on length,
+ *       activate the validation when provided
+ *    - `invalid_url_message?`: callback to format the error message on an
+ *      invalid url, activate the validation when provided
+ *    - `required_message?`: callback to format the error message on a missing
+ *      required url, activate the validation when provided
+ * @return void
+ */
+function gofast_admin_validate_url($value, $options) {
+  // apply defaults
+  $options['max_length'] ??= GOFAST_SSO_URL_MAX_LENGTH;
+
+  // value not set => set required error and return
+  if (!isset($value)) {
+    if (isset($options['required_message'])) {
+      form_set_error($options['field_name'], $options['required_message']());
+    }
+    return;
+  }
+  $url = trim($value);
+  // value empty => set required error and return
+  if (empty($url)) {
+    if (isset($options['required_message'])) {
+      form_set_error($options['field_name'], $options['required_message']());
+    }
+    return;
+  }
+
+  // value too long and appropriate error message callback => set error
+  $url_length = strlen($url);
+  if (
+    $url_length > $options['max_length']
+    && isset($options['url_too_long_message'])
+  ) {
+    form_set_error(
+      $options['field_name'],
+      $options['url_too_long_message']($options['max_length'], $url_length),
+    );
+  }
+
+  // value is invalid URL and appropriate error message callback => set error
+  if (!valid_url($url, TRUE) && isset($options['invalid_url_message'])) {
+    form_set_error($options['field_name'], $options['invalid_url_message']());
+  }
 }
 
 /**
@@ -2596,38 +2811,61 @@ function gofast_admin_sso_settings_form_validate($form, &$form_state) {
     );
   }
 
-    $max_url_length = 255; // Max length for URL fields 
-    $idp_login_url_length = strlen($values['idp_login_url']);
-    $idp_logout_url_length = strlen($values['idp_logout_url']);
-  
-    if ($idp_login_url_length > $max_url_length) {
-      form_set_error(
-          'idp_login_url',
-          t('!name cannot be longer than %max characters but is currently %length characters long.', [
-              '!name' => $form['idp']['idp_login_url']['#title'],
-              '%max' => $max_url_length,
-              '%length' => $idp_login_url_length
-          ])
-      );
-  }
-  
-  if ($idp_logout_url_length > $max_url_length) {
-      form_set_error(
-          'idp_logout_url',
-          t('!name cannot be longer than %max characters but is currently %length characters long.', [
-              '!name' => $form['idp']['idp_logout_url']['#title'],
-              '%max' => $max_url_length,
-              '%length' => $idp_logout_url_length
-          ])
-      );
-  }
+  // validate URLS
+  // ID provider login URL validation
+  gofast_admin_validate_url($values['idp_login_url'], [
+    'field_name' => 'idp][idp_login_url',
+    'max_length' => GOFAST_SSO_IDP_URL_MAX_LENGTH,
+    'url_too_long_message' => fn ($max, $length) => t(
+      "Identity provider's login URL is too long (maximum %max characters, got %length)",
+      ['%max' => $max, '%length' => $length],
+      ['context' => 'gofast'],
+    ),
+    'invalid_url_message' => fn () => t(
+      "Identity provider's login URL is invalid",
+      [],
+      ['context' => 'gofast'],
+    ),
+  ]);
 
+  // ID provider logout URL validation
+  gofast_admin_validate_url($values['idp_logout_url'], [
+    'field_name' => 'idp][idp_logout_url',
+    'max_length' => GOFAST_SSO_IDP_URL_MAX_LENGTH,
+    'url_too_long_message' => fn ($max, $length) => t(
+      "Identity provider's logout URL is too long (maximum %max characters, got %length)",
+      ['%max' => $max, '%length' => $length],
+      ['context' => 'gofast'],
+    ),
+    'invalid_url_message' => fn () => t(
+      "Identity provider's logout URL is invalid",
+      [],
+      ['context' => 'gofast'],
+    ),
+  ]);
+
+  // Service Provider organization url validation
+  // validation on length should never trigger since input is supposed to be
+  // limited to 128 characters using attributes
+  gofast_admin_validate_url($values['saml_sp__organization']['url'], [
+    'field_name' => 'sp][saml_sp__organization][url',
+    'url_too_long_message' => fn ($max, $length) => t(
+      "Service provider's organization URL is too long (maximum %max characters, got %length)",
+      ['%max' => $max, '%length' => $length],
+      ['context' => 'gofast'],
+    ),
+    'invalid_url_message' => fn () => t(
+      "Service provider's organization URL is invalid",
+      [],
+      ['context' => 'gofast'],
+    ),
+  ]);
 }
 
 /** @var string Path to the SAML service provider signing certificate */
-const GOFAST_SSO_SERVICE_PROVIDER_CERTIFICATE_PATH = "/var/www/d7/sites/default/files/gofastx509.crt";
+const GOFAST_SSO_SERVICE_PROVIDER_CERTIFICATE_PATH = "/var/www/private/saml/gofastx509.crt";
 /** @var string Path to the SAML service provider signing private key */
-const GOFAST_SSO_SERVICE_PROVIDER_PRIVATE_KEY_PATH = "/var/www/d7/sites/default/files/gofastx509.key";
+const GOFAST_SSO_SERVICE_PROVIDER_PRIVATE_KEY_PATH = "/var/www/private/saml/gofastx509.key";
 
 /**
  * SSO settings (from Gofast admin form) submit callback
@@ -2653,10 +2891,32 @@ function gofast_admin_sso_settings_form_submit(&$form, &$form_state) {
   file_put_contents(GOFAST_SSO_SERVICE_PROVIDER_CERTIFICATE_PATH, $form_state['values']['saml_sp__security']['security_pub']);
   file_put_contents(GOFAST_SSO_SERVICE_PROVIDER_PRIVATE_KEY_PATH, $form_state['values']['saml_sp__security']['security_ppk']);
 
+  // Save saml_sp's fields as variables.
+  // This is normally done through the 'system_settings_form_submit' submit
+  // handler on saml_sp's service provider form, however we do not carry that
+  // handler over, we use that to filter out our own added fields beforehand.
+  // (generally save it with more granularity)
+  $excludes = ['saml_sp__security' => ['security_pub', 'security_ppk']];
+  foreach ($form_state['values'] as $key => $value) {
+    // only save saml_sp's fields
+    if (!str_starts_with($key, 'saml_sp__')) {
+      continue;
+    }
+    // Omit our custom values
+    if (isset($excludes[$key])) {
+      $value = array_diff_key($value, array_flip($excludes[$key]));
+    }
+    variable_set($key, $value);
+  }
+
   // if request deletion or if ID provider fields were made empty: delete sso
   // ID provider fields are validated to be all empty or all filled
   if($form_state['values']['delete_request'] || empty($form_state['values']['name'])){
-      variable_set("gofast_disable_login_form", FALSE);
+      // Quick and dirty fix to allow disabling the login form when just keycloak SSO (2FA) is enabled
+      // FIXME: Make it a hook maybe ? like hook_can_login_form_be_disabled and check all implementations return false
+      if(!module_exists('gofast_keycloak') || !$form_state['values']['keycloak_settings']['enabled']) {
+        variable_set("gofast_disable_login_form", FALSE);
+      }
 
       //This is a "Disable SSO" request, to delete the IDP
       include_once drupal_get_path("module", "saml_sp") . "/saml_sp.admin.inc";
@@ -2677,32 +2937,40 @@ function gofast_admin_sso_settings_form_submit(&$form, &$form_state) {
 }
 
 function gofast_admin_deliver_page($form){
-  $content = drupal_render($form);
+  // Discard Drupal messages so they don't pop up when navigating to other pages.
+  // Ideally we should be using them to display toast messages but existing practices
+  // generate parasite messages (safe to assume they are thus bad practices).
+  // FIXME: properly handle messages like everywhere else, change bad pratctices
+  // (like simulating submit of another form) to prevent parasite messages.
+  /*(void)*/drupal_get_messages();
+
+  $content = is_array($form) ? drupal_render($form) : strval($form);
   $output = array(
     'html' => $content,
     'error' => form_get_errors(),
   );
-  print json_encode($output);
+  print json_encode($output, JSON_INVALID_UTF8_IGNORE);
+
+  // Perform end-of-request tasks.
+  drupal_page_footer();
 }
 
 function gofast_admin_deliver_html($content){
+  // Discard Drupal messages so they don't pop up when navigating to other pages.
+  // Ideally we should be using them to display toast messages but existing practices
+  // generate parasite messages (safe to assume they are thus bad practices).
+  // FIXME: properly handle messages like everywhere else, change bad pratctices
+  // (like simulating submit of another form) to prevent parasite messages.
+  /*(void)*/drupal_get_messages();
+
   $output = array(
     'html' => $content,
     'error' => null,
   );
   print json_encode($output, JSON_INVALID_UTF8_IGNORE);
-}
 
-/**
- * Deliver callback for pages pre-rendering a form as html (and maybe other content
- * beside it). Ensures form errors are delivered as well.
- */
-function gofast_admin_deliver_form_html($content){
-  $output = array(
-    'html' => $content,
-    'error' => form_get_errors(),
-  );
-  print json_encode($output, JSON_INVALID_UTF8_IGNORE);
+  // Perform end-of-request tasks.
+  drupal_page_footer();
 }
 
 function gofast_admin_visibility_settings_form() {
@@ -2745,6 +3013,84 @@ function gofast_admin_visibility_settings_form() {
     '#value' => t('Save', array(), array('context' => 'gofast'))
   );
   return $form;
+}
+
+function gofast_admin_license_settings_form() {
+  $form = array();
+
+  if (!module_exists('gofast_community')) {
+    $license_infos = gofast_get_licence_infos();
+    
+  if($license_infos !== null){
+      
+      if($license_infos === false){
+        $description_informations = '<div class="alert alert-custom alert-notice alert-light-warning fade show" role="alert">
+              <div class="alert-icon"><i class="flaticon-warning"></i></div>
+              <div class="alert-text m-0">'.t('Corrupted license file', array(), array('context' => 'gofast')).'</div>
+              </div>';
+      }else{
+        $targetDate = DateTime::createFromFormat('d/m/Y',  $license_infos->expiration_date);
+
+        $description_informations = "<div class='form-item form-item-site-name form-group'>".t('Subscription end date', array(), array('context' => 'gofast'))." : ".$targetDate->format('d/m/Y')."</div>";
+        $description_informations .= "<div class='form-item form-item-site-name form-group'>".t('Internal accounts limit', array(), array('context' => 'gofast'))." : ".$license_infos->internal_accounts_limit."</div>";
+        $description_informations .= "<div class='form-item form-item-site-name form-group'>".t('External accounts limit', array(), array('context' => 'gofast'))." : ".$license_infos->external_accounts_limit."</div>";
+        $description_informations .= "<div class='form-item form-item-site-name form-group'>".t('Specific modules', array(), array('context' => 'gofast'))." : ".implode(", ",$license_infos->modules)."</div>";
+        $description_informations .= "<div class='form-item form-item-site-name form-group'>".t('Specific options', array(), array('context' => 'gofast'))." : ".implode(", ",$license_infos->options)."</div>";
+        $description_informations .= "<div class='form-item form-item-site-name form-group'>".t('Address', array())." : ".$license_infos->base_url."</div>";
+
+      }
+   }
+
+    $form['subscription_infos'] = array(
+      '#type' => 'markup',
+      '#markup' => "<h4>".t('Subscription informations', array(), array('context' => 'gofast'))."</h4>".$description_informations,
+    );
+  }
+
+  
+  $form['license_file'] = array(
+    '#type' => 'file',
+    '#title' => t('Upload a license file', array(), array('context' => 'gofast')),
+    '#weight' =>  0 ,
+    '#required'  => false,
+    '#upload_validators' => array(
+        'file_validate_extensions' => array('json'),
+    ),
+    '#suffix' => theme('gofast_cmis_upload_suffix'),
+  );
+  
+
+  $all_data_formated = gofast_user_reporting_get_stored_data_history_formated();
+  
+  
+  
+  $form['last_stored_data'] = array(
+    '#type' => 'markup',
+    '#markup' => "<h4>".t('License Accounts informations', array(), array('context' => 'gofast')).
+                  "</h4><div>".$all_data_formated."</div><br />",
+  );
+  
+
+  $form['submit'] = array(
+    '#type' => 'submit',
+    '#weight' =>  0 ,
+    '#value' => t('Save', array(), array('context' => 'gofast'))
+  );
+  return $form;
+}
+
+function gofast_admin_license_settings_form_submit() {
+    // license file management
+    $validators = array();
+    $validators['file_validate_extensions'] = array('json');
+    $file = file_save_upload('license_file', $validators, "public://", FILE_EXISTS_REPLACE);
+    if ($file) {
+       // TODO move the license file into another place, but for the moment, permissions problems
+        $directory = drupal_realpath('public://');
+        $from = $directory."/".$file->filename;
+        $to = $directory . '/license_gofast.json';
+        rename($from, $to);
+      }
 }
 
 function gofast_admin_general_settings_form() {
@@ -2843,13 +3189,6 @@ function gofast_admin_general_settings_form() {
     //'#autocomplete_path' => 'gofast-search/node-autocomplete',
   );
 
-  $form['document_reference_label'] = array(
-    '#title' => t('Document reference field label', array(), array('context' => 'gofast')),
-    '#type' => 'textfield',
-    '#default_value' => variable_get('document_reference_label'),
-    '#description' => t('Assign a customized label to the document reference field. The default value is "Document reference"', array(), array('context' => 'gofast'))
-  );
-
   $form['submit'] = array(
     '#type' => 'submit',
     '#value' => t('Save', array(), array('context' => 'gofast')),
@@ -2896,7 +3235,7 @@ function gofast_admin_smtp_settings_form() {
     '#required' => true
   );
   $form['smtp_authentication'] = array(
-    '#title' => t(' SMTP Authentication', array(), array('context' => 'gofast')),
+    '#title' => t('SMTP Authentication', array(), array('context' => 'gofast')),
     '#type' => 'fieldset',
     '#description' => t('Leave blank if your SMTP server does not require authentication.', array(), array('context' => 'gofast'))
   );
@@ -2909,9 +3248,7 @@ function gofast_admin_smtp_settings_form() {
   $form['smtp_authentication']['smtp_password'] = array(
     '#title' => t('Password', array(), array('context' => 'gofast')),
     '#type' => 'password',
-    '#default_value' => variable_get('smtp_password', ''),
-    //'#description' => t('Leave empty if you do not intend to change the current password.')
-//        '#description' => t('SMTP Password.'),
+    '#default_value' => variable_get('smtp_password', '') !== '' ? GOFAST_SMTP_PASSWORD_PLACEHOLDER : '',
   );
   $form['smtp_authentication']['smtp_security'] = array(
     '#title' => t('Security', array(), array('context' => 'gofast')),
@@ -3037,6 +3374,15 @@ function gofast_admin_general_settings_form_validate(&$form, &$form_state) {
         form_set_error('logo_upload_gofast', t('Logo path is unset. Please upload a file or uncheck \'Activate Logo\' box.', array(), array('context' => 'gofast')));
     }
 
+    // Validate the uploaded logo here and keep it for the submit handler.
+    if ($form_state['values']['logo'] && !empty($_FILES['files']['name']['logo_upload_gofast'])) {
+      $validators = array('file_validate_extensions' => array('png gif jpg jpeg svg'));
+      $file = file_save_upload('logo_upload_gofast', $validators, 'public://');
+      if ($file) {
+        $form_state['logo_upload_file'] = $file;
+      }
+    }
+
     $form_state['values']['home_node'] = trim($form_state['values']['home_node']);
     if (!empty($form_state['values']['home_node'])) {
     //if (!ceo_vision_admin_valid_home_page($form_state['values']['home_node'])) {
@@ -3078,31 +3424,25 @@ function gofast_admin_general_settings_form_submit(&$form, &$form_state) {
       $theme_settings['position'] = intval( $form_state['values']['position']);
      }
      variable_set('theme_bootstrap_gofast_settings', $theme_settings);
-    // Upload :
-    if (!empty($_FILES['files']['name']['logo_upload_gofast'])) {
-      $directory_path = variable_get('file_public_path', conf_path() . '/files');
-      file_prepare_directory($directory_path, FILE_CREATE_DIRECTORY);
+    // Upload (file already validated and captured in the validate handler):
+    if (!empty($form_state['logo_upload_file'])) {
+      $directory_path = variable_get('file_public_path', conf_path() . '/files');                                                                                                                                          
+      file_prepare_directory($directory_path, FILE_CREATE_DIRECTORY);                                                                                                                                                      
       $key = 'bootstrap gofast';
+      $file = $form_state['logo_upload_file'];
+      $parts = pathinfo($file->filename);
+      $filename = 'logo.' . $parts['extension'];
+      $file->status = FILE_STATUS_PERMANENT;
+      $file->filename = $filename;
+      file_save($file);
 
-      if ($file = file_save_upload('logo_upload_gofast', array('file_validate_is_image' => array()), 'public://')) {
-        $parts = pathinfo($file->filename);
-        $filename = 'logo.' . $parts['extension'];
-        $file->status = FILE_STATUS_PERMANENT;
-        $file->filename = $filename;
-        file_save($file);
-
-        $_POST['default_logo'] = 0;
-        $theme_settings['logo_path'] = $file->uri;
-        $theme_settings['default_logo'] = 0;
-        variable_set('theme_bootstrap_gofast_settings', $theme_settings);
-        variable_set('theme_bootstrap_gofast_mobile_settings', $theme_settings);
-        variable_set('theme_bootstrap_keen_settings', $theme_settings);
-        $_POST['toggle_logo'] = 1;
-      }
-      else {
-        form_set_error('logo_upload_gofast', t('Logo path is unset. Please upload a file or uncheck \'Activate Logo\' box.', array(), array('context' => 'gofast')));
-        return;
-      }
+      $_POST['default_logo'] = 0;
+      $theme_settings['logo_path'] = $file->uri;
+      $theme_settings['default_logo'] = 0;
+      variable_set('theme_bootstrap_gofast_settings', $theme_settings);
+      variable_set('theme_bootstrap_gofast_mobile_settings', $theme_settings);
+      variable_set('theme_bootstrap_keen_settings', $theme_settings);
+      $_POST['toggle_logo'] = 1;
     }
   }
 
@@ -3152,12 +3492,6 @@ function gofast_admin_general_settings_form_submit(&$form, &$form_state) {
     }
   }
 
-  if(!empty($form_state['values']['document_reference_label'])){
-      variable_set("document_reference_label", $form_state['values']['document_reference_label']);
-  }else{
-      variable_del("document_reference_label");
-  }
-
   cache_clear_all('*', "cache", TRUE);
 }
 
@@ -3178,7 +3512,7 @@ function gofast_admin_smtp_settings_form_validate(&$form, &$form_state) {
 function gofast_admin_smtp_settings_form_submit(&$form, &$form_state) {
   variable_set('smtp_host', $form_state['values']['smtp_server']);
   variable_set('smtp_username', $form_state['values']['smtp_username']);
-  if(isset($form_state['values']['smtp_password']) && $form_state['values']['smtp_password'] !== ''){
+  if(isset($form_state['values']['smtp_password']) && $form_state['values']['smtp_password'] !== GOFAST_SMTP_PASSWORD_PLACEHOLDER){
     variable_set('smtp_password', $form_state['values']['smtp_password']);
   }
   variable_set('smtp_protocol', $form_state['values']['smtp_security']);
@@ -3533,6 +3867,21 @@ function gofast_admin_action_set_retention_rules() {
     gofast_retention_unset_category_retention($term);
     $data = [];
   } else {
+    // Validate period.
+    if ($period < 0) {
+      drupal_json_output([
+        'data' => (object)[],
+        'message' => [
+          'error' => t(
+            'The retention period cannot be negative',
+            [],
+            ["context" => "gofast:gofast_retention"],
+          ),
+        ],
+      ]);
+      return;
+    }
+
     $current_matrix[$term->uuid] = array(
       'uuid' => $term->uuid,
       'tid' => $term->tid,
@@ -4001,7 +4350,7 @@ function gofast_admin_entities_multiple_merge_form($form, &$form_state, $terms) 
 
 function gofast_admin_categories_multiple_merge_form($form, &$form_state, $terms) {
   if (module_exists("gofast_naming_rules")) {
-    $message = html_entity_decode(t(htmlentities("The selected category has the following naming rule <rule></rule>. Please be sure to know what you are doing before applying it."), [], ["context" => "gofast:gofast_naming_rules"]));
+    $message = html_entity_decode(t(htmlentities("The selected category has the following naming rule: <rule></rule>. Please be sure to know what you are doing before applying it."), [], ["context" => "gofast:gofast_naming_rules"]));
     $callback = "Gofast.namingRules.events.toggleWarningOnInput";
     $form["gofast_naming_rules_warning"] = array(
       "#type" => "markup",

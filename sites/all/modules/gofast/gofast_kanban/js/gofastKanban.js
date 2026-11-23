@@ -142,8 +142,8 @@
                   : "") +
                 " </div> " +
                 (this.tags.length > 0
-                    ? '<tags class="mt-2 d-flex" style="gap: .5rem;">' +
-                        this.tags.map(tag => '<tag class="label label-inline label-secondary">' + tag.name + '</tag>').join('') +
+                    ? '<tags class="mt-2 d-flex flex-wrap" style="gap: .5rem;">' +
+                        this.tags.map(tag => '<tag class="label label-inline label-secondary h-100 text-break">' + tag.name + '</tag>').join('') +
                         "</tags>"
                     : "") 
                 + " </div> <!--end::Body-->\n</div>\n";
@@ -195,20 +195,105 @@
                 _displayTaskViewModal(el)
             },
             // callback when any board's item are dragged
-            dragEl: function (el, source) {},
+            dragEl: function (el, source) {
+              document.addEventListener('mousemove', isDragging);
+            },
             // callback when any board's item stop drag
-            dragendEl: function (el) {},
+            dragendEl: function (el) {
+              document.removeEventListener('mousemove', isDragging);
+            },
             // callback when any board's item drop in a board
             dropEl: function (el, target, source, sibling) {
                 _handleDropTask(el, target, source, sibling)
             },
             // callback when any board stop drag
-            dragBoard: function (el, source) { },
+            dragBoard: function (el, source) {
+              document.addEventListener('mousemove', isDragging);
+            },
             // callback when any board stop drag
             dragendBoard: function (el) {
-                _handleDropBoard(el)
-            }, 
+              _handleDropBoard(el)
+              document.removeEventListener('mousemove', isDragging);
+            },
             canEdit: false
+        }
+
+        const isDragging = (event) => {
+            const kanbanElement = document.querySelector('#goKanban');
+            // Prevent having multiple interval running at same time
+            if(kanbanElement.classList.contains('scrolling')){
+              return;
+            }
+            kanbanElement.classList.add('scrolling');
+            // Keep scrolling even if mouse is not moving (not triggering mousemove event)
+            const scrollInterval = setInterval(() => {
+              const kanbanElement = document.querySelector('#goKanban');
+              const dragItem = kanbanElement.querySelector('.gu-transit');
+              const dragMirror = document.querySelector('.gu-mirror');
+              // Clear interval if no drag elements
+              if(!dragItem || !dragMirror){
+                kanbanElement.classList.remove('scrolling');
+                clearInterval(scrollInterval);
+                return;
+              }
+              const kanbanElementRect = kanbanElement.getBoundingClientRect();
+              // Get dragging element position
+              const mirrorRect = dragMirror.getBoundingClientRect();
+
+              // Define scroll speed constants
+              const horizontalScrollSpeed = 50;
+              const verticalScrollSpeed = 50;
+              // Handle vertical scroll on kanban cards
+              if(dragItem.classList.contains('kanban-item')){
+                const allBoards = kanbanContainer.querySelectorAll('.kanban-drag');
+                allBoards.forEach(board => {
+                    // Stop drag on inactive board
+                    if (!board.contains(dragItem)) {
+                        return;
+                    }
+                    // Get jKanban drag container
+                    const containerRect = board.getBoundingClientRect();
+                    // Get scroll acceleration ratio using distance between dragItem and container border
+                    const topDiff = containerRect.top - mirrorRect.top;
+                    const bottomDiff = mirrorRect.bottom - containerRect.bottom;
+                    const topDiffRatio = Math.min(dragItem.offsetWidth, topDiff) / dragItem.offsetWidth;
+                    const bottomDiffRatio = Math.min(dragItem.offsetWidth, bottomDiff) / dragItem.offsetWidth;
+                    // Scroll container
+                    if (mirrorRect.top <= containerRect.top) {
+                        // Scroll up if item at top of container
+                        board.scroll({
+                            top: board.scrollTop - verticalScrollSpeed * topDiffRatio,
+                        });
+                    } else if (mirrorRect.bottom >= containerRect.bottom) {
+                        // Scroll down if item at bottom of container
+                        board.scroll({
+                            top: board.scrollTop + verticalScrollSpeed * bottomDiffRatio,
+                        });
+                    }
+                });
+              }
+
+              // Get scroll acceleration ratio using distance between dragItem and container border
+              const rightDiff = mirrorRect.right - kanbanElementRect.right;
+              const leftDiff = kanbanElementRect.left - mirrorRect.left;
+              const rightDiffRatio = Math.min(dragItem.offsetWidth, rightDiff) / dragItem.offsetWidth;
+              const leftDiffRatio = Math.min(dragItem.offsetWidth, leftDiff) / dragItem.offsetWidth;
+
+              // Scroll container
+              if (mirrorRect.right >= kanbanElementRect.right) {
+                // Scroll up if item at top of container
+                kanbanElement.scroll({
+                    left: kanbanElement.scrollLeft + horizontalScrollSpeed * rightDiffRatio,
+                    behavior: "instant"
+                });
+              } else if (mirrorRect.left <= kanbanElementRect.left) {
+                // Scroll down if item at bottom of container
+                kanbanElement.scroll({
+                    left: kanbanElement.scrollLeft - horizontalScrollSpeed * leftDiffRatio,
+                    behavior: "instant"
+                });
+              }
+            }, 10);
         }
 
         var _initKanban = async function () {
@@ -340,13 +425,14 @@
             });
         }
 
-        var _filterCardsFromSearch = function(searchValue){
+        var _filterCardsFromSearch = function(searchValue = ""){
           const filterTags = _tagEditableInput ? _tagEditableInput.DOM.customInput.value.map(el => el.name) : [];
           _filterCardsByTags(filterTags);
+          const lowerSearchValue = searchValue.toLowerCase().trim();
           $(".gofastKanban__item:not(.d-none)").each((i, el) => {
               $(el).removeClass("d-none");
-              const cardTitle = $(el).find("a[href]").text()
-              if(!cardTitle.includes(searchValue)){
+              const lowerCardTitle = $(el).find("a[href]").text().toLowerCase();
+              if(!lowerCardTitle.includes(lowerSearchValue)){
                   $(el).addClass("d-none");
               }
           });
@@ -356,14 +442,6 @@
             kanban = new jKanban({
                 ..._config,
                 boards: [],
-                // Handle item scrolling
-                dragEl: function (el, source) {
-                    document.addEventListener('mousemove', isDragging);
-                },
-
-                dragendEl: function (el) {
-                    document.removeEventListener('mousemove', isDragging);
-                }
             });
             
             // Set jKanban max height
@@ -371,52 +449,6 @@
             allBoards.forEach(board => {
                 board.style.maxHeight = kanbanHeight + 'px';
             });
-            
-            const isDragging = (e) => {
-                const allBoards = kanbanContainer.querySelectorAll('.kanban-drag');
-                
-                allBoards.forEach(board => {
-                    // Get inner item element
-                    const dragItem = board.querySelector('.gu-transit');
-
-                    // Stop drag on inactive board
-                    if (!dragItem) {
-                        return;
-                    }
-
-                    // Get jKanban drag container
-                    const containerRect = board.getBoundingClientRect();
-
-                    // Get inner item size
-                    const itemSize = dragItem.offsetHeight;
-
-                    // Get dragging element position
-                    const dragMirror = document.querySelector('.gu-mirror');
-                    const mirrorRect = dragMirror.getBoundingClientRect();
-                    
-                    // Calculate drag element vs jKanban container
-                    const topDiff = mirrorRect.top - containerRect.top;
-                    const bottomDiff = containerRect.bottom - mirrorRect.bottom;
-
-                    // Scroll container
-                    if (topDiff <= itemSize) {
-                        // Scroll up if item at top of container
-                        board.scroll({
-                            top: board.scrollTop - 3,
-                        });
-                    } else if (bottomDiff <= itemSize) {
-                        // Scroll down if item at bottom of container
-                        board.scroll({
-                            top: board.scrollTop + 3,
-                        });
-                    } else {
-                        // Stop scroll if item in middle of container
-                        board.scroll({
-                            top: board.scrollTop,
-                        });
-                    }
-                });
-            }
             
         }
         
@@ -1248,9 +1280,7 @@
 
                 //For "Essential" version:
                 if(location.startsWith('/tasks_page_navigation') && hash == '#navKanban'){
-
-                  //remove modal backdrop
-                  jQuery('.modal-backdrop.fade').remove();
+                  
                   jQuery('#navigation_kanban').click(); 
                 }
                 

@@ -66,7 +66,7 @@ function gofast_contact_api_autocomplete_format_jitsi_value($entity_type, $entit
     $name = $entity->field_contact_name[LANGUAGE_NONE][0]['value'];
     $firstname = $entity->field_contact_firstname[LANGUAGE_NONE][0]['value'];
     $displayname = $name." ".$firstname;
-    return array('id' => "contact_" . $entity->nid, 'name' => $displayname, 'avatar' => gofast_get_url_picture_by_id(0), 'type' => 'user');
+    return array('id' => "contact_" . $entity->nid, 'name' => $displayname, 'avatar' => gofast_get_url_picture_by_id(0), 'type' => 'email');
 }
 
 function gofast_contacts_query_first_and_last_name_alter(QueryAlterableInterface $query) {

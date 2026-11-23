@@ -48,7 +48,7 @@ function gofast_metadata_test_declare_metadatas($node = NULL) {
             'vid' => taxonomy_vocabulary_get_names()["metadata_test_voc"]->vid,
             'solr_field' => 'sm_unr_field_test_multi',
             'node_pk' => $node ? $node->nid : NULL,
-            'value' => $node ? array_map(fn($el) => $el["value"], $node->field_test_multi[LANGUAGE_NONE] ?? []) : NULL,
+            'value' => $node ? json_encode(array_map(fn($el) => $el["value"], $node->field_test_multi[LANGUAGE_NONE] ?? [])) : NULL,
             'info' => $node ? json_encode($node->field_test_multi[LANGUAGE_NONE]) : NULL,
             'col_size' => 12,
             'filter_hidden' => true,
@@ -62,4 +62,30 @@ function gofast_metadata_test_declare_metadatas($node = NULL) {
         'metadatas' => $metadatas,
         'filter_callback' => fn($node) => $node->type == "alfresco_item",
     ];
+}
+
+/**
+ * Implement hook_extra_metadata
+ */
+function gofast_metadata_test_extra_metadata($node) {
+  $category = $node->field_category[LANGUAGE_NONE]['0']['tid'];
+  $term = taxonomy_get_term_by_name('Other', 'category');
+  $term_id = array_shift($term)->tid;
+  if ($category != $term_id) {
+    return;
+  }
+
+  drupal_add_js(drupal_get_path('module', 'gofast') . '/js/gofast_xeditable.js', array('type' => 'file', 'weight' => 5));
+
+  $metadatas = gofast_metadata_test_declare_metadatas($node)['metadatas'];
+  // ############################################################
+  // ################### METADATA DESCRIPTION ###################
+  // ############################################################
+
+  $theme = theme('gofast_node_extra_metadatas', ['extra_infos' => $metadatas]);
+  return [
+    'id' => "gofast_metadata_test",
+    'theme' => $theme,
+    'title' => "Extra Metadata"
+  ];
 }

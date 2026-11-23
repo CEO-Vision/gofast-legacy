@@ -36,7 +36,3 @@
 #search-form-body .form-field-operator > span.select2-container {
     flex-grow: 1;
 }
-
-#gofastAdvancedSearchHistory td[data-field='filters'], #gofastAdvancedSearchHistory td[data-field='query'] {
-    display: none !important;
-}

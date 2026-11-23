@@ -1,4 +1,3 @@
-
 This module integrates Drupal with the Apache Solr search platform. Solr search
 can be used as a replacement for core content search and boasts both extra
 features and better performance. Among the extra features is the ability to have

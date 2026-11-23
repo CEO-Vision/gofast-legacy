@@ -1997,7 +1997,8 @@ function advagg_mod_js_async_defer(array &$js) {
       || variable_get('jquery_update_jquery_migrate_cdn', 'none') !== 'none'
     )) {
       $min = variable_get('jquery_update_compression_type', 'min') == 'none' ? '' : '.min';
-      $path = drupal_get_path('module', 'jquery_update');
+      // Patch @CEO-Vision Update module name to use TAG1 jquery_update module
+      $path = drupal_get_path('module', 'tag1d7es_jquery_update');
       foreach ($js as $name => &$values) {
         if ($values['type'] !== 'inline') {
           continue;
@@ -2008,7 +2009,8 @@ function advagg_mod_js_async_defer(array &$js) {
           && stripos($values['data'], 'document.write("<script') !== FALSE
           && variable_get('jquery_update_jquery_cdn', 'none') !== 'none'
         ) {
-          $js_path = ($min == '.min') ? '/replace/ui/ui/minified/jquery-ui.min.js' : '/replace/ui/ui/jquery-ui.js';
+          // Patch @CEO-Vision jquery_update to use 1.14.0 with TAG1 ELS.
+          $js_path = ($min == '.min') ? '/replace/jquery-ui-1.14.0/jquery-ui.min.js' : '/replace/jquery-ui-1.14.0/jquery-ui.js';
           $jquery_update_ui_fallback = "{$GLOBALS['base_path']}{$path}{$js_path}";
           if (empty($inline_array)) {
             $inline_array = $values;

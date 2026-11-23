@@ -1,0 +1,21 @@
+{
+    "config": {
+        "allow-plugins": {
+            "dealerdirect/phpcodesniffer-composer-installer": true
+        }
+    },
+    "repositories": [{
+            "type": "composer",
+            "url": "https://packages.drupal.org/7"
+        }],
+    "require": {
+        "drupal/ctools": "^1.21",
+        "drupal/options_element": "^1.12"
+    },
+    "require-dev": {
+        "drupal/coder": "^8.2@stable",
+        "phpunit/phpunit": "^5.7",
+        "symfony/filesystem": "^3.4",
+        "drush/drush": "^8.3.3"
+    }
+}

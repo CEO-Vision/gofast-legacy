@@ -6,7 +6,7 @@
     let gofastAuditTableElements = [];
 
     // Map special behaviors to related audit types
-    const hasExport = ["site"];
+    const hasExport = ["site", "space"];
     const hasInputs = ["site", "space"];
     let hasSetInputs = false;    
     // When an input has dynamic options, we have to parse them and put them in the input: these are the handlers responsible for this, sorted by input type
@@ -48,7 +48,10 @@
             autoHide: false,
             textAlign: "center",
             template: function (data) {
-              return data.name;
+              if (data.uid == 0 || data.uid == 1) {
+                return "<i>" + data.final_name  + "</i>";
+              }
+              return data.final_name;
             },
           },
           filter: '<input type="text" name="login" class="form-control GofastAuditFilterForm__login" placeholder="' + Drupal.t("Enter login") + '"/>',
@@ -205,6 +208,11 @@
                     for (const [filterName, filterValue] of Object.entries(raw.filters)) {
                       queryString += "&query[" + filterName + "]=" + filterValue
                     }
+                    if(_auditType == "space"){
+                      // Scope the export on the space this table was built for, not on the page context
+                      queryString += "&gid=" + _auditEntityId;
+                    }
+                    queryString += "&type=" + _auditType;
                     $("#audit_export_xls_button > a").attr("data-query", queryString);
                   }
                   var dataSet = raw;

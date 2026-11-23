@@ -181,10 +181,6 @@ function gofast_cmis_api_post_node_content($params){
  * @methods GET
  */
 function gofast_api_node_preview($params){
-    //Check content type and content disposition
-    if(strpos($params['Content-Type'], "application/pdf") === FALSE){
-        return gofast_api_not_implemented("This Content-Type");
-    }
     if(strpos($params['Content-Disposition'], "attachment") === FALSE){
         return gofast_api_not_implemented("This Content-Disposition");
     }
@@ -229,19 +225,25 @@ function gofast_api_node_preview($params){
       gofast_api_not_found("Alfresco content not found for an unpublished node");
     }
 
-    $generation = gofast_cmis_webservice_item_generate_preview($node->nid);
-    $generation = json_decode($generation, TRUE);
-
-    if($generation['status'] != "OK"){
-        gofast_api_internal_server_error("Preview generattion has failed for " . $node->title);
+    // Is extension previewable?
+    $extension = strtolower(gofast_cmis_node_get_extension($node));
+    if(!in_array($extension, gofast_cmis_browser_previewable_extensions()) && !in_array($extension, gofast_onlyoffice_previewable_document_extensions()) && !in_array($extension, gofast_manual_previewable_document_extensions()) && !in_array($extension, gofast_onlyoffice_convertible_document_extensions()) && !in_array($extension, gofast_onlyoffice_viewable_document_extensions())) {
+        gofast_api_internal_server_error("The content is not previewable");
     }
 
-    $content = file_get_contents("http://localhost" . gofast_cmis_node_get_pdf_link($node));
+    // If file is not a PDF, use our convert callback straight away
+    if (!in_array($extension, gofast_cmis_browser_previewable_extensions())) {
+        gofast_cmis_webservice_item_generate_onlyoffice_preview($node->nid, TRUE);
+        drupal_exit();
+    }
+
+    $mimetype = gofast_cmis_get_mimetype_extension_match_array()[$extension];
+
+    $content = gofast_cmis_item_get_content($node->field_reference[LANGUAGE_NONE][0]['value']);
     if(empty($content)){ //Check if we retrieved the content
        gofast_api_internal_server_error("Alfresco content not found for this node (Internal error)");
     }
-
-    gofast_api_success($content, "200 OK", "application/pdf", 'attachment; filename="' . $node->title . '.pdf"');
+    gofast_api_success($content, "200 OK", $mimetype, 'attachment; filename="' . $node->title);
 }
 
 /*
@@ -331,7 +333,7 @@ function gofast_api_node_preview_link($params){
         if(isset($url_object->FileUrl)) {
             // File has been converted to pdf by OO: use the generated preview link directly
             $inner_url = rawurlencode($url_object->FileUrl . "?caseId=" . $case_id);
-            $url = "/sites/all/libraries/pdf/web/viewer_gofast.html?v=253&file=".$inner_url;
+            $url = "/sites/all/libraries/pdf/web/viewer_gofast.html?v=" . _GOFAST_CMIS_CUSTOM_PDFJS_VIEWER_VERSION . "&file=".$inner_url;
         }elseif ($extension == "pdf") {
             // File could not be converted beacuse it's a .pdf: copy the file content in a temp location and use this link
             $url = gofast_cmis_webservice_item_generate_notconverted_preview($node->nid, $url) . "?caseId=" . $case_id;
@@ -345,7 +347,7 @@ function gofast_api_node_preview_link($params){
 
     // We didn't use the admin ticket: use an OO preview link, otherwise keep the original Alfresco link
     if(isset($url_object->FileUrl)) {
-        $url = "/sites/all/libraries/pdf/web/viewer_gofast.html?v=253&file=".rawurlencode($url_object->FileUrl);
+        $url = "/sites/all/libraries/pdf/web/viewer_gofast.html?v=" . _GOFAST_CMIS_CUSTOM_PDFJS_VIEWER_VERSION . "&file=".rawurlencode($url_object->FileUrl);
     }
     gofast_api_success(array('link' => $url));
 }
@@ -407,6 +409,11 @@ function gofast_api_node_replicate($params){
  * Handle instant replication calls from Alfresco
  */
 function gofast_cmis_api_post_node_replicate($params){
+    // The node reference ends up in file names and commands
+    if (!gofast_cmis_is_valid_node_ref($params["noderef"] ?? NULL)) {
+        gofast_api_mandatory_parameter("A valid noderef");
+    }
+
     // Get params
     $noderef = gofast_xss_clean($params["noderef"]);
     $name = gofast_xss_clean($params["name"]);

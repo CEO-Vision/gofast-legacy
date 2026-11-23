@@ -5,7 +5,13 @@
   <?php echo gofast_directory_categories_actions_get_all_actions(); ?>
 </div>
 <div class="w-100" style="height: 80%">
-    <div id="gofastCategoriesTable" class="datatable datatable-bordered datatable-head-custom h-100" data-columns='<?php echo $columns ?>'></div>
+    <div
+      id="gofastCategoriesTable"
+      class="datatable datatable-bordered datatable-head-custom"
+      style="min-height: 500px"
+      data-columns='<?php echo $columns ?>'
+    >
+    </div>
 </div>
 
 <script>Gofast.initCategoriesDirectory();</script>

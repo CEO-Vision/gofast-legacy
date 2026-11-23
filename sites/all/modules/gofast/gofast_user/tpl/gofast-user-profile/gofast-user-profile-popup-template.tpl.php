@@ -10,6 +10,7 @@
             </h4>
         </div>
     </div>
+    <?php if(!$only_name) : ?>
     <div class="card-body d-flex p-5 pb-0">
         <div class="gofastProfilePopupLeft min-w-150px px-4">
             <div class="picture img-rounded">
@@ -30,5 +31,6 @@
             </ul>
         </div>
     </div>
+    <?php endif; ?>
 
 </div>

@@ -610,16 +610,30 @@ function gofast_workflows_update_userlist_tasks($userlist) {
     gofast_workflows_update_tasks_actors($tasks, "ul_" . $userlist->ulid);
 }
 
-function gofast_workflows_synchronize_members_userlist($userlist){
+/**
+ * Synchronizes the members of a userlist with a Bonita group.
+ *
+ * This function compares the members of a given Drupal userlist entity with
+ * the members of its corresponding Bonita group. It then adds or removes
+ * users from the Bonita group to ensure the membership is synchronized.
+ *
+ * @param object $userlist The Drupal userlist entity object.
+ * @param array|null $bonita_members An optional array of current Bonita group members.
+ * If not provided, the members will be fetched from Bonita.
+ *
+ * @return void
+ */
+function gofast_workflows_synchronize_members_userlist($userlist, $bonita_members_ids = NULL){
     $bonita_group = gofast_workflows_get_bonitagroup_from_userlist($userlist);
     $members = $userlist->field_userlist_members[LANGUAGE_NONE];
-       
-    $bonita_members = (array) gofast_workflows_curl_get_members_group_bonita($bonita_group["id"]);
-    
-    $bonita_members_ids = array_map(function($bonita_member) {
-        return $bonita_member["id"];
-    }, $bonita_members);
-     
+
+    if (!$bonita_members_ids) {
+        $bonita_members = (array) gofast_workflows_curl_get_members_group_bonita($bonita_group["id"]);
+        $bonita_members_ids = array_map(function($bonita_member) {
+            return $bonita_member["id"];
+        }, $bonita_members);
+    }
+
     $userlist_bonita_members_ids = [];
     foreach($members as $uid){
         $uid = $uid['value'];
@@ -701,13 +715,68 @@ function gofast_workflows_synchro_all_userlists($delete_all = false){
     }
     
    $userlists = entity_load('userlist');
-   
-    foreach($userlists as $userlist){
-        gofast_workflows_create_userlist($userlist);
-        gofast_workflows_synchronize_members_userlist($userlist);
+   $ulids = array_keys($userlists);
+   $ulids_in_bonita_db = gofast_workflows_get_all_userlists_from_db();
+   $ulids_not_in_bonita_db = array_diff($ulids, $ulids_in_bonita_db);
+
+   foreach($ulids_not_in_bonita_db as $missing_ulid) {
+        gofast_workflows_create_userlist($userlists[$missing_ulid]);
+        // If a userlist has just been created, then it's already synchronized and we can remove it from the list
+        unset($userlists[$missing_ulid]);
+   }
+   $remaining_groups_names = array_map(fn($el) => "ul_" . $el, array_keys($userlists));
+   $remaining_groups_members = gofast_workflows_get_groups_members_from_db($remaining_groups_names);
+
+    foreach($userlists as $ulid => $userlist){
+        $remaining_group_index = "ul_" . $ulid;
+        $remaining_group = $remaining_groups_members[$remaining_group_index];
+        if (empty($remaining_group)) {
+            continue;
+        }
+        gofast_workflows_synchronize_members_userlist($userlist, $remaining_group);
     }
 }
 
+/**
+ * Retrieves a list of userlists from the Bonita database.
+ *
+ * @return int[] An array of integer IDs representing the userlists.
+ */
+function gofast_workflows_get_all_userlists_from_db() {
+    gofast_workflows_activate_bonita_connection();
+    $userlists = db_select("group_", "g", array("target" => "bonita"))
+        ->fields("g", ["name"])
+        ->condition("g.name", "ul_%", "LIKE")
+        ->execute()->fetchCol();
+    return array_map(fn($el) => (int) str_replace("ul_", "", $el), $userlists);
+}
+
+/**
+ * Retrieves a list of members for specified groups from the Bonita database.
+ *
+ * @param string[] $groups_names An array of group names to query for members.
+ * @return array An associative array mapping group names to an array of Bonita IDs.
+ */
+function gofast_workflows_get_groups_members_from_db($groups_names) {
+    gofast_workflows_activate_bonita_connection();
+    $groups_members = db_select("group_", "g", array("target" => "bonita"))
+        ->fields("g", ["name"])
+        ->condition("g.name", $groups_names, "IN");
+    $groups_members->innerJoin("user_membership", "um", "um.groupId = g.id");
+    $groups_members->leftJoin("user_", "u", "u.id = um.userId");
+    $groups_members->addField("u", "id");
+
+    $groups_members = $groups_members->execute()->fetchAll();
+
+    $results = [];
+    foreach($groups_members as $group_member) {
+        if (!isset($results[$group_member->name])) {
+            $results[$group_member->name] = [];
+        }
+        $results[$group_member->name][] = $group_member->id;
+    }
+    return $results;
+}
 
 /* fonction qui synchronise tous les users, et les ajoute dans le groupe global Utilisateurs */
 function gofast_workflows_synchro_all_users(){

@@ -48,22 +48,6 @@ function gofast_xeditable_libraries_info(&$libraries) {
     ),
   ); */
 
-  $libraries['ckeditor'] = array(
-    'name' => 'ckeditor',
-    'vendor url' => 'http://ckeditor.com/',
-    'download url' => 'http://download.cksource.com/CKEditor/CKEditor/CKEditor%204.5.6/ckeditor_4.5.6_standard.zip',
-    'version' => '4.5.6',
-    'version callback' => 'short_circuit_version',
-    'files' => array(
-      'js' => array(
-        'ckeditor.js'=> array(
-          'every_page' => TRUE,
-        ),
-        '/adapters/jquery.js',
-      ),
-    ),
-  );
-
   $libraries['x-editable'] = array(
     'name' => 'x-editable for bootstrap',
     'vendor url' => 'https://vitalets.github.io/x-editable/',
@@ -338,7 +322,13 @@ function gofast_update_node_field() {
   } else {
     $node_unlocked = TRUE;
   }
-  $user_allowed = ($node->uid === $user->uid || gofast_user_is_adm($user) || $user->uid === 1);
+
+  // We disallow creators of spaces from having extra rights to update its metadata.
+  // We want to keep that exception for everything else for the time being however.
+  $is_creator_of_content = !gofast_og_is_space($node) && $node->uid === $user->uid;
+  $is_main_admin = $user->uid === 1;
+
+  $user_allowed = $is_creator_of_content || $is_main_admin;
 
   if(!$user_allowed && !$user_update_access) {
     cache_clear_all("field:node:$node->nid", 'cache_field');
@@ -352,6 +342,7 @@ function gofast_update_node_field() {
   }
 
   // Load entity wrapper.
+  /** @var EntityDrupalWrapper */
   $wrapper = entity_metadata_wrapper('node', $node);
 
   //url_alias field
@@ -492,22 +483,11 @@ function gofast_update_node_field() {
   // Prevent having 2 nodes with the same title within a single space
   // Or containing special characters in the title.
   if(gofast_og_is_space($node, TRUE) && $field_name == 'title'){
-    // All content types are subject to the same validator.
-    if (!gofast_validate_filename($value)) {
-      $errors = t('Title contains illegals characters or an invalid name.', array(), array('context' => 'gofast'));
-      return gofast_update_field_error($field_name, NULL, $errors);
+
+    $errors = gofast_validate_node_title($value, $node);
+    if (count($errors) > 0) {
+      return gofast_update_field_error($field_name, NULL, $errors[0]);
     }
-
-    // Specific rules for Gofast Spaces.
-      if (strpos($value, '_') === 0 || strpos($value, '#') === 0){
-        $errors = t('A space title cannot begin with an [_] or [#].', array(), array('context' => 'gofast'));
-        return gofast_update_field_error($field_name, NULL, $errors);
-      }
-
-      if (strpos($value, '#') !== FALSE){
-        $errors =   t('A space title cannot contain the following char [#].', array(), array('context' => 'gofast'));
-        return gofast_update_field_error($field_name, NULL, $errors);
-      }
 
       $parent_gid = $node->og_group_ref[LANGUAGE_NONE][0]["target_id"] ? $node->og_group_ref[LANGUAGE_NONE][0]["target_id"] : array();
       $nids = array();
@@ -583,6 +563,16 @@ function gofast_update_node_field() {
       if (gettype($normalized_value) == "string" && substr($normalized_value, -1) == ";") {
         $normalized_values[$index] = substr($normalized_value, 0, -1);
       }
+    }
+
+    // Validate classification for space nodes: check space confidentiality constraints.
+    $classification_error = gofast_update_node_field_validate_space_classification(
+      $wrapper,
+      $field_name,
+      fn() => empty($normalized_values) ? NULL : reset($normalized_values),
+    );
+    if (isset($classification_error)) {
+      return gofast_update_field_error($field_name, NULL, $classification_error['message']);
     }
 
     // Then set and save the wrapped element
@@ -850,7 +840,10 @@ function gofast_update_node_field() {
       }else{
           $wrapper->{$field_name}->set($value);
       }
-    }else {
+    } elseif ($field_name === 'field_classification' && gofast_og_is_space($node)) {
+      // We do not eagerly save the node as we handle it afterwards.
+      $wrapper = gofast_taxonomy_space_update_classification($wrapper, empty($normalized_values) ? NULL : reset($normalized_values), FALSE);
+    } else {
         if($normalized_values == false){
             $wrapper->{$field_name}->set(NULL);
         }else{
@@ -938,6 +931,124 @@ function gofast_update_node_field() {
 }
 
 /**
+ * Validation of classification field constraint on space nodes given parameters of gofast_update_node_field.
+ *
+ * @param object|numeric|EntityDrupalWrapper $node The node id, object or
+ *  wrapper we are trying to update.
+ * @param string $field_name The name of the field we are trying to set.
+ * @param callable():object|numeric|EntityDrupalWrapper $get_value Provider
+ *  function for the taxonomy term value we are trying to set on the field. Must
+ *  return either the term id, object or entity wrapper.
+ * @return ?array{message:string,code:string} An error array or NULL if no
+ *  validation error occurred.
+ */
+function gofast_update_node_field_validate_space_classification($node, $field_name, $get_value) {
+  /** @var EntityDrupalWrapper */
+  $wrapper = entity_metadata_wrapper('node', $node);
+  $node = $wrapper->value();
+
+  // Only validate classification changes.
+  if ($field_name !== 'field_classification') {
+    return NULL;
+  }
+
+  return gofast_node_validate_classification_update($wrapper, $get_value());
+}
+
+/**
+ * Validate that an update to a node's classification does not break constraints.
+ *
+ * Verified constraints:
+ * ```txt
+ *  1. When node is a space:
+ *  1.1. When classification's confidentiality changes:
+ *  1.1.1. When adding confidentiality:
+ *  1.1.1.1. All subspaces are already confidential.
+ *  1.1.1.2. Space users after adding confidentiality must contain at least one admin.
+ *  1.1.2. When removing confidentiality:
+ *  1.1.2.1. Parent space is not confidential.
+ * ```
+ *
+ * @param object|numeric|EntityDrupalWrapper $node The node id, object or
+ *  wrapper we are trying to update.
+ * @param object|numeric|EntityDrupalWrapper $new_classification The
+ *  classification taxonomy term's id, object or wrapper of the new classification.
+ * @param object|numeric|EntityDrupalWrapper|null $account Optional user account
+ *  to check for permissions. Defaults to current user.
+ * @return ?array{message:string,code:string} An error array or NULL if no
+ *  validation error occurred.
+ */
+function gofast_node_validate_classification_update($node, $new_classification, $account = NULL) {
+  if (!isset($account)) {
+    $account = $GLOBALS['user'];
+  }
+  /** @var EntityDrupalWrapper */
+  $account = entity_metadata_wrapper('user', $account);
+  /** @var EntityDrupalWrapper */
+  $wrapper = entity_metadata_wrapper('node', $node);
+  $node = $wrapper->value();
+
+  // Only space nodes have special validation.
+  if (!gofast_og_is_space($node)) {
+    return NULL;
+  }
+
+  $old_confidentiality = NULL;
+  if (_gofast_taxonomy_is_node_wrapper_classification_set($wrapper)) {
+    $old_confidentiality = gofast_taxonomy_is_term_confidential($wrapper->field_classification->value());
+  }
+  $new_confidentiality = gofast_taxonomy_is_term_confidential($new_classification);
+  $is_confidentiality_changing = $old_confidentiality !== $new_confidentiality;
+
+  // No change in confidentiality, no need for further validation
+  if (!$is_confidentiality_changing) {
+    return NULL;
+  }
+
+  $is_space_administrator = in_array(
+    'administrator member',
+    gofast_og_get_user_final_roles_for_space('node', $wrapper->getIdentifier(), $account->getIdentifier()),
+  );
+  // Check user can change the space confidentiality.
+  $is_removing_confidentiality = $old_confidentiality && !$new_confidentiality;
+
+  // We always allow space admin users to remove confidentiality, in case
+  // something went wrong when setting the confidentiality this can help fix issues.
+  // Normally, due to the check when setting the confidentiality, the remaining
+  // space administrators should already have the right clearance.
+  $is_allowed_to_change_confidentiality = $is_space_administrator
+    && (
+      $is_removing_confidentiality
+      || gofast_user_can_user_change_content_confidentiality($account)
+    );
+
+  if (!$is_allowed_to_change_confidentiality) {
+    return [
+      'code' => 'not_allowed',
+      'message' => t(
+        'You do not have permission to change the confidentiality of contents.',
+        [],
+        ['context' => 'gofast'],
+      )
+    ];
+  }
+
+  $is_adding_confidentiality = !$old_confidentiality && $new_confidentiality;
+
+  // When adding confidentiality to space: Ensure space can become confidential
+  if ($is_adding_confidentiality && $error = gofast_space_can_become_confidential($wrapper)) {
+    return $error;
+  }
+  // When removing confidentiality: Ensure space can become non-confidential.
+  if ($is_removing_confidentiality && $error = gofast_space_can_become_non_confidential($wrapper)) {
+    return $error;
+  }
+
+  // No errors to report.
+  return NULL;
+}
+
+/**
  * @deprecated
  * @global type $user
  * @return type
@@ -1013,6 +1124,10 @@ function gofast_update_field() {
   // Check for the current user being able to edit $account's profile.
   $user_allowed = $account->uid === $user->uid || gofast_user_is_adm($user) || $user->uid === 1;
   if(!$user_allowed) {
+    return gofast_update_field_error($field_name, 'permissions');
+  }
+  // Widgets rebuild their validated value from the stored one, so the form validation cannot guard these flags here.
+  if (in_array($field_name, ['is_extranet', 'is_broadcaster', 'field_is_comment_restricted'], TRUE) && !user_access('administer roles')) {
     return gofast_update_field_error($field_name, 'permissions');
   }
 
@@ -1300,61 +1415,115 @@ function gofast_taxonomy_category_allowed($term, $nodes = null) {
 }
 
 /**
+ * Checks if a classification term is allowed for a given node.
+ *
+ * Terms failing this check should not be displayed as options.
+ *
+ * @param object $term
+ * @param array{node?:?object,content_type?:'space'} $options
+ * @return bool
+ */
+function gofast_taxonomy_classification_allowed($term, $options = []) {
+  // No option given, assume term is allowed.
+  if (!isset($options['node']) && !isset($options['content_type'])) {
+    return TRUE;
+  }
+
+  /** @var EntityDrupalWrapper */
+  $term_w = entity_metadata_wrapper('taxonomy_term', $term);
+  if (!isset($term_w->field_classification_type)) {
+    watchdog("gofast_taxonomy", "Classification taxonomy term @tid has no type", ["@tid" => $term->tid], WATCHDOG_ERROR);
+    return FALSE;
+  }
+  try {
+    $term_type_name = $term_w->field_classification_type->name->value();
+  } catch(Exception $e) {
+    watchdog("gofast_taxonomy", "Classification taxonomy term @tid has non-existent type", ["@tid" => $term->tid], WATCHDOG_ERROR);
+    return FALSE;
+  }
+  $is_civil_organisation = in_array($term_type_name, variable_get("gofast_taxonomy_allowed_classification_types", [GOFAST_TAXONOMY_CLASSIFICATION_TYPE_CIVIL_ORGANIZATION_NAME]));
+  if (!$is_civil_organisation) {
+    return FALSE;
+  }
+
+  return TRUE;
+}
+
+/**
  * This function returns all the terms of a vocabulary for html select item.
  * @param int $vid the vid to get the term of
  * @return array a list of terms with 'id' and 'text' keys
  */
-function gofast_xeditable_vocabulary_to_select_items($vid, $node = null) {
+function gofast_xeditable_vocabulary_to_select_items($vid, $node = null)
+{
   $options = array();
-  $options_standard = array();
+  $nested_options = array();
   global $user;
-  if($vid != GOFAST_VID_CLASSIFICATION){
+  $is_space = $node === NULL ? FALSE : gofast_og_is_space($node);
+  if ($vid != GOFAST_VID_CLASSIFICATION) {
     // Fetch all first level terms to check if they have children
-    foreach(taxonomy_get_tree($vid, 0, 1, true) as $term){
+    foreach (taxonomy_get_tree($vid, 0, 1, true) as $term) {
+      //I check and retrieve the values
+      $is_standard = !empty($term->field_standard_gf) ? $term->field_standard_gf[LANGUAGE_NONE][0]['value'] : 0;
       $localized_term = i18n_object('taxonomy_term', $term)->localize($user->language);
-      if($vid == GOFAST_VID_CATEGORY){
+      if ($vid == GOFAST_VID_CATEGORY) {
         $allowed_term = gofast_taxonomy_category_allowed($term, $node);
         // Prevent showing term and it's children if not allowed in the space
-        if(!$allowed_term){
+        if (!$allowed_term) {
+          continue;
+        }
+      }
+      if ($is_space && $vid == GOFAST_VID_STATE) {
+        if (empty($term->field_state_has_og) || !$term->field_state_has_og[LANGUAGE_NONE][0]["value"]) {
           continue;
         }
       }
       $children = taxonomy_get_children($term->tid);
       // If the term is a parent term then process all children terms
-      if(!empty($children)){
+      if (!empty($children)) {
         $mapped_children = [];
-        foreach($children as $child_term){
-          if($vid == GOFAST_VID_CATEGORY){
+        foreach ($children as $child_term) {
+
+          $children_is_standard = !empty($child_term->field_standard_gf) ? $child_term->field_standard_gf[LANGUAGE_NONE][0]['value'] : 0;
+
+          if ($vid == GOFAST_VID_CATEGORY) {
             $allowed_child_term = gofast_taxonomy_category_allowed($child_term, $node);
             // Prevent showing specific term if not allowed in the space
-            if(!$allowed_child_term){
+            if (!$allowed_child_term) {
               continue;
             }
           }
           $localized_child_term = i18n_object('taxonomy_term', $child_term)->localize($user->language);
-          $mapped_children[$localized_child_term->name . rand()] = array("id" => $localized_child_term->name, "text" => $localized_child_term->name, 'database_name' => $child_term->name, 'tid' => $child_term->tid);
+          $mapped_children[$localized_child_term->name . rand()] = array("id" => $localized_child_term->name, "text" => $localized_child_term->name, 'database_name' => $child_term->name, 'tid' => $child_term->tid, 'is_standard' => $children_is_standard);
         }
-        $term_group = array("text" => $localized_term->name, "children" => $mapped_children);
-        if($term->field_standard_gf[LANGUAGE_NONE][0]['value'] == 1){
-          $options_standard[] = $term_group;
-        } else {
-          $options[] = $term_group;
-        }
-
+        $term_group = array("text" => $localized_term->name, "children" => $mapped_children, 'is_standard' => $is_standard);
+        $nested_options[] = $term_group;
       } else {
-        $options[] = array("id" => $localized_term->name, "text" => $localized_term->name, 'database_name' => $term->name, 'tid' => $term->tid);
+        $options[] = array("id" => $localized_term->name, "text" => $localized_term->name, 'database_name' => $term->name, 'tid' => $term->tid, 'is_standard' => $is_standard);
       }
     }
   } else {
+    $can_change_confidentiality = gofast_user_can_user_change_content_confidentiality();
+    $is_space = $node === NULL ? FALSE : gofast_og_is_space($node);
+    $should_disable_confidential_options = $is_space && !$can_change_confidentiality;
+
+    $options_classification = [];
     foreach (taxonomy_term_load_multiple(FALSE, array('vid' => $vid)) as $term) {
+      // Filter terms based on the current node type.
+      if (!gofast_taxonomy_classification_allowed($term, ['node' => $node])) {
+        continue;
+      }
       $localized_term = i18n_object('taxonomy_term', $term)->localize($user->language);
 
-      if ($vid === GOFAST_VID_CLASSIFICATION && $localized_term->field_classification_type[LANGUAGE_NONE][0]['tid']){
+      if ($vid === GOFAST_VID_CLASSIFICATION && $localized_term->field_classification_type[LANGUAGE_NONE][0]['tid']) {
         $type_tid = $localized_term->field_classification_type[LANGUAGE_NONE][0]['tid'];
         $type_term = taxonomy_term_load($type_tid);
         $localized_type_term = i18n_taxonomy_localize_terms($type_term);
+        $confidentiality = gofast_taxonomy_get_term_confidentiality($term);
+        $is_option_disabled = $should_disable_confidential_options
+          && gofast_taxonomy_is_confidentiality_value_confidential($confidentiality);
 
-        if($term){
+        if ($term) {
           $localized_term = i18n_taxonomy_localize_terms($term);
           $options_classification[] =  [
             "text" => $localized_term->name,
@@ -1363,6 +1532,14 @@ function gofast_xeditable_vocabulary_to_select_items($vid, $node = null) {
             "type" =>  $localized_type_term ? $localized_type_term->name : '',
             "weight" => $term->weight,
             "tid" => $term->tid,
+            "option_attributes" => [
+              ...(
+                $is_option_disabled ?
+                ['disabled' => 1]
+                : []
+              ),
+              'data-confidentiality' => json_encode($confidentiality),
+            ],
           ];
         }
       }
@@ -1370,23 +1547,59 @@ function gofast_xeditable_vocabulary_to_select_items($vid, $node = null) {
   }
 
   //Sort terms alphabetically
-  foreach($options_standard as &$option_unsorted_group){
+  foreach ($nested_options as &$option_unsorted_group) {
     ksort($option_unsorted_group["children"]);
   }
 
   //Sort terms alphabetically
   $options_sorted = array();
-  foreach($options as $option_unsorted_value){
+  foreach ($options as $option_unsorted_value) {
     $options_sorted[$option_unsorted_value['text'] . rand()] = $option_unsorted_value;
   }
   ksort($options_sorted);
 
   $options = array_values($options_sorted);
-  if($vid === GOFAST_VID_CATEGORY) {
-    $options = [...$options_standard, ['text' => htmlspecialchars_decode(t("@site_name's categories", array('@site_name' => variable_get('site_name') ), array('context' => 'gofast'))) , 'children' => $options]];;
+  if ($vid === GOFAST_VID_CATEGORY) {
+    $all_categories = array_merge($nested_options, $options);
+    // Sorting: non-standard then with children
+    usort($all_categories, function ($a, $b) {
+      if (!!$a['is_standard'] != !!$b['is_standard']) {
+        return !!$b['is_standard'] <=> !!$a['is_standard'];
+      }
+      $a_has_children = (bool) $a['children'] ? 1 : 0;
+      $b_has_children = (bool) $b['children'] ? 1 : 0;
+
+      return $b_has_children <=> $a_has_children;
+    });
+
+    $non_standard_with_children = [];
+    $orphaned_categories = [];
+    $standard_categories = [];
+
+    foreach ($all_categories as $category) {
+      $is_standard = (bool) $category['is_standard'];
+      $has_children = (bool) $category['children'];
+
+      if ($is_standard) {
+        $standard_categories[] = $category;
+        continue;
+      }
+      $has_children ? $non_standard_with_children[] = $category : $orphaned_categories[] = $category;
+    }
+
+    $options_non_standard = $non_standard_with_children;
+
+    if ($orphaned_categories) {
+      $options_non_standard[] = [
+        'text' => htmlspecialchars_decode(t("@site_name's categories", ['@site_name' => variable_get('site_name')])),
+        'children' => $orphaned_categories,
+      ];
+    }
+    $options = array_merge($options_non_standard, $standard_categories);
+
   }
 
-  if($vid === GOFAST_VID_CLASSIFICATION){
+  if ($vid === GOFAST_VID_CLASSIFICATION) {
     unset($options);
     $uniqueTypes = array();
     //Sort classification terms by weight
@@ -1401,7 +1614,7 @@ function gofast_xeditable_vocabulary_to_select_items($vid, $node = null) {
       $uniqueTypes[$type]['children'][] = $item;
     }
 
-    foreach($uniqueTypes as $key => $ut){
+    foreach ($uniqueTypes as $key => $ut) {
       $options[] = array('text' => $key, 'children' => $ut['children']);
     }
   }
@@ -1662,7 +1875,7 @@ function gofast_xeditable_tag_autocomplete($print = true) {
     $translated_name_case_expression = "CASE WHEN lt.translation IS NOT NULL THEN lt.translation ELSE t.name END";
     $translated_name_nocase_expression = "CASE WHEN lt.translation IS NOT NULL THEN LOWER(CAST(lt.translation AS CHAR(10000) CHARACTER SET utf8)) ELSE LOWER(t.name) END";
     $query->addExpression($translated_name_case_expression, "translated_name");
-    $query->where($translated_name_nocase_expression .  " LIKE '%" . strtolower($str) . "%'");
+    $query->where($translated_name_nocase_expression . " LIKE :str", [':str' => '%' . db_like(strtolower($str)) . '%']);
   } else {
     $query->condition("name", ...$condition_args);
   }

@@ -58,4 +58,3 @@ window.ClassicEditor = __webpack_require__(/*! @ckeditor/ckeditor5-build-classic
 
 /******/ })()
 ;
-//# sourceMappingURL=ckeditor-classic.bundle.js.map

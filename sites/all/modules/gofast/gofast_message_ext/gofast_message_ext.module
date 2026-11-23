@@ -111,6 +111,14 @@ function gofast_message_ext_entity_presave($entity, $type){
       else{
         $node_compare['event']['value'] = substr($content, 0, 4);
       }       
+
+      if ($node->type === 'webform') {
+        // We don't want to store the actual difference between webform states,
+        // we only need to know that there was one.
+        unset($node_compare['webform']);
+        unset($node_compare['webform_custom_properties']);
+      }
+
       $message = json_encode($node_compare);
       $entity->field_message_log['und']['0']['value'] = $message;
     }

@@ -115,3 +115,7 @@
 .context-menu-svg-img:hover > .navi-icon{
   filter :invert(52%) sepia(24%) saturate(6419%) hue-rotate(193deg) brightness(105%) contrast(101%);
 }
+
+.gofast-menu-disabled{
+  cursor: not-allowed;
+}

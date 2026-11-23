@@ -24,18 +24,42 @@ function gofast_naming_rules_apply_category_confirm() {
     if ($original_term && $original_term->field_naming_rules[LANGUAGE_NONE][0]["value"]) {
         $theme .=  theme("gofast_naming_rules_apply_category_confirm_modal", ["node" => $node, "term" => $original_term, "remove" => TRUE, "no_buttons" => $no_buttons]);
     }
+    // Would the new category's rule produce an invalid title? If so, warn and
+    // let the client disable "Apply" so the category is not applied.
+    $title_error = NULL;
+    if ($term && $term->field_naming_rules[LANGUAGE_NONE][0]["value"]) {
+        // Same value the modal previews (rule applied to the node metadata).
+        $ruled_value = gofast_naming_rule_get_node_ruled_value($node, $term, TRUE, FALSE)["value"];
+        $errs = strlen($ruled_value) ? gofast_validate_node_title($ruled_value, $node) : [];
+        if ($errs) {
+            // Forbidden characters present in the generated title.
+            $chars = array_values(array_filter(gofast_invalid_characters(), fn($c) => mb_strpos($ruled_value, $c) !== FALSE));
+            $title_error = theme('gofast_naming_rules_title_error', ['errors' => $errs, 'chars' => $chars]);
+        }
+    }
+
     if (strlen($theme) > 0) {
-        return json_encode(["message" => t("This category has a naming rule", [], ["context" => "gofast:gofast_naming_rules"]), "theme" => $theme]);
+        return json_encode([
+            "message" => t("This category has a naming rule", [], ["context" => "gofast:gofast_naming_rules"]), 
+            "theme" => $theme,
+            "error" => $title_error,
+        ]);
     }
     return FALSE;
 }
 
 function gofast_naming_rules_get_rule($term)
 {
+    if (is_numeric($term)) {
+        $term = taxonomy_term_load($term);
+    } else {
+        $term = rawurldecode($term);
+        $term = reset(taxonomy_get_term_by_name($term, "category"));
+    }
     $themed = isset($_GET["themed"]);
     $readable = isset($_GET["readable"]);
     if ($themed || $readable) {
-        return gofast_naming_rule_get_node_ruled_value(NULL, $term, FALSE, TRUE);
+        return gofast_naming_rule_get_node_ruled_value(NULL, $term, FALSE, TRUE)["value"];
     }
     return $term->field_naming_rules[LANGUAGE_NONE][0]["value"];
 }

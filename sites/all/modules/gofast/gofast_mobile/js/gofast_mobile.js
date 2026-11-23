@@ -3,7 +3,7 @@
 
   Gofast.tabletOrientationHandler = function(e, showBackdrop = false) {
     // don't show landscape mode backdrop on document pages
-    if (!showBackdrop && Gofast.get("node").type == "alfresco_item" && new RegExp(/^\/node\/(\d)+$/).test(location.pathname)) {
+    if (!showBackdrop && $(".GofastNode.alfrescoItemContent:visible, .GofastNode.webformContent:visible").length) {
       $("#landscape-backdrop").addClass("d-none");
     } else {
       $("#landscape-backdrop").removeClass("d-none");

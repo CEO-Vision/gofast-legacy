@@ -182,3 +182,19 @@ function gofast_userlist_create_menus() {
 function gofast_userlist_update_7304(){
   gofast_userlist_create_public_userlist();
 }
+
+/**
+ * Give their administrator role back to the userlist administrators who lost it.
+ */
+function gofast_userlist_update_7305() {
+  $admin_rid = array_search(GOFAST_OG_ROLE_ADMIN, og_roles('node', 'userlist'));
+  $memberships = db_query("SELECT om.gid, om.etid FROM {og_membership} om
+    INNER JOIN {node} n ON n.nid = om.gid AND n.type = 'userlist'
+    WHERE om.entity_type = 'user' AND om.group_type = 'node' AND om.state = :active
+    AND NOT EXISTS (SELECT 1 FROM {og_users_roles} ur WHERE ur.uid = om.etid AND ur.gid = om.gid AND ur.group_type = 'node' AND ur.rid = :rid)",
+    array(':active' => OG_STATE_ACTIVE, ':rid' => $admin_rid))->fetchAll();
+  foreach ($memberships as $membership) {
+    og_role_grant('node', $membership->gid, $membership->etid, $admin_rid);
+  }
+  return t('@count userlist administrators got their role back.', array('@count' => count($memberships)));
+}

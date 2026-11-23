@@ -109,14 +109,6 @@
     }
     Gofast.sideFileBrowser.selectCurrentItem("file-browser", false);
 
-    setTimeout(function () {
-      // Reset the search input field
-      if ($('#search-block-form input[type="text"]').next().length > 0) { // Check if the search input field is replace by auto-suggestion.
-        $('#search-block-form input[type="text"]').next().remove();
-        $('#search-block-form input[type="text"]').val('');
-      }
-    }, 200);
-
     jQuery(".tooltip").remove();
   };
 

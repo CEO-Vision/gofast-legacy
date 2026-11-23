@@ -106,6 +106,7 @@ class DrupalApacheSolrService implements DrupalApacheSolrServiceInterface {
   protected $luke;
   protected $stats;
   protected $system_info;
+  protected $system_info_cid;
 
   /**
    * Flag that denotes whether to use soft commits for Solr 4.x, defaults to FALSE.
@@ -462,7 +463,7 @@ class DrupalApacheSolrService implements DrupalApacheSolrServiceInterface {
    * Determine the routine that called this query.
    *
    * We define "the routine that called this query" as the first entry in
-   * the call stack that is not inside /apachesolr/. That makes the climbing
+   * the call stack that is not inside the apachesolr directory. That makes the climbing
    * logic very simple, and handles variable stack depth and hook functions.
    *
    * Copied from includes/database/log.inc
@@ -476,10 +477,11 @@ class DrupalApacheSolrService implements DrupalApacheSolrServiceInterface {
    *   Solr call itself.
    */
   public function findCaller() {
+    $path = drupal_get_path('module', 'apachesolr') . DIRECTORY_SEPARATOR;
     $stack = debug_backtrace();
     $stack_count = count($stack);
     for ($i = 0; $i < $stack_count; ++$i) {
-      if (!isset($stack[$i]['file']) || strpos($stack[$i]['file'], DIRECTORY_SEPARATOR . 'apachesolr' . DIRECTORY_SEPARATOR) === FALSE) {
+      if (!isset($stack[$i]['file']) || strpos($stack[$i]['file'], $path) === FALSE) {
         return array(
           'file' => isset($stack[$i]['file']) ? $stack[$i]['file'] : t('Unknown'),
           'line' => isset($stack[$i]['line']) ? $stack[$i]['line'] : t('Unknown'),

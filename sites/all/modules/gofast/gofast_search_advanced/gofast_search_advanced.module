@@ -236,7 +236,19 @@ function gofast_search_advanced_advanced_search_result_alter($result){
   }
 
   if(!empty($result['sm_vid_Category'])){
-    $result['sm_vid_Category'][0] = t($result['sm_vid_Category'][0]);
+    // Categories are retrieved as the term names.
+    foreach ($result['sm_vid_Category'] as $k => $term_name) {
+      // Get one term matching the name. There may be multiple (e.g.: document
+      // category and space category of same name), in that case we keep only
+      // the one that matches the current result bundle's category type.
+      $term_category = taxonomy_get_term_by_name($term_name, taxonomy_vocabulary_load(GOFAST_VID_CATEGORY)->machine_name);
+      $term_category = reset($term_category);
+
+      // Localize category term.
+      $localized_category = i18n_taxonomy_localize_terms($term_category);
+      // Update result with localized name.
+      $result['sm_vid_Category'][$k] = $localized_category->name;
+    }
   }
 
   if(!empty($result['im_field_state'])){

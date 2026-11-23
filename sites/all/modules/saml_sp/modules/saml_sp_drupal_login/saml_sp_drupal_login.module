@@ -297,10 +297,24 @@ function saml_sp_drupal_login__saml_authenticate($is_valid, OneLogin\Saml2\Respo
     $_SESSION['saml_sp__authentication_idp_name'] = $idp->machine_name;
     // @CEO-Vision patch end : GOFAST-11430 - Make user logout log out of the SAML Id provider used for logging in
 
+ 
+    // if frontapage is "home", don't need to do a drupal_goto because it's already done into gofast_goto_home() function
+    if(variable_get("site_frontpage", "home") == "home"){
+        // GOFAST-13998 og_private is lost during  user_login_finalize so re-set it
+        $og_private = $user->{GOFAST_OG_USER_PRIVATE_SPACE};
+        user_login_finalize($edit);
+        $user->{GOFAST_OG_USER_PRIVATE_SPACE} = $og_private;
+        // @CEO-Vision patch : GOFAST-11525
+        // manually call gofast_user_init to make call "drupal_add_js" concerning user settings
+        gofast_user_init(); 
+        $page_handler = menu_execute_active_handler(variable_get("site_frontpage", "home"), true); 
 
-    user_login_finalize($edit);
+    }else{
+       user_login_finalize($edit);
+       drupal_goto($edit['redirect']);
+    }
 
-    drupal_goto($edit['redirect']);
+    
   }
   drupal_goto();
 }

@@ -185,6 +185,13 @@ function gofast_link_sharing_multi_link_page($hash){
   if(array_key_exists('workspace', $_GET)){
     $folder_store_id = $_GET['workspace'];
 
+    // The workspace must be the folder authorized by the signed hash, otherwise
+    // any valid share hash could list an arbitrary folder's content.
+    $share = gofast_link_sharing_link_decrypt($hash_code);
+    if (empty($share['alfresco_id']) || $share['alfresco_id'] !== $folder_store_id) {
+      drupal_goto('/');
+    }
+
     $multi_link_form = drupal_get_form("gofast_multi_link_sharing_form", $hash_code, $folder_store_id);
     $data = ['form' => $multi_link_form, 'ask_join_link' => FALSE, 'hash' => $hash_code];
     $data['folder_store_id'] = $folder_store_id;
@@ -225,6 +232,9 @@ function gofast_link_sharing_get_shared_folder_content($store_id): stdClass {
   usurp(1);
   $item = gofast_cmis_item_get($store_id, TRUE);
   usurp(FALSE);
+  // The usurped call stored the admin ticket in the session; drop it so the
+  // anonymous visitor's share page never exposes it.
+  gofast_cmis_unset_user_ticket();
   
   $node_description  = gofast_link_sharing_get_folder_description($item);
 
@@ -337,6 +347,57 @@ function gofast_link_sharing_form_modal($js, $node=null){
 }
 
 /**
+ * Try to redirect logged users to a location of shared contents they can access.
+ *
+ * @param (array{
+ *  alfresco_id?: string,
+ *  folder_path?: string,
+ *  nids?: numeric | numeric[],
+ *  nid_unique?: numeric,
+ * }) $share_link_context Arry of context data about the currently handled share
+ *  link. This includes possible documents or folder being shared.
+ *
+ *  The expected keys are:
+ *  - `alfresco_id`: Id of folder Alfresco node. Used when sharing folders.
+ *  - `folder_path`: Path from which a folder was shared. This path should be preferred during redirection.
+ *  - `nids`: Single document node ID or array of document node IDs being shared.
+ *  - `nid_unique`: Single document node ID being shared and focused on. (?)
+ * @return void|never If a redirect is successful, this function does not return
+ *  (exits). If this function returns, then the current user could not be redirected.
+ */
+function gofast_link_sharing_try_redirect_logged_user_to_accessible_shared_content($share_link_context) {
+  global $user;
+
+  // Cannot redirect logged-out users.
+  if ($user->uid == 0) {
+    return;
+  }
+
+  // Attempt redirect to folder
+  if (isset($share_link_context['alfresco_id'])) {
+    $alfresco_id = $share_link_context['alfresco_id'];
+    $folder_path = $share_link_context['folder_path'];
+
+    gofast_link_sharing_try_redirecting_to_accessible_folder_location_by_item_id($alfresco_id, $folder_path);
+  }
+
+  if (!isset($share_link_context['nids'])) {
+    return;
+  }
+
+  // if sharing exactly one node that exists: no ambiguity redirect to node page.
+  $nids = $share_link_context['nids'];
+  $nid_unique = $share_link_context['nid_unique'];
+  $node = gofast_link_sharing_try_load_sharing_link_node($nids, $nid_unique);
+
+  if ($node !== false) {
+    // try redirecting to the node, user may not have the rights to access so this may fail
+    // may never return (if redirect happens)
+    gofast_link_sharing_try_redirecting_to_node($node);
+  }
+}
+
+/**
  * Page callback : Give access to the shared document from the shared url
  *
  * Form the shared link, it control that the document is accessible for the user
@@ -349,39 +410,56 @@ function gofast_link_sharing_form_modal($js, $node=null){
  * @return string (HTML)
  */
 function gofast_link_sharing($hash){
-  global $base_url;
-  global $user;
-  $curr_user = $user;
-  $node = gofast_multi_sharing_check_session($hash);
   //Check if there is already a gofast session
-  $is_gofast_user = gofast_link_sharing_is_gofast_user($curr_user);
-    $user_has_access = gofast_link_sharing_usr_has_access($node, $curr_user);
+
+  if(empty($hash)){
+    $hash = $_GET["hash"];
+  }
+  $decrypt_datas = gofast_link_sharing_link_decrypt($hash);
+  // Redirect logged in users if possible, execution stops there if successful.
+  gofast_link_sharing_try_redirect_logged_user_to_accessible_shared_content($decrypt_datas);
+  // User could not be redirected, continue handling.
+
+  gofast_multi_sharing_check_session($hash);
+
+  if (isset($decrypt_datas['nids'])) {
+    $node = gofast_link_sharing_try_load_sharing_link_node(
+      $decrypt_datas['nids'],
+      $decrypt_datas['nid_unique'],
+    );
     // this usurp is mandatory since gofast_cmis_get_repository will return null for anonymouse users
     usurp(1);
     $cmis_id = gofast_cmis_node_get_item_id($node);
     $object = gofast_cmis_item_get($cmis_id, TRUE);
     usurp(FALSE);
-
-    if($is_gofast_user && $user_has_access){
-    $ddl_link = $base_url.":443".'/node/'.$node->nid;
-      header('Location:'.$ddl_link);
-      exit;
-
-    }else{
-      $parent = reset(gofast_og_get_parent($node));
-      $parent_name = gofast_get_node_title($parent);
-      $is_private = gofast_og_is_user_private_space($parent);
-      if ($is_private) {
-        $parent = FALSE;
-      }
-      $output = theme('gofast-link-sharing-file-details', array(
-                'title' => $object->properties['cmis:name'],
-                'version' => empty($version) ? $object->properties['cmis:versionLabel']: $version,
-                'hash' => $_GET['hash'],
-                'parent' => $parent,
-                'parent_name' => $parent_name,
-		            'nid' => $node->nid,
-              ));
+    $parent = reset(gofast_og_get_parent($node));
+    $parent_name = gofast_get_node_title($parent);
+    $is_private = gofast_og_is_user_private_space($parent);
+    if ($is_private) {
+      $parent = FALSE;
+    }
+    $output = theme(
+      'gofast-link-sharing-file-details', 
+      array(
+        'title' => $object->properties['cmis:name'],
+        'version' => empty($version) ? $object->properties['cmis:versionLabel']: $version,
+        'hash' => $_GET['hash'],
+        'parent' => $parent,
+        'parent_name' => $parent_name,
+        'nid' => $node->nid,
+      )
+    );
+  } else if($decrypt_datas['alfresco_id']) {
+    $alfresco_id = $decrypt_datas['alfresco_id'];
+    
+    $multi_link_form = drupal_get_form("gofast_multi_link_sharing_form", $hash, $alfresco_id);
+    $data = ['form' => $multi_link_form, 'ask_join_link' => FALSE, 'hash' => $hash];
+    $data['alfresco_id'] = $alfresco_id;
+    $data['folder_contents'] = gofast_link_sharing_get_shared_folder_content($alfresco_id);
+    $data['folder_store_id'] = $alfresco_id;
+    
+    $content = theme('gofast-link-sharing-multi-folder-details', $data);
+    $output = gofast_create_page_content($content);
   }
 
   return $output;

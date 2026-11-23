@@ -1,0 +1,207 @@
+<?php
+
+/**
+ * Implements hook_install().
+ */
+function gofast_activity_feed_install() {
+  // Add indexes on tables often used for activity feed.
+  watchdog(
+    'gofast_activity_feed',
+    '%name --- Adding indexes on field tables often used for activity feed.',
+    ['%name' => __FUNCTION__ . '()'],
+  );
+
+  $indexes = [
+    [
+      'table' => 'field_data_field_node_id',
+      'name' => 'gfindex_field_data_field_node_id_1',
+      'fields' => ['field_node_id_value'],
+    ],
+    [
+      'table' => 'field_revision_field_node_id',
+      'name' => 'gfindex_field_revision_field_node_id_1',
+      'fields' => ['field_node_id_value'],
+    ],
+    [
+      'table' => 'field_data_field_target_id',
+      'name' => 'gfindex_field_data_field_target_id_1',
+      'fields' => ['field_target_id_value'],
+    ],
+    [
+      'table' => 'field_revision_field_target_id',
+      'name' => 'gfindex_field_revision_field_target_id_1',
+      'fields' => ['field_target_id_value'],
+    ],
+  ];
+
+  foreach ($indexes as ['table' => $table_name, 'name' => $index_name, 'fields' => $fields]) {
+    // Check table exists.
+    if (!db_table_exists($table_name)) {
+      watchdog(
+        'gofast_activity_feed',
+        '%name --- Cannot create index %index on non-existent table %table.',
+        [
+          '%name' => __FUNCTION__ . '()',
+          '%index' => $index_name,
+          '%table' => $table_name,
+        ],
+        WATCHDOG_ERROR,
+      );
+      continue;
+    }
+
+    // Check index is missing.
+    if (db_index_exists($table_name, $index_name)) {
+      watchdog(
+        'gofast_activity_feed',
+        '%name --- Index %index on table %table already exists.',
+        [
+          '%name' => __FUNCTION__ . '()',
+          '%index' => $index_name,
+          '%table' => $table_name,
+        ],
+      );
+      continue;
+    }
+
+    // Check if all fields of the index exist.
+    $missing_field = NULL;
+    foreach ($fields as $f) {
+      if (!db_field_exists($table_name, $f)) {
+        $missing_field = $f;
+        break;
+      }
+    }
+    if (!empty($field_missing)) {
+      watchdog(
+        'gofast_activity_feed',
+        '%name --- Missing field %field on table %table for index %index',
+        [
+          '%name' => __FUNCTION__ . '()',
+          '%field' => $missing_field,
+          '%table' => $table_name,
+          '%index' => $index_name,
+        ],
+        WATCHDOG_ERROR,
+      );
+      continue;
+    }
+
+    // Add index.
+    db_add_index($table_name, $index_name, $fields);
+    watchdog(
+      'gofast_activity_feed',
+      '%name --- Created index %index on table %table (columns @columns)',
+      [
+        '%name' => __FUNCTION__ . '()',
+        '%index' => $index_name,
+        '%table' => $table_name,
+        '@columns' => gofast_format_enumerated_list($fields),
+      ],
+    );
+  }
+}
+
+/**
+ * Implements hook_update_N() for 7401
+ *
+ * - Adds indexes on field tables used for activity feed.
+ */
+function gofast_activity_feed_update_7401() {
+  // Add indexes on tables often used for activity feed.
+  watchdog(
+    'gofast_activity_feed',
+    '%name --- Adding indexes on field tables often used for activity feed.',
+    ['%name' => __FUNCTION__ . '()'],
+  );
+
+  $indexes = [
+    [
+      'table' => 'field_data_field_node_id',
+      'name' => 'gfindex_field_data_field_node_id_1',
+      'fields' => ['field_node_id_value'],
+    ],
+    [
+      'table' => 'field_revision_field_node_id',
+      'name' => 'gfindex_field_revision_field_node_id_1',
+      'fields' => ['field_node_id_value'],
+    ],
+    [
+      'table' => 'field_data_field_target_id',
+      'name' => 'gfindex_field_data_field_target_id_1',
+      'fields' => ['field_target_id_value'],
+    ],
+    [
+      'table' => 'field_revision_field_target_id',
+      'name' => 'gfindex_field_revision_field_target_id_1',
+      'fields' => ['field_target_id_value'],
+    ],
+  ];
+
+  foreach ($indexes as ['table' => $table_name, 'name' => $index_name, 'fields' => $fields]) {
+    // Check table exists.
+    if (!db_table_exists($table_name)) {
+      watchdog(
+        'gofast_activity_feed',
+        '%name --- Cannot create index %index on non-existent table %table.',
+        [
+          '%name' => __FUNCTION__ . '()',
+          '%index' => $index_name,
+          '%table' => $table_name,
+        ],
+        WATCHDOG_ERROR,
+      );
+      continue;
+    }
+
+    // Check index is missing.
+    if (db_index_exists($table_name, $index_name)) {
+      watchdog(
+        'gofast_activity_feed',
+        '%name --- Index %index on table %table already exists.',
+        [
+          '%name' => __FUNCTION__ . '()',
+          '%index' => $index_name,
+          '%table' => $table_name,
+        ],
+      );
+      continue;
+    }
+
+    // Check if all fields of the index exist.
+    $missing_field = NULL;
+    foreach ($fields as $f) {
+      if (!db_field_exists($table_name, $f)) {
+        $missing_field = $f;
+        break;
+      }
+    }
+    if (!empty($field_missing)) {
+      watchdog(
+        'gofast_activity_feed',
+        '%name --- Missing field %field on table %table for index %index',
+        [
+          '%name' => __FUNCTION__ . '()',
+          '%field' => $missing_field,
+          '%table' => $table_name,
+          '%index' => $index_name,
+        ],
+        WATCHDOG_ERROR,
+      );
+      continue;
+    }
+
+    // Add index.
+    db_add_index($table_name, $index_name, $fields);
+    watchdog(
+      'gofast_activity_feed',
+      '%name --- Created index %index on table %table (columns @columns)',
+      [
+        '%name' => __FUNCTION__ . '()',
+        '%index' => $index_name,
+        '%table' => $table_name,
+        '@columns' => gofast_format_enumerated_list($fields),
+      ],
+    );
+  }
+}

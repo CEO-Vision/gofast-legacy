@@ -948,12 +948,25 @@ function gofast_workflows_deploy_rest_api_extension($name){
 }
 
 
+/**
+ * Deploys a new version of a process and enables it.
+ *
+ * With $actor 'previous', only a process already installed is upgraded and its actors keep the members of its
+ * enabled version.
+ */
 function gofast_workflows_deploy_new_version_standard_process($old_name, $new_name, $actor = "Utilisateurs"){
     //at this point, the .bar files are already uploaded into bonita server
     //first we add the processes
     gofast_workflows_get_cookie(true);
     $cookie_name = "cookie_bonita".BONITA_TECHNICAL_LOGIN.".txt";
     $baseURL = URL_BONITA;
+    if ($actor === 'previous') {
+        $previous = gofast_workflows_get_installed_process($new_name, $cookie_name);
+        if ($previous === NULL) {
+            return;
+        }
+        $old_name = $previous->name . '--' . $previous->version . '.bar';
+    }
 
     $data = array('fileupload' => $new_name);
     $ch2 = curl_init();
@@ -988,7 +1001,7 @@ function gofast_workflows_deploy_new_version_standard_process($old_name, $new_na
     $process_version = $process->version;
     $process_name = $process->name;
 
-    if($actor == "Utilisateurs"){
+    if($actor == "Utilisateurs" || $actor === 'previous'){
         $actor_id = gofast_workflows_get_utilisateur_group_id();
     }else{
         $actor_id = $actor;
@@ -1010,6 +1023,9 @@ function gofast_workflows_deploy_new_version_standard_process($old_name, $new_na
     curl_setopt($ch2, CURLOPT_COOKIEFILE, 'sites/default/files/swf/'.$cookie_name);
     curl_setopt($ch2, CURLOPT_RETURNTRANSFER, true);
     $actor_member_object = json_decode(gofast_workflows_curl_exec($ch2));
+    if ($actor === 'previous') {
+        gofast_workflows_copy_actor_members($previous->id, $process_id, $cookie_name);
+    }
 
 
     //then we activate this process
@@ -1071,6 +1087,62 @@ function gofast_workflows_deploy_new_version_standard_process($old_name, $new_na
     curl_setopt($ch2, CURLOPT_COOKIEFILE, 'sites/default/files/swf/'.$cookie_name);
     curl_setopt($ch2, CURLOPT_RETURNTRANSFER, true);
     $disabled_previous_process_object = json_decode(gofast_workflows_curl_exec($ch2));
+}
+
+/**
+ * Returns the enabled version of a deployed process (the last deployed one if none is enabled), or NULL when the
+ * process is not deployed or already has the version of the .bar.
+ */
+function gofast_workflows_get_installed_process($bar_name, $cookie_name) {
+    list($name, $version) = explode('--', basename($bar_name, '.bar'));
+    $ch = curl_init(URL_BONITA . 'API/bpm/process?p=0&c=100&o=deploymentDate%20ASC&f=name%3d' . rawurlencode($name));
+    curl_setopt($ch, CURLOPT_COOKIEFILE, 'sites/default/files/swf/' . $cookie_name);
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, TRUE);
+    $installed = NULL;
+    foreach ((array) json_decode((string) gofast_workflows_curl_exec($ch)) as $process) {
+        if ($process->version == $version) {
+            return NULL;
+        }
+        if ($installed === NULL || $process->activationState == 'ENABLED') {
+            $installed = $process;
+        }
+    }
+    return $installed;
+}
+
+/**
+ * Replaces the members of the actors of a process by the members of the same actors of another process.
+ */
+function gofast_workflows_copy_actor_members($from_process_id, $to_process_id, $cookie_name) {
+    $request = function ($method, $path, $data = NULL) use ($cookie_name) {
+        $ch = curl_init(URL_BONITA . $path);
+        curl_setopt($ch, CURLOPT_CUSTOMREQUEST, $method);
+        if ($data !== NULL) {
+            curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($data));
+            curl_setopt($ch, CURLOPT_HTTPHEADER, array('Content-Type: application/json'));
+        }
+        curl_setopt($ch, CURLOPT_COOKIEFILE, 'sites/default/files/swf/' . $cookie_name);
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, TRUE);
+        return json_decode((string) gofast_workflows_curl_exec($ch), TRUE);
+    };
+    $members = array();
+    foreach ((array) $request('GET', 'API/bpm/actor?p=0&c=100&f=process_id%3d' . $from_process_id) as $actor) {
+        $members[$actor['name']] = (array) $request('GET', 'API/bpm/actorMember?p=0&c=1000&f=actor_id%3d' . $actor['id']);
+    }
+    foreach ((array) $request('GET', 'API/bpm/actor?p=0&c=100&f=process_id%3d' . $to_process_id) as $actor) {
+        foreach ((array) $request('GET', 'API/bpm/actorMember?p=0&c=1000&f=actor_id%3d' . $actor['id']) as $member) {
+            $request('DELETE', 'API/bpm/actorMember/' . $member['id']);
+        }
+        foreach (isset($members[$actor['name']]) ? $members[$actor['name']] : array() as $member) {
+            $data = array('actor_id' => $actor['id']);
+            foreach (array('user_id', 'group_id', 'role_id') as $key) {
+                if ($member[$key] > 0) {
+                    $data[$key] = $member[$key];
+                }
+            }
+            $request('POST', 'API/bpm/actorMember', $data);
+        }
+    }
 }
 
 

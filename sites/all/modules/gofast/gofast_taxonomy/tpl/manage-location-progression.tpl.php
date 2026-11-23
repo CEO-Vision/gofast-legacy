@@ -1,30 +1,11 @@
-<?php
-  $locations_a = array();
-  $locations_gids = array();
-?>
-
 <div class="panel panel-default manage-locations-panel">
   <div class="panel-body">
     <span id="nid" style="display:none;"><?php echo $nid; ?></span>
     <?php echo t('Setting locations of', array(), array('context' => 'gofast:taxonomy')); ?> <strong><?php echo $title; ?></strong> : 
     <ul>
-      <?php foreach($locations as $location){ ?>
+      <?php foreach($locations_display as $display_path){ ?>
         <li>
-          <?php
-            $is_article = isset($type) && $type == "article";
-            if(is_numeric($location)){
-              echo gofast_cmis_space_get_webdav_path($location);
-              $locations_a[] = gofast_cmis_space_get_webdav_path($location);
-              $locations_gids[] = $location;
-            }else{
-              echo $location;
-              $locations_a[] = $location;
-              $locations_gids[] = gofast_og_get_group_id_from_title($location, TRUE);
-            }
-            if ($is_article) {
-              echo "/Wikis";
-            }
-          ?>
+          <?= $display_path; ?>
         </li>
       <?php } ?>
     </ul>

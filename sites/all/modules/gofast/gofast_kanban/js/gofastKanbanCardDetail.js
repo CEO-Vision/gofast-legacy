@@ -439,6 +439,12 @@
                 templateSelection: responsable.templates.suggestionItemTemplate,
                 language: GofastLocale,
             });
+
+            if(responsable.data != null && $(responsable.DOM.input).select2("data")){
+                Object.entries(responsable.data).forEach(([key, value]) => {
+                    $(responsable.DOM.input).select2("data")[0][key] = value
+                })
+            }
             
             if(_task.members && _task.members.length > 0) {
                 _task.members.map(user => {
@@ -451,6 +457,7 @@
             let membersEl =  document.querySelector('.KanbanCard__members > div')
             members = GofastEditableInput(membersEl, _task.members, 'userstags', {
                 isEditable : _task.canEdit,
+                enforceWhitelist: true,
                 searchUrl : (search) => {
                     return window.origin + '/kanban/autocomplete/user/' + _task.space_nid + '/' + search;
                 },
@@ -459,7 +466,7 @@
                             user.value = Number.parseInt(user.uid);
                             return user;
                         });
-                },                
+                },
                 save: (newData) => {
                     let membersIds = []
                     newData.forEach(user => membersIds.push(user.uid));

@@ -9,6 +9,33 @@ function gofast_taxonomy_install() {
   if (count($tags) == 0) {
     gofast_taxonomy_vocabulary_add_term(GOFAST_VID_TAGS, $template_tag_name);
   }
+  gofast_taxonomy_ensure_no_coedition_tag();
+}
+
+/**
+ * Create tag "NO-COEDITION" if not already exists.
+ *
+ * @return bool true if created, false if already exists or vocabulary tags not found.
+ */
+function gofast_taxonomy_ensure_no_coedition_tag() {
+  $vocabulary = taxonomy_vocabulary_machine_name_load('tags');
+  if (!$vocabulary) {
+    return false;
+  }
+
+  if(gofast_taxonomy_get_tid_by_vid_and_name($vocabulary->vid, 'NO-COEDITION')) {
+    return false;
+  }
+
+  $term = (object) [
+    'name' => 'NO-COEDITION',
+    'vid' => $vocabulary->vid,
+    'description' => [LANGUAGE_NONE => [['value' => 'Tag used to disable coedition']]],
+    'format' => 'plain_text',
+  ];
+  taxonomy_term_save($term);
+  watchdog('gofast_taxonomy', '[TAG] "NO-COEDITION" created. (tid: @tid)', ['@tid' => $term->tid], WATCHDOG_NOTICE);
+  return true;
 }
 
 /*
@@ -200,4 +227,11 @@ function gofast_taxonomy_update_7012() {
   $term->field_standard_gf[LANGUAGE_NONE][0]["value"] = 0;
   
   taxonomy_term_save($term);
+}
+
+/**
+ * Update 7013: Create tag NO-COEDITION if not exists.
+ */
+function gofast_taxonomy_update_7013() {
+  gofast_taxonomy_ensure_no_coedition_tag();
 }

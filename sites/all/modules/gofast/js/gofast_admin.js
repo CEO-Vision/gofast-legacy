@@ -79,10 +79,15 @@
         });
     }
 
+  // Tab last asked for, and tabs whose content is still being fetched.
+  var currentSettingsTab = null;
+  var pendingSettingsTabs = {};
+
   function loadSettingsTab(tab, forceReload = false) {
     // Container
     var container = $("#gofastAdminTabContent");
     var spinner   = $('.loader-settings');
+    currentSettingsTab = tab;
     
     // Function to hide all children except the one with a specific id
     container.find(`> [data-tab]`).addClass("d-none");
@@ -97,24 +102,32 @@
         container.find(`> [data-tab="${tab}"]`).removeClass("d-none");
         return;
     }
+    // Already on its way: its response shows it if it is still the selected tab.
+    if (pendingSettingsTabs[tab]) {
+        return;
+    }
+    pendingSettingsTabs[tab] = true;
     $.post(location.origin + "/admin/config/gofast/global/getform/" + tab, function (output) {
 
-        var containerEl = $(`<div data-tab="${tab}"></div>`)
         var form = JSON.parse(output)['html'];
         var newForm = $(form);
 
-        // If the container already exist, uptade it otherwise create a new one
-        if(!containerAlreadyExist){
-            containerEl.html(newForm);
+        // If the container already exist, uptade it otherwise create a new one (hidden until selected)
+        var containerEl = $(`#gofastAdminTabContent > [data-tab="${tab}"]`);
+        if(!containerEl.length){
+            containerEl = $(`<div data-tab="${tab}" class="d-none"></div>`);
             container.append(containerEl);
-        } else {
-            containerEl = $(`#gofastAdminTabContent > [data-tab="${tab}"]`);
-            containerEl.html(newForm);
         }
-        spinner.hide();
-        container.find(`> [data-tab="${tab}"]`).removeClass("d-none");
+        containerEl.html(newForm);
+        // A slow response must not show its tab over the one selected since.
+        if (currentSettingsTab === tab) {
+            spinner.hide();
+            containerEl.removeClass("d-none");
+        }
         Drupal.attachBehaviors();
         attachSettingsFormAjax(container, `> [data-tab="${tab}"]`);
+    }).always(function () {
+        delete pendingSettingsTabs[tab];
     });
   }
     // event listener to ajaxify the form submission
@@ -159,7 +172,8 @@
                 Gofast.removeLoading();
             });
         });
-        if (document.querySelector(".uppy-Root")) window.initFileInput({maxFileSize: 1000000, maxNumberOfFiles: 1, allowedFileTypes: ["image/*"]}, true);
+      
+        if (document.querySelector(".uppy-Root")) window.initFileInput({maxFileSize: 1000000, maxNumberOfFiles: 1}, true);
     }
   
     Gofast.removeActiveClassFromTabs = function () {
@@ -240,6 +254,38 @@
                 });
             });
         }
+    };
+
+    /**
+     * Behavior to toggle visibility of the warning message about space default
+     * classification being confidential
+     */
+    Drupal.behaviors.adminSpaceDefaultClassificationWarningVisibilityToggle = {
+        attach: function(context, _settings) {
+            $(".form-item:has(#edit-field-classification)", context).once(
+                "field-classification-confidentiality-warning",
+                function () {
+                    const $this = $(this);
+                    const $select = $this.find("#edit-field-classification");
+
+                    // Listen to change events to update visibility as value changes.
+                    $select.on("change", (event) => {
+                        const $option = $(event.target.selectedOptions[0]);
+                        const $message = $this.find('.default-confidentiality-warning');
+
+                        // Get option confidentiality value.
+                        const confidentiality = JSON.parse($option.attr('data-confidentiality'));
+
+                        // Hide/show message depending on confidentiality.
+                        if (confidentiality) {
+                            $message.removeClass('d-none');
+                        } else {
+                            $message.addClass('d-none');
+                        }
+                    });
+                },
+            );
+        },
     };
 })(jQuery, Gofast, Drupal);
 

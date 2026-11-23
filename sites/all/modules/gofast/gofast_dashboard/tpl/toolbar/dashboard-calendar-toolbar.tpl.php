@@ -1,7 +1,14 @@
-<div id="dashboard_toolbar_calendar" class="btn-group align-items-center" role="group" aria-label="Button group with nested dropdown">
-  <div class="btn-group dropdown" role="group">
-    <button id="dropdown-rapid" type="button" class="btn btn-sm btn-info text-primary dropdown-toggle" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false" style="background-color:transparent">
-      <?php echo t('Meetings', array(), array('context' => 'gofast_cdel')); ?> <span></span>
+<div id="dashboard_toolbar_calendar" class="d-flex align-items-center">
+  <div class="btn-group" role="group">
+    <button type="button"
+      class="btn btn-sm btn-primary dropdown-toggle"
+      id="btn-dashboard-calendar-meetings"
+      data-toggle="dropdown"
+      aria-haspopup="true"
+      aria-expanded="false">
+      <span id="calendar-main-btn-text">
+        <?php echo t('Meetings', array(), array('context' => 'gofast_cdel')); ?>
+      </span>
     </button>
 
     <div class="dropdown-menu">
@@ -13,7 +20,11 @@
       </a>
     </div>
   </div>
-  <a href="/node/add/conference" style='margin-left:5px;' data-toggle="tooltip" data-html="true" title="<?php echo t('New meeting', array(), array('context' => 'gofast')); ?>">
+  <a href="/node/add/conference"
+     class="btn btn-sm btn-outline-secondary ml-2"
+     data-toggle="tooltip"
+     data-html="true"
+     title="<?php echo t('New meeting', [], ['context' => 'gofast']); ?>">
     <span class="fa fa-plus"></span>
   </a>
 </div>

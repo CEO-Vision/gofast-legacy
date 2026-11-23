@@ -257,8 +257,9 @@
       },
       success : function(content, status){
         $("#activity-feed-page").remove();
-        $("#activity-feed").replaceWith(content);
-        $(".GofastActivityFeed__loader").remove();
+        let $content = $('<div>').append(content); // wrap into a div because there are multiple root tags
+        $content.find(".GofastActivityFeed__loader").remove(); // make sure the loader is removed before DOM insertion
+        $("#activity-feed").replaceWith($content.contents()); // actual DOM insertion
         getPagination(spaces, states, types, actors);
         $('.gofast__popover').popover();
         $('#activity-feed > .GofastActivityFeed__table').scrollTop(activity_feed_scroll_position);

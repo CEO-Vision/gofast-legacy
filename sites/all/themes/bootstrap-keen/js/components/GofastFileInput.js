@@ -2,7 +2,13 @@ window.initFileInput = (
   restrictions = {
     maxFileSize: 35000000,
     maxNumberOfFiles: 1,
-    allowedFileTypes: ["image/*", "text/*", "application/*"],
+    allowedFileTypes: [
+      "image/*",
+      "text/*",
+      "application/*",
+      "video/*",
+      "audio/*",
+    ],
   },
   thumbnail = false
 ) => {
@@ -158,7 +164,7 @@ class GofastCKEditorUploadAdapter {
 
 window.GofastCKEditorUploadAdapterPlugin = function(ckeditor) {
   ckeditor.plugins.get('FileRepository').createUploadAdapter = (loader) => {
-      const url = "/sites/all/libraries/ckeditor/CKEditorUploader/upload.php";
+      const url = "/sites/all/libraries/CKEditorUploader/upload.php";
       return new GofastCKEditorUploadAdapter(loader, url);
   };
 }

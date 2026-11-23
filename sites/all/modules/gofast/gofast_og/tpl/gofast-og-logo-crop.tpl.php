@@ -1,8 +1,15 @@
 <!-- Content -->
   <div class="row">
     <div class="col-lg-9" style="background-color: #f7f7f7;">
-      <div class="img-container card-body" id="img-cropper" style="max-width: 95%;">
-        <img data-done-event="ogLogoChange" data-target-endpoint="/og/<?= $gid ?>/space_logo"" id="image" src="<?php print isset($logo) ? file_create_url($logo) . '?rand='. rand(1, 1000)  : $base_url . '/sites/all/themes/bootstrap-keen/logo.png' ?>" />
+      <div class="img-container card-body h-100 cropper-transparent-modal" id="img-cropper" style="max-width: 95%;">
+        <img
+          data-done-event="ogLogoChange"
+          data-target-endpoint="/og/<?= $gid ?>/space_logo"
+          data-max-width="1024"
+          data-max-height="1024"
+          id="image"
+          src="<?php print isset($logo) ? file_create_url($logo) . '?rand='. rand(1, 1000)  : $base_url . '/sites/all/themes/bootstrap-keen/logo.png' ?>"
+        />
       </div>
       <?= theme("gofast_cropper_buttons") ?>
     </div>

@@ -56,7 +56,7 @@ final class FunctionsAnalyzer
             $prevIndex = $tokens->getPrevMeaningfulToken($prevIndex);
         }
 
-        $possibleKind = [T_DOUBLE_COLON, T_FUNCTION, CT::T_NAMESPACE_OPERATOR, T_NEW, T_OBJECT_OPERATOR, CT::T_RETURN_REF, T_STRING];
+        $possibleKind = array_merge([T_DOUBLE_COLON, T_FUNCTION, CT::T_NAMESPACE_OPERATOR, T_NEW, CT::T_RETURN_REF, T_STRING], Token::getObjectOperatorKinds());
 
         // @TODO: drop condition when PHP 8.0+ is required
         if (\defined('T_ATTRIBUTE')) {
@@ -194,18 +194,22 @@ final class FunctionsAnalyzer
         }
 
         $operatorIndex = $tokens->getPrevMeaningfulToken($index);
-        if (!$tokens->offsetExists($operatorIndex)) {
+
+        if (null === $operatorIndex) {
+            return false;
+        }
+
+        if (!$tokens[$operatorIndex]->isObjectOperator() && !$tokens[$operatorIndex]->isGivenKind(T_DOUBLE_COLON)) {
             return false;
         }
 
         $referenceIndex = $tokens->getPrevMeaningfulToken($operatorIndex);
-        if (!$tokens->offsetExists($referenceIndex)) {
+
+        if (null === $referenceIndex) {
             return false;
         }
 
-        return $tokens[$operatorIndex]->equals([T_OBJECT_OPERATOR, '->']) && $tokens[$referenceIndex]->equals([T_VARIABLE, '$this'], false)
-            || $tokens[$operatorIndex]->equals([T_DOUBLE_COLON, '::']) && $tokens[$referenceIndex]->equals([T_STRING, 'self'], false)
-            || $tokens[$operatorIndex]->equals([T_DOUBLE_COLON, '::']) && $tokens[$referenceIndex]->equals([T_STATIC, 'static'], false);
+        return $tokens[$referenceIndex]->equalsAny([[T_VARIABLE, '$this'], [T_STRING, 'self'], [T_STATIC, 'static']], false);
     }
 
     private function buildFunctionsAnalysis(Tokens $tokens)

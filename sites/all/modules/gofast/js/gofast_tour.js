@@ -1545,21 +1545,8 @@
                         title: Drupal.gft("title.tour.dashboard.private-step", {}, { context: "gofast_technical:gofast_tour" }),
                         text: Drupal.gft("text.tour.dashboard.private-step", {}, { context: "gofast_technical:gofast_tour" }),
                         attachTo: {
-                            element: '#dashboard_block_private_space',
-                            on: 'right'
-                        },
-                        // wait for the dashboard to be loaded before displaying the first step
-                        beforeShowPromise: function() {
-                            return new Promise(function(resolve) {
-                                const dashboardProcessedInterval = setInterval(function() {
-                                    if (!$('#dashboard_block_private_space').length) {
-                                        return;
-                                    }
-                                    clearInterval(dashboardProcessedInterval);
-                                    resolve();
-                                }, 250);
-
-                            });
+                          element: $(".gofastDashboardCard[id$='private_space']").parent().get(0),
+                          on: 'right',
                         },
                         when: {
                           cancel: Gofast.tour.boilerplates.baseCancel
@@ -1576,7 +1563,7 @@
                         title: Drupal.gft("title.tour.dashboard.calendar-step", {}, { context: "gofast_technical:gofast_tour" }),
                         text: Drupal.gft("text.tour.dashboard.calendar-step", {}, { context: "gofast_technical:gofast_tour" }),
                         attachTo: {
-                            element: $('#dashboard_block_calendar').parent().get(0),
+                            element: $(".gofastDashboardCard[id$='calendar']").parent().get(0),
                             on: 'left'
                         },
                         when: {
@@ -1595,25 +1582,39 @@
                         when: {
                           show: async function() {
                             await Gofast.tour.sequences.actionsToAwait([
-                                () => Gofast.tour.components.fakeCursor.moveTo($("#dashboard_toolbar_calendar > a")[0], 500),
+                                () => Gofast.tour.components.fakeCursor.moveTo($("#dashboard_toolbar_calendar")[0], 500),
                                 () => $("#dashboard_toolbar_calendar #dropdown-rapid").dropdown("show"),
                             ], 700);
                           },
                           cancel: Gofast.tour.boilerplates.baseCancel
                         },
-                        buttons: Gofast.tour.boilerplates.baseButtons()
+                        buttons: [
+                            {
+                                text: "<i class=\"fas fa-step-backward\"></i>",
+                                action() {
+                                  Gofast.tour.components.fakeCursor.destroy();
+                                  Gofast.tour.currentInstance.back();
+                                }
+                            },
+                            {
+                                text: "<i class=\"fas fa-step-forward\"></i>",
+                                action() {
+                                  Gofast.tour.components.fakeCursor.destroy();
+                                  Gofast.tour.currentInstance.next();
+                                }
+                            }
+                        ]
                     },
                     {
                         id: 'gofast-tour-dashboard-tasks-step',
                         title: Drupal.gft("title.tour.dashboard.tasks-step", {}, { context: "gofast_technical:gofast_tour" }),
                         text: Drupal.gft("text.tour.dashboard.tasks-step", {}, { context: "gofast_technical:gofast_tour" }),
                         attachTo: {
-                            element: '#dashboard_block_workflows',
+                            element: $(".gofastDashboardCard[id$='workflows']").parent().get(0),
                             on: 'left'
                         },
                         when: {
                             show: function() {
-                                Gofast.tour.components.fakeCursor.destroy();
                                 $("#dashboard_toolbar_calendar #dropdown-rapid").dropdown("hide");
                             },
                             cancel: Gofast.tour.boilerplates.baseCancel
@@ -2669,7 +2670,23 @@
             }
             Gofast.tour.currentInstance = Gofast.tour.boilerplates.newTour();
 
-            const steps = Gofast.tour.descriptions.dashboard;
+            var steps = Gofast.tour.descriptions.dashboard;
+            // Remove step for card that are not in the dashboard
+            steps = steps.filter((step) => {
+              return $(step.attachTo.element).length;
+            })
+            // Get the next button of last step to know if it's the complete step
+            const completeButtonIndex = steps.last().buttons.findIndex((button) => {
+              if(button.text){
+                  return button.text.includes("fa-step-forward");
+              }
+            })
+            // Change the forward button to be complete button if the last step doesn't exist
+            if(completeButtonIndex != -1){
+              steps.last().buttons[completeButtonIndex].text = "<i class=\"fas fa-check\"></i>";
+              steps.last().buttons[completeButtonIndex].classes = "btn btn-success";
+            }
+
             Gofast.tour.startTour(steps);
             return true;
         },

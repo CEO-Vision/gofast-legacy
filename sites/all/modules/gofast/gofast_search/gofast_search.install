@@ -17,3 +17,43 @@ function gofast_search_update_7100(){
         db_add_index("apachesolr_index_entities_node", "gfindex_apachesolr_index_entities_node_1", array('status','entity_id'));
     }
 }
+
+function gofast_search_update_7105() {
+  // Do not re-index excluded nodes.
+  $excluded_nids = array_keys(variable_get('gofast_search_index_node_exclude', array()));
+
+  $query = db_select('node', 'n')
+    ->fields('n', array('nid'))
+    ->condition('n.type', array('alfresco_item', 'article', 'webform', 'forum', 'task'))
+    ->condition('n.status', 1);
+
+  if ($excluded_nids) {
+    $query->condition('n.nid', $excluded_nids, 'NOT IN');
+  }
+
+  $nids = $query->execute()->fetchCol();
+
+  $total = count($nids);
+
+  if ($total > 0) {
+    $queue = DrupalQueue::get('gofast_solr_reindexing');
+    $queue->createQueue();
+
+    $fields_definition = array(
+      'tus_content' => array(
+        'callback' => 'gofast_search_get_stored_content', // Callback extracting the stored text
+      ),
+    );
+
+    foreach ($nids as $nid) {
+      $item_data = array(
+        'nid' => $nid,
+        'fields' => $fields_definition,
+      );
+
+      $queue->createItem($item_data);
+    }
+  }
+
+  watchdog('gofast_search', 'Queued !total nodes for Solr reindexing.', array('!total' => $total));
+}

@@ -175,7 +175,7 @@ function gofast_workflows_menu() {
          'page arguments' => array(4,5,6),
          'type' => MENU_CALLBACK,
          'access arguments' =>array(),
-         'access callback'=>TRUE,
+         'access callback'=>'user_is_logged_in',
     );
 
      $items['workflow/api/liste/users'] = array(
@@ -356,6 +356,14 @@ function gofast_workflows_menu() {
     'access arguments' =>array('access content'),
     'access callback'=>'user_access',
   );
+  
+  $items['gofast_workflow/legacy_details/%'] = array(
+    'page callback' => 'gofast_workflows_legacy_details',
+    'page arguments' => array(2),
+    'type' => MENU_CALLBACK,
+    'access arguments' => array(2),
+    'access callback'=> 'gofast_workflows_user_can_view_case',
+  );
 
   return $items;
 }
@@ -388,6 +396,18 @@ function gofast_workflows_cron(){
 
 }
 
+function gofast_workflows_cronapi($op, $job = NULL) {
+  $items = [];
+
+  $items['gofast_workflows_synchro_all_userlists'] = array(
+    'description' => 'Make sure every userlist is replicated and up to date in Bonita',
+    'rule' => '15 23 * * 0', // runs at 23:15 on Sunday
+    'callback' => 'gofast_workflows_synchro_all_userlists',
+  );
+
+  return $items;
+}
+
 /*
  * Called by UI designer forms after completion
  */
@@ -401,7 +421,7 @@ function gofast_workflows_success(){
                     if(window.parent.$('#lightDashboardDocumentMy #bonita_form_process').length){
                         window.parent.$('#lightDashboardDocumentMy #bonita_form_process')[0].contentWindow.location.reload(true);
                     } else {
-                        window.parent.document.getElementById('refresh-lightdashboard').click();
+                        window.parent.Gofast.refreshDashboardTasksBlock();
                     }
                     window.parent.document.querySelector('#gofast_basicModal .close').click();
                 }
@@ -540,7 +560,15 @@ function gofast_workflows_theme() {
       'arguments' => array('bonita_reference' => NULL),
     ),
     'workflow_complete_dashboard' => array(
-      'template' => 'gofast_workflows_complete_dashboard',
+      'template' => 'tpl/gofast_workflows_complete_dashboard',
+      'arguments' => array(),
+    ),
+    'workflow_complete_dashboard_legacy' => array(
+      'template' => 'tpl/gofast_workflows_complete_dashboard_legacy',
+      'arguments' => array(),
+    ),
+    'workflow_complete_dashboard_details' => array(
+      'template' => 'tpl/gofast_workflows_complete_dashboard_details',
       'arguments' => array(),
     ),
     'workflow_rapide_dashboard' => array(
@@ -661,8 +689,18 @@ function gofast_workflows_user_login(&$edit, $account) {
             if($return_cookie === "" || $return_cookie == false){
                 //Update bonita password for this user
                 gofast_workflows_get_bonita_token($bonita_id, true);
-
                 $return_cookie = gofast_workflows_get_cookie();
+
+                // Update Bonita firstname/lastname only if different from Drupal
+                $cookie_name = "cookie_bonita".BONITA_TECHNICAL_LOGIN.".txt";
+                $bonita_user_data = gofast_workflows_curl_get_user($account, $cookie_name);
+                if (!empty($bonita_user_data[0])) {
+                    $drupal_data = gofast_workflows_prepare_firstname_lastname($account);
+                    if ($bonita_user_data[0]['firstname'] != $drupal_data['firstname'] || $bonita_user_data[0]['lastname'] != $drupal_data['lastname']) {
+                        gofast_workflows_update_user($drupal_data, $bonita_id, $cookie_name);
+                    }
+                }
+
                 if($return_cookie === "" || $return_cookie == false){
                     //impossible de generer la session vers Bonita donc je créer un cookie qui indique de ne pas tenter de se connecter à Bonita
                     watchdog("GoFAST Workflows", "Unable tu authenticate against bonita for user : ".$account->uid);
@@ -670,7 +708,6 @@ function gofast_workflows_user_login(&$edit, $account) {
             }
         }
     }
-
 }
 
 function gofast_workflows_get_bonita_token($bonita_id = null, $force = false){
@@ -750,7 +787,32 @@ function gofast_workflows_entity_insert($entity, $entity_type) {
   }
 }
 
-function gofast_workflows_activate_bonita_connection($bdm = FALSE) {
+/**
+ * Add a new target database on the current connection.
+ *
+ * The target is named `bonita` if `$bdm` is `FALSE`, `bonita_bdm` if `$bdm` is `TRUE`.
+ *
+ * Each target is mapped to the bonita MySQL DB of the same name.
+ *
+ * @param bool $bdm
+ *   Whether to add the `bonita_bdm` target instead of `bonita`.
+ *
+ *   Defaults to `FALSE`.
+ * @param bool $allow_bdm
+ *   Whether to allow using bdm tables during requests. This parameter only
+ *   takes effect when $bdm is `FALSE`.
+ *
+ *   When `TRUE` and `$bdm` is `FALSE` a set of prefixes for the BDM table names
+ *   are added. This way, the table names can be used as-is while using the
+ *   Drupal database API (`db_select()`, etc.) and will be automatically
+ *   prefixed with the `bonita_bdm` database name when using the `bonita` target.
+ *
+ *   Defaults to `FALSE`
+ *
+ * @return void
+ *   Adds a DB connection target.
+ */
+function gofast_workflows_activate_bonita_connection($bdm = FALSE, $allow_bdm = FALSE) {
     $drupal_db_info = Database::getConnectionInfo()["default"];
     $database = "bonita";
     if ($bdm) {
@@ -759,6 +821,25 @@ function gofast_workflows_activate_bonita_connection($bdm = FALSE) {
     $bonita_database = array_merge($drupal_db_info, array("database" => $database, "username" =>  variable_get_value('bonita_mysql_user'), "password" => variable_get_value('bonita_mysql_password')));
     unset($bonita_database["port"]);
     unset($bonita_database["prefix"]);
+
+    // This is somewhat of a hacky solution to allow joining between tables in
+    // both the `bonita` and `bonita_bdm` databases/schemas in a single request
+    // using the Drupal database API (`db_select()`, etc.).
+    if (!$bdm && $allow_bdm) {
+        $bdm_tables = [
+            'CONTENTCURRENT',
+            'CONTENTHISTORY',
+            'LINEHISTORY',
+            'LINEHISTORY_CONTENTS',
+            'PROCESSCURRENT',
+            'PROCESSCURRENT_CONTENTS',
+            'PROCESSHISTORY',
+            'PROCESSHISTORY_LINES',
+        ];
+        // Add prefixes for BDM, allows joining between the two databases.
+        $bonita_database["prefix"] = array_fill_keys($bdm_tables, 'bonita_bdm.');
+    }
+
     // will add only if it has not been added yet
     Database::addConnectionInfo('default', $database, $bonita_database);
 }
@@ -814,20 +895,54 @@ function gofast_workflows_get_user_id($myuser){
 /*
  * Dashboard menu entry
  */
-function gofast_workflows_dashboard(){
-    drupal_set_title(t("Workflows dashboard", array(), array('context' =>"gofast:gofast_workflows")));
-    
-    //Add stats JS
-    drupal_add_js(drupal_get_path('module', 'gofast_workflows') . '/js/gofast_workflows_stats.js');
+/*
+ * Prepares the auto-opening of a Bonita task form in a modal over the dashboard.
+ * Used by the "Execute Task" link of workflow notification emails.
+ */
+function gofast_workflows_dashboard_prepare_execute_task($taskId){
+    //Retrieve the task to build the parameters needed to open its form
+    $task = gofast_workflows_get_task_object($taskId);
 
-    //Retrieve search form
-    $search_form = drupal_render(drupal_get_form("gofast_workflow_dashboard_search_form"));
+    //Task no longer available (already done, deleted, or not accessible to this user): tell the JS to show a toast over the dashboard
+    if(empty($task) || empty($task["case_object"]) || empty($task["case_object"]["processDefinitionId"])){
+        drupal_add_js(array('gofast_workflows' => array('execute_task_unavailable' => true)), 'setting');
+        return;
+    }
+
+    $process_definition = $task["case_object"]["processDefinitionId"];
+    //force_assign is needed when the task is assigned to an actor/group rather than a specific user
+    $force_assign = empty($task["assigned_id"]) ? "true" : "false";
+
+    //Pass the task info to the JS behavior that opens the modal on page load
+    drupal_add_js(array('gofast_workflows' => array('execute_task' => array(
+        'task_id' => $taskId,
+        'process' => $process_definition["name"] . "/" . $process_definition["version"],
+        'task_name' => rawurlencode($task["name"]),
+        'force_assign' => $force_assign,
+    ))), 'setting');
+}
+
+function gofast_workflows_dashboard(){
+    $args = func_get_args();
+    drupal_set_title(t("Workflows dashboard", array(), array('context' =>"gofast:gofast_workflows")));
+
+    //When opened from the "Execute Task" link of a notification email, auto-open the task form in a modal
+    if(!empty($_GET['execute_task'])){
+        gofast_workflows_dashboard_prepare_execute_task($_GET['execute_task']);
+    }
 
     //Render and return the dashboard page
-    $output = theme("workflow_complete_dashboard", array('search_form' => $search_form));
+    if (!empty($args) && $args[0] == "legacy") {
+        //Add stats JS
+        drupal_add_js(drupal_get_path('module', 'gofast_workflows') . '/js/gofast_workflows_stats.js');
+        //Retrieve search form
+        $search_form = drupal_render(drupal_get_form("gofast_workflow_dashboard_search_form"));
+        $output = theme("workflow_complete_dashboard_legacy", array('search_form' => $search_form));
+    } else {
+        global $user;
+        $output = theme("workflow_complete_dashboard", array('language' => $user->language));
+    }
     return gofast_create_page_content($output, 'content-fluid');
-   // $output = gofast_normalize_string_from_ajaxifying($output);
-   // return $output;
 }
 
 /*
@@ -1008,6 +1123,10 @@ function gofast_workflows_get_bonitaid_from_database($uid) {
  * Insert a Drupal ID / Bonita ID association to the database
  */
 function gofast_workflows_set_bonitaid_in_database($uid, $bid) {
+    if($bid == 'null'){
+        return;
+     }
+     
     db_delete("field_data_field_bonita_id")->condition("entity_id", $uid)->execute();
     $fields = [
         "entity_type" => "user",
@@ -1148,12 +1267,84 @@ function gofast_workflows_user_logout($account){
      }
  }
 
- /*
-  * Return permissions for the search API
-  * Default behavior of the permissions will be to restrict the search to our current user, let's allow modules to alter this
-  */
-function gofast_api_workflows_search_permissions(){
-    $output = array(
+/**
+ * Access callback: whether the current user may see a Bonita case, with the
+ * tasks dashboard rules (search permissions, then taking part in the case).
+ */
+function gofast_workflows_user_can_view_case($case_id) {
+    global $user;
+    if (!user_access('access content') || !ctype_digit((string) $case_id)) {
+        return FALSE;
+    }
+    gofast_workflows_activate_bonita_connection();
+    $options = array('target' => 'bonita');
+    $args = array(':id' => (int) $case_id);
+    $name = db_query(
+        <<<'SQL'
+        SELECT name FROM process_instance WHERE id = :id
+        UNION SELECT name FROM arch_process_instance WHERE sourceObjectId = :id
+        LIMIT 1
+        SQL,
+        $args,
+        $options
+    )->fetchField();
+    if ($name === FALSE) {
+        return FALSE;
+    }
+
+    $action = 'default';
+    foreach (gofast_workflows_get_search_permissions() as $permission) {
+        if ($permission['type'] == 'process_name' && in_array($permission['condition'], array('*', $name)) && $permission['exclusion_condition'] != $name) {
+            $action = $permission['action'];
+        }
+    }
+    if ($action != 'default') {
+        return $action == 'allow';
+    }
+
+    // Initiator, assignee or executor of a task, or participant of the running case
+    $args += array(
+        ':uid' => db_query(
+            "SELECT id FROM user_ WHERE userName = :name",
+            array(':name' => $user->name),
+            $options
+        )->fetchField(),
+        ':list' => '%' . db_like('<string>' . $user->name . '</string>') . '%',
+    );
+    return (bool) db_query(
+        <<<'SQL'
+        SELECT 1 FROM process_instance WHERE id = :id AND startedBy = :uid
+        UNION ALL SELECT 1 FROM arch_process_instance WHERE sourceObjectId = :id AND startedBy = :uid
+        UNION ALL SELECT 1 FROM flownode_instance WHERE rootContainerId = :id AND :uid IN (assigneeId, executedBy)
+        UNION ALL SELECT 1 FROM arch_flownode_instance WHERE rootContainerId = :id AND :uid IN (assigneeId, executedBy)
+        UNION ALL SELECT 1 FROM data_instance WHERE containerId = :id AND name = 'list_all' AND clobValue LIKE :list
+        LIMIT 1
+        SQL,
+        $args,
+        $options
+    )->fetchField();
+}
+
+/**
+ * Get permissions for the workflow search API.
+ *
+ * By default, it restricts search to the current user.
+ *
+ * Modules can change this by implementing a hook_workflows_search_permissions().
+ *
+ * @return (array{
+ *  type: string,
+ *  condition: string,
+ *  action: string,
+ *  exclusion_condition: string,
+ * }[])
+ *   Array of search permission structured arrays.
+ *
+ * @see gofast_api_workflows_search_permissions()
+ *   For the API endpoint handler returning this data.
+ */
+function gofast_workflows_get_search_permissions() {
+    $permissions = array(
         array(
             'type' => 'process_name',
             'condition' => "*",
@@ -1162,11 +1353,29 @@ function gofast_api_workflows_search_permissions(){
         ),
     );
 
-    foreach(module_implements("workflows_search_permissions") as $module){
-        $output = call_user_func_array($module . '_workflows_search_permissions', array($output));
+    foreach (module_implements("workflows_search_permissions") as $module) {
+        $permissions = call_user_func_array($module . '_workflows_search_permissions', array($permissions));
     }
 
-    return $output;
+    return $permissions;
+}
+
+/**
+ * Return permissions for the search API
+ * Default behavior of the permissions will be to restrict the search to our current user, let's allow modules to alter this
+ *
+ * @param array $_params
+ *   API request parameters array.
+ *
+ * @return never
+ *   Outputs the response and exits.
+ *
+ * @see gofast_workflows_get_search_permissions()
+ *   To simply get the list of permission arrays from code.
+ */
+function gofast_api_workflows_search_permissions($_params) {
+    $output = gofast_workflows_get_search_permissions();
+    gofast_api_success($output);
 }
 
  /*
@@ -1180,9 +1389,12 @@ function gofast_api_workflows_search_permissions(){
   */
 function gofast_api_workflows_dashboard($params, $api = TRUE, $bypass_access = FALSE){
     //Don't allow external access to this API as it's called by the old Java API internally
-    if(gofast_workflows_is_external_api() && !$api && !$bypass_access){
+    if(gofast_workflows_is_external_api() && $api && !$bypass_access){
         gofast_api_forbidden("Unavailable action for external requester");
     }
+
+    // We'll need the bonita target, potentially with access to bdm tables.
+    gofast_workflows_activate_bonita_connection(allow_bdm: TRUE);
 
     //Prepare output
     $output = array();
@@ -1213,87 +1425,144 @@ function gofast_api_workflows_dashboard($params, $api = TRUE, $bypass_access = F
     }
 
     //Start to build the query
-    $query = "SET @@sql_mode=(SELECT REPLACE(@@sql_mode,'ONLY_FULL_GROUP_BY',''));";
-    $query .= "SET SESSION group_concat_max_len = 15000;";
-    $query .= "SELECT readresults.rootProcessInstanceId,readresults.name,readresults.startDate,readresults.startedBy FROM (";
+    $query_base_options = ['target' => 'bonita'];
+    db_query("SET @@sql_mode=(SELECT REPLACE(@@sql_mode,'ONLY_FULL_GROUP_BY',''))", [], $query_base_options);
+    db_query("SET SESSION group_concat_max_len = 15000;", [], $query_base_options);
 
-    if($state == "progress"){
+    $query = NULL;
+    if ($state == 'progress') {
         //Search for active cases
-        $query .= 'SELECT DISTINCT bonita.process_instance.rootProcessInstanceId,bonita.process_instance.name,bonita.process_instance.startDate,bonita.process_instance.startedBy ';
-        $query .= 'FROM bonita.process_instance ';
-    }else{
+        $query = db_select('process_instance', 'pi', $query_base_options);
+    } else {
         //Search for archived cases
-        $query .= 'SELECT DISTINCT bonita.arch_process_instance.rootProcessInstanceId,bonita.arch_process_instance.name,bonita.arch_process_instance.startDate,bonita.arch_process_instance.startedBy ';
-        $query .= 'FROM bonita.arch_process_instance ';
-        $suffix = "arch_";
+        $query = db_select('arch_process_instance', 'pi', $query_base_options);
     }
+    $query->distinct()->fields('pi', ['rootProcessInstanceId', 'name', 'startDate', 'startedBy']);
 
     //Associate initiator user informations as we may need it
-    $query .= 'LEFT JOIN bonita.user_ ON ';
-    $query .= 'bonita.user_.id=bonita.' . $suffix . 'process_instance.startedBy ';
+    $query->leftJoin('user_', 'u', 'u.id = pi.startedBy');
 
-    //We may need to associate the processCurrent for some filters, prepare placeholders to join it
-    $join_process_current = "";
-    $join_process_current .= 'INNER JOIN bonita_bdm.PROCESSCURRENT ON ';
-    $join_process_current .= 'bonita.' . $suffix . 'process_instance.rootProcessInstanceId=bonita_bdm.PROCESSCURRENT.PID ';
+    //We may need to associate the processCurrent for some filters, prepare closures to join it
+    /**
+     * Helper local "function" (actually a Closure) that takes a callable to
+     * return decorated so that it runs at most once. Whether the closure has
+     * run can be retrieved using the second output reference parameter. All
+     * subsequent calls return the same value as the first call.
+     */
+    $once = function ($fn, &$has_run = NULL) {
+        $has_run = FALSE;
+        $return_value = NULL;
+        return function (...$args) use (&$has_run, $fn, &$return_value) {
+            if ($has_run) return $return_value;
+            $has_run = TRUE;
 
-    $join_process_current_content = "";
-    $join_process_current_content .= 'LEFT JOIN bonita_bdm.PROCESSCURRENT_CONTENTS ON ';
-    $join_process_current_content .= 'bonita_bdm.PROCESSCURRENT.persistenceId=bonita_bdm.PROCESSCURRENT_CONTENTS.PROCESSCURRENT_PID ';
+            return $return_value = $fn(...$args);
+        };
+    };
 
-    $join_process_current_content .= 'LEFT JOIN bonita_bdm.CONTENTCURRENT ON ';
-    $join_process_current_content .= 'bonita_bdm.PROCESSCURRENT_CONTENTS.CONTENTCURRENT_PID=bonita_bdm.CONTENTCURRENT.persistenceId ';
+    /**
+     * Closure that guarantees a join on the PROCESSCURRENT table with the alias
+     * `pc` has been added once run at least once.
+     *
+     * PROCESSCURRENT contains information about the state of tasks of the processes.
+     *
+     * Call this before using the PROCESSCURENT (pc) table.
+     *
+     * @var (Closure(): void) $require_process_current_table
+     */
+    $require_process_current_table = $once(function () use (&$query) {
+        // Join details about process task states.
+        $query->join(
+            'PROCESSCURRENT',
+            'pc',
+            'pc.PID = pi.rootProcessInstanceId',
+        );
+    });
 
-    $query .= "JOIN_PROCESS_CURRENT_PLACEHOLDER JOIN_PROCESS_CURRENT_CONTENT_PLACEHOLDER ";
+    /**
+     * Closure that guarantees a join on the CONTENTCURRENT and
+     * PROCESSCURRENT_CONTENTS tables with the aliases `cc` and `pcc`
+     * respectively once run at least once.
+     *
+     * CONTENTCURRENT contains the data associated with process variables that
+     * get passed around the tasks.
+     *
+     * Call this before using the CONTENTCURRENT (cc) and
+     * PROCESSCURRENT_CONTENTS (pcc) tables.
+     *
+     * For the needs of joining the tables, this also requires the PROCESSCURRENT
+     * table and therefore adds a join to it using the
+     * $require_process_current_table closure.
+     *
+     * @var (Closure(): void) $require_process_current_content_table
+     */
+    $require_process_current_content_table = $once(function () use (
+        &$query,
+        $require_process_current_table,
+    ) {
+        // Current content requires current process
+        $require_process_current_table();
+
+        // Join details about process data, variables, etc.
+        $query->leftJoin(
+            'PROCESSCURRENT_CONTENTS',
+            'pcc',
+            'pcc.PROCESSCURRENT_PID = pc.persistenceId',
+        );
+        $query->leftJoin(
+            'CONTENTCURRENT',
+            'cc',
+            'cc.persistenceId = pcc.CONTENTCURRENT_PID',
+        );
+    });
 
     //Check if we have filters to display and filter the query
 
     //Start to build conditions
-    $query .= 'WHERE ';
 
     //Exclude subprocesses
-    $query .= 'bonita.' . $suffix . 'process_instance.callerId=-1 ';
+    $query->where('pi.callerId = -1');
 
     if($state != "progress"){
         //Filter archived processes containing an end date only (really finished)
-        $query .= 'AND bonita.' . $suffix . 'process_instance.endDate!=0 ';
+        $query->where('pi.endDate != 0');
     }
 
     //Filter by creator
     if(!empty($startedby)){
-        $query .= 'AND bonita.' . $suffix . 'process_instance.startedBy="' . $startedby . '" ';
+        $query->condition('pi.startedBy', $startedby, '=');
     }
 
     //Filter by type (of workflow)
     if(!empty($type) && $type != "all"){
-        $query .= 'AND bonita.' . $suffix . 'process_instance.name="' . $type . '" ';
+        $query->condition('pi.name', $type, '=');
     }
 
     //Filter by title
     $title = trim($title);
     if(!empty($title)){
         //Join process current and append the query
-        $query = str_replace("JOIN_PROCESS_CURRENT_PLACEHOLDER", $join_process_current, $query);
+        $require_process_current_table();
 
-        $query .= 'AND bonita_bdm.PROCESSCURRENT.TITLE LIKE "%' . $title . '%" ';
+        $query->condition('pc.TITLE', '%' . db_like($title) . '%', 'LIKE');
     }
 
     //Filter by start date
     if(!empty($started)){
-        $query .= 'AND bonita.' . $suffix . 'process_instance.startDate>' . date("U", strtotime($started)) . "000 ";
+        $query->condition('pi.startDate', date('U', strtotime($started)) . '000', '>');
     }
 
     //Filter by deadline
     if(!empty($deadline)){
         //Join process current and append the query
-        $query = str_replace("JOIN_PROCESS_CURRENT_PLACEHOLDER", $join_process_current, $query);
+        $require_process_current_table();
 
-        $query .= 'AND bonita_bdm.PROCESSCURRENT.END_DATE<"' . $deadline . '" ';
+        $query->condition('pc.END_DATE', $deadline, '<');
     }
 
     //Get Bonita search permissions
     if($api){usurp($current_user);}
-    $permissions = gofast_api_workflows_search_permissions();
+    $permissions = gofast_workflows_get_search_permissions();
     if($api){usurp(FALSE);}
 
     //Implements default permissions
@@ -1321,101 +1590,106 @@ function gofast_api_workflows_dashboard($params, $api = TRUE, $bypass_access = F
 
         if($rule_action == "deny"){
             //Don't display this process
-            $query .= 'AND bonita.' . $suffix . 'process_instance.name!="' . $definition['name'] . '" ';
+            $query->condition('pi.name', $definition['name'], '!=');
         }else if($rule_action == "default"){
             //Display this process only if we created it or if we are being part of it
-            $query .= "AND (";
-
-            $query .= 'bonita.' . $suffix . 'process_instance.name!="' . $definition['name'] . '" ';
-            $query .= 'OR bonita.' . $suffix . 'process_instance.startedBy="' . $bonita_id . '" ';
+            $part_of_process_or = db_or()
+                    ->condition('pi.name', $definition['name'], '!=')
+                    ->condition('pi.startedBy', $bonita_id, '=');
 
             if(empty($documents) || empty($users) || empty($custom_parsed['contents'])){
                 //Join process current and process current contents (!performance!)
-                $query = str_replace("JOIN_PROCESS_CURRENT_PLACEHOLDER", $join_process_current, $query);
-                $query = str_replace("JOIN_PROCESS_CURRENT_CONTENT_PLACEHOLDER", $join_process_current_content, $query);
+                $require_process_current_content_table();
 
                 //Check if we are part of the process
-                $query .= 'OR (bonita_bdm.CONTENTCURRENT.NAME="User" AND bonita_bdm.CONTENTCURRENT.CONTENT_VALUE LIKE "%' . $current_user_object->name . '%")';
+                $part_of_process_or->condition(
+                    db_and()
+                        ->where("cc.NAME = 'User'")
+                        ->condition(
+                            'cc.CONTENT_VALUE',
+                            '%' . db_like($current_user_object->name) . '%',
+                            'LIKE',
+                        ),
+                );
             }
 
-            $query .= ") ";
+            $query->condition($part_of_process_or);
         }
     }
 
     //Filter by documents or users
     if(!empty($documents) || !empty($users) || !empty($custom_parsed['contents'])){
         //Join process current and process current contents (!performance!)
-        $query = str_replace("JOIN_PROCESS_CURRENT_PLACEHOLDER", $join_process_current, $query);
-        $query = str_replace("JOIN_PROCESS_CURRENT_CONTENT_PLACEHOLDER", $join_process_current_content, $query);
+        $require_process_current_content_table();
 
         //Implements permissions based on grouped BDM query
-        $query = str_replace("SELECT DISTINCT ", "SELECT DISTINCT GROUP_CONCAT(bonita_bdm.CONTENTCURRENT.NAME,bonita_bdm.CONTENTCURRENT.TYPE,TRIM(bonita_bdm.CONTENTCURRENT.CONTENT_VALUE)) as contents,", $query);
+        $query->addExpression('GROUP_CONCAT(cc.NAME, cc.TYPE, TRIM(cc.CONTENT_VALUE))', 'contents');
 
         //Start grouping now and filter after grouping and concat
-        $query .= "GROUP BY bonita." . $suffix . "process_instance.rootProcessInstanceId HAVING ";
-        $first_condition = true;
+        $query->groupBy('pi.rootProcessInstanceId');
 
         foreach($documents as $document){
-            if($first_condition){
-                $first_condition = false;
-            }else{
-                $query .= 'AND ';
-            }
-
-            $query .= 'contents LIKE "%Documentnode' . trim($document) . '%" ';
+            $query->havingCondition('contents', '%Documentnode' . db_like(trim($document)) . '%', 'LIKE');
         }
 
         foreach($users as $user){
-            if($first_condition){
-                $first_condition = false;
-            }else{
-                $query .= 'AND ';
-            }
-
-            $query .= 'contents LIKE \'%Useruser["' . user_load(gofast_workflows_get_drupalid_from_bonitaid(trim($user)))->name . '"%\' ';
+            $query->havingCondition('contents', '%Useruser["' . db_like(user_load(gofast_workflows_get_drupalid_from_bonitaid(trim($user)))->name) . '"%', 'LIKE');
         }
 
         foreach($custom_parsed['contents'] as $custom_parsed_element){
-            if($first_condition){
-                $first_condition = false;
-            }else{
-                $query .= 'AND ';
-            }
-
-            $query .= 'contents LIKE \'' . $custom_parsed_element . '\' ';
+            // Addressing SQL injection, unsure if this should be wrapped in 'db_like':
+            // - Original string concat did not add static wildcards like others
+            // - Still used 'LIKE', not '='
+            // => Probably receives values with wildcards? Or allows them?
+            $query->havingCondition('contents', $custom_parsed_element, 'LIKE');
         }
     }
-    
+
     if(!empty($custom_parsed['title'])){
         foreach($custom_parsed['title'] as $custom_parsed_element){
-            if($first_condition){
-                $first_condition = false;
-            }else{
-                $query .= 'AND ';
-            }
-            
             //Join process current and append the query
-            $query = str_replace("JOIN_PROCESS_CURRENT_PLACEHOLDER", $join_process_current, $query);
-            $query .= 'bonita_bdm.PROCESSCURRENT.TITLE LIKE "%' . $custom_parsed_element . '%" ';
+            $require_process_current_table();
+
+            $query->condition('pc.TITLE', '%' . db_like($custom_parsed_element) . '%', 'LIKE');
         }
     }
 
     if(!empty($custom_parsed['order'])){
-        $query .= 'ORDER BY ' . $custom_parsed['order'][0] . ' ';
-    }
+        if (preg_match(
+            '/^\s*(?<field>.+?)\s*(?:\s(?<order>(?i)ASC|DESC))?\s*$/',
+            $custom_parsed['order'][0],
+            $matches,
+        )) {
+            // Occitanie's module adds sorting options but sends requests with
+            // the old raw table column names to sort on. We map them here
+            // quickly so that no more adaptations is needed and public API does
+            // not change for now.
+            // FIXME: change public API to more sensible design where user does
+            // not need to know or hardcode bonita table column names. Or leave
+            // it until removed when new dashboard fully replaces the legacy one.
+            $field_replacements_map = [
+                ['/^bonita\.user_\./', 'u.'],
+            ];
+            $field = $matches['field'];
+            foreach($field_replacements_map as [$pattern, $replace]) {
+                $field = preg_replace($pattern, $replace, $field, -1, $replace_count);
+                if ($replace_count > 0) break;
+            }
 
-    //Remove unused placeholders
-    $query = str_replace("JOIN_PROCESS_CURRENT_PLACEHOLDER", "", $query);
-    $query = str_replace("JOIN_PROCESS_CURRENT_CONTENT_PLACEHOLDER", "", $query);
+            $query->orderBy(
+                $field,
+                !empty($matches['order']) ? strtoupper($matches['order']) : 'ASC',
+            );
+        }
+    }
 
     //Paginate the result
     $first_index = ($p*$c);
 
-    $query .= 'LIMIT ' . $c . ' OFFSET ' . $first_index . ' ';
-    $query .= ") as readresults ";
+    $query->range($first_index, $c);
 
     //Get the query results
-    $results = ceo_vision_workflow_execute_bonita_query_bdm_mysqli($query);
+    $results = $query->execute();
 
     //Extract results and needed field to build the output array
     foreach($results as $result){
@@ -1472,7 +1746,12 @@ function gofast_api_workflows_dashboard($params, $api = TRUE, $bypass_access = F
 
 // Return all filtered case ids
 function gofast_api_get_case_ids($params){
-    
+    //Check authentication
+    global $user;
+    if($user->uid == 0){
+        gofast_api_not_authorized("Unavailable ressource for anonymous user");
+    }
+
     //Extract pagination parameters
     $p = intval(trim($params['p']));
     $c = intval(trim($params['c']));
@@ -1486,14 +1765,15 @@ function gofast_api_get_case_ids($params){
     $deadline = trim($params['deadline']);
     $documents = is_array($params['documents']) ? $params['documents'] : json_decode(trim($params['documents']), TRUE);
     $users = is_array($params['users']) ? $params['users'] : json_decode(trim($params['users']), TRUE);
-    $bonita_id = trim($params['current_user']);
-    $current_user = gofast_workflows_get_drupalid_from_bonitaid($bonita_id);
+    //Permissions always apply to the authenticated user, never to a requested one
+    $current_user = $user->uid;
     $current_user_object = user_load($current_user);
+    $bonita_id = gofast_workflows_get_user_id($current_user_object);
     $custom = is_array($params['custom']) ? $params['custom'] : json_decode(trim($params['custom']), TRUE);
 
     //Parse custom params
     $custom_parsed = array();
-    foreach($custom as $custom_element){
+    foreach((array) $custom as $custom_element){
         $custom_element = explode('|', $custom_element);
         $custom_parsed[$custom_element[0]][] = $custom_element[1];
     }
@@ -1548,7 +1828,7 @@ function gofast_api_get_case_ids($params){
     }
 
     //Get Bonita search permissions
-    $permissions = gofast_api_workflows_search_permissions();
+    $permissions = gofast_workflows_get_search_permissions();
 
     //Implements default permissions
     foreach(gofast_workflows_get_list_available_processes(false, false, $current_user) as $definition){
@@ -1633,8 +1913,8 @@ function gofast_api_get_case_ids($params){
             $query->havingCondition("contents", "%DocumentNode".trim($document)."%", "LIKE");
         }
 
-        foreach($users as $user){
-            $user_name = user_load(gofast_workflows_get_drupalid_from_bonitaid(trim($user)))->name;
+        foreach($users as $bonita_user_id){
+            $user_name = user_load(gofast_workflows_get_drupalid_from_bonitaid(trim($bonita_user_id)))->name;
             $query->havingCondition("contents", "%Useruser[\"$user_name\"%", "LIKE");
         }
 
@@ -1654,8 +1934,16 @@ function gofast_api_get_case_ids($params){
         }
     }
 
+    //Sort: "<column> [ASC|DESC]", the column being a plain identifier (e.g. "bonita.user_.lastName DESC")
     if(!empty($custom_parsed['order'])){
-        $query->orderBy($custom_parsed["order"][0]);
+        $order = explode(" ", trim($custom_parsed["order"][0]));
+        $order_field = $order[0];
+        $order_direction = strtoupper($order[1] ?? "ASC");
+        $is_valid_field = preg_match("/^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*){0,2}$/", $order_field);
+        if(count($order) > 2 || !$is_valid_field || !in_array($order_direction, array("ASC", "DESC"))){
+            gofast_api_mandatory_parameter("A valid order");
+        }
+        $query->orderBy($order_field, $order_direction);
     }
 
     //Paginate the result
@@ -1663,14 +1951,11 @@ function gofast_api_get_case_ids($params){
 
     $query->range($first_index, $c);
 
-    usurp(1);
-    // Get mysql query from db_select
-    $raw_query = dpq($query, true);
-    usurp(false);
-    // Remove "{" "}" around the table name to make it work with another database
-    $raw_query = preg_replace("/({|})/", "", $raw_query);
-    $raw_query = "SET @@sql_mode=(SELECT REPLACE(@@sql_mode,'ONLY_FULL_GROUP_BY',''));SET SESSION group_concat_max_len = 15000;".$raw_query;
-    $results = ceo_vision_workflow_execute_bonita_query_bdm_mysqli($raw_query);
+    $session_statements = array(
+        "SET @@sql_mode=(SELECT REPLACE(@@sql_mode,'ONLY_FULL_GROUP_BY',''))",
+        "SET SESSION group_concat_max_len = 15000",
+    );
+    $results = gofast_workflows_execute_bonita_select_query_bdm($query, $session_statements);
     $results = array_map(function($result) {
         return $result->rootProcessInstanceId;
     }, $results);
@@ -1807,12 +2092,8 @@ function gofast_workflows_add_node_to_resync_oncron($nid){
 }
 
 function gofast_workflows_is_external_api(){
-    
-    if($_SERVER['SERVER_NAME'] === "localhost" && $_SERVER['REQUEST_SCHEME'] === "http" ){
-        return false;
-    }else{
-        return true;
-    }
+  // Internal callers connect from the server itself; SERVER_NAME is the client Host header.
+  return !in_array($_SERVER['REMOTE_ADDR'] ?? '', array('127.0.0.1', '::1'), TRUE);
 }
 
 /*
@@ -1854,4 +2135,34 @@ function gofast_workflows_change_username($details): void {
   gofast_workflows_update_user($data,$bonita_id,$cookie_name);
   $query         = "update authmap set authname = '".$new_username."' where authname = '".$old_username."'";
   db_query($query);
+}
+
+/**
+ * Implements hook_user_update()
+ */
+function gofast_workflows_user_update(&$edit, $account, $category) {
+  // Check if firstname or lastname has been changed
+  if ($account->original->ldap_user_givenname[LANGUAGE_NONE][0]['value'] != $account->ldap_user_givenname[LANGUAGE_NONE][0]['value'] || $account->original->ldap_user_sn[LANGUAGE_NONE][0]['value'] != $account->ldap_user_sn[LANGUAGE_NONE][0]['value'] ) {
+        $bonita_id = gofast_workflows_get_user_id($account);   
+        $data = gofast_workflows_prepare_firstname_lastname($account);
+        gofast_workflows_get_cookie(true);
+        $cookie_name = "cookie_bonita".BONITA_TECHNICAL_LOGIN.".txt";
+        gofast_workflows_update_user($data,$bonita_id,$cookie_name);
+  }
+}
+
+function gofast_workflows_prepare_firstname_lastname($account){
+    if(mb_detect_encoding($account->ldap_user_givenname[LANGUAGE_NONE][0]['value'], 'UTF-8', true) != false){
+        $encoded_firstname = utf8_encode($account->ldap_user_givenname[LANGUAGE_NONE][0]['value']);
+    }else{
+        $encoded_firstname = $account->ldap_user_givenname[LANGUAGE_NONE][0]['value'];
+    } 
+    if(mb_detect_encoding($account->ldap_user_sn[LANGUAGE_NONE][0]['value'], 'UTF-8', true) != false){
+        $encoded_lastname = utf8_encode($account->ldap_user_sn[LANGUAGE_NONE][0]['value']);
+    }else{
+        $encoded_lastname = $account->ldap_user_sn[LANGUAGE_NONE][0]['value'];
+    }
+    $data = array("firstname" => $encoded_firstname ,"lastname" => $encoded_lastname);
+    
+    return $data;
 }

@@ -17,3 +17,7 @@ files[] = tests/BasicTests.test
 files[] = tests/Og1Tests.test
 files[] = tests/Og2Tests.test
 configure = admin/config/people/ldap/authorization
+
+version = 7.x-2.7
+project = ldap
+datestamp = 1775066467

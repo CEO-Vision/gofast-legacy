@@ -1,0 +1,2 @@
+<?php
+// An empty module that satisfies dependencies on jquery_update but does nothing.

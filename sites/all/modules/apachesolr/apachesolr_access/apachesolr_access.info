@@ -6,8 +6,6 @@ core = 7.x
 
 files[] = tests/apachesolr_access.test
 
-; Information added by Drupal.org packaging script on 2020-12-11
-version = "7.x-1.12"
-core = "7.x"
-project = "apachesolr"
-datestamp = "1607712024"
+version = 7.x-1.15
+project = apachesolr
+datestamp = 1762365676

@@ -105,7 +105,7 @@
     $('body').addClass('modal-open');
 
     //Close any opened menu
-    $(".gofast-node-actions").removeClass('open').addClass('close');
+    $(".gofast-node-actions").removeClass('open').addClass('closed');
 
     $('.modal-title', Drupal.CTools.Modal.modal).html(settings.loadingText);
     Drupal.CTools.Modal.modalContent(Drupal.CTools.Modal.modal, settings.modalOptions, settings.animation, settings.animationSpeed);
@@ -357,11 +357,6 @@
 
     $('#modal-title').html(response.title);
 
-    // cleanup previous ckeditor body and comment instances before adding new modal content
-    Gofast.removeAllCKEditorInstances("body-und");
-    Gofast.removeAllCKEditorInstances("edit-comment-body-und");
-    Gofast.removeAllCKEditorInstances("edit-message-value");
-
     /// In some cases classes are added to the object, then we deleted to prevent CSS override (exemple : modal-workflow)
     $(target + ' #modal-content').removeClass();
     $(target + ' #modal-content').addClass('modal-body');
@@ -399,7 +394,11 @@
 
       // Remove form actions from content
       $('.node-forum-form .card-footer').attr('style', 'display: none !important')
-      $('#modal-footer button[id]').click(function (e) {
+      // Add a click event listener that re-dispatches a click/mousedown event
+      // to the original button if and only if it can be linked back to using
+      // the "id" attribute AND it does not have a "onclick" attribute to
+      // prevent calling it twice.
+      $('#modal-footer button[id]:not([onclick])').click(function (e) {
         e.preventDefault();
         e.stopPropagation();
         var _buttonIdFooter = $(this).attr('id');

@@ -108,7 +108,9 @@
     
     .KanbanCard_rightCol {
         box-shadow: inset 1px 0px 1px 0px rgba(228, 230, 239, 1);
-        
+        @media (max-width: 768px){
+          margin-top: 15px;
+        }
         .col-12-lg{
             padding-left: 0;
             padding-right: 0;
@@ -120,8 +122,10 @@
             overflow-x: hidden;
         }
     }
-    .KanbanCard_leftCol {
-        padding-right: 2rem !important;
+    @media (min-width: 992px)  {
+      .KanbanCard_leftCol {
+          padding-right: 2rem !important;
+      }
     }
     
     .KanbanCard__InputEditable .EditableInput__value{

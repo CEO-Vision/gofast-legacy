@@ -186,7 +186,9 @@
 
   Drupal.behaviors.recurrenceInput = {
     attach: function () {
-      const $recurrenceSelect = $("#edit-recurrence");
+      // Additional class selector filters inputs that have select2 initialised
+      // on them. We'll wait for the select2 initialization to happen before our own.
+      const $recurrenceSelect = $("#edit-recurrence.select2-hidden-accessible");
       $recurrenceSelect.once("recurrence-input", function () {
         initRecurrenceInput($recurrenceSelect);
       });

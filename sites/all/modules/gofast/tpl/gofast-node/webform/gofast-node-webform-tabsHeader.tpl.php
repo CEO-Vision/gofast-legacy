@@ -29,7 +29,7 @@ if (count(module_implements("extra_metadata")) >= 1) {
 <ul class="nav nav-tabs nav-fill gofastTab w-100 mb-0 justify-content-end flex-nowrap">
 
   <?php if ($extra_metadata) { ?>
-    <li class="nav-item dropdown dropup">
+    <li class="nav-item dropdown dropup" data-title="<?= t('Informations', [], ['context' => 'gofast']); ?>" data-animation="true" data-trigger="hover" data-placement="top" data-boundary="window">
       <a class="nav-link px-2 d-flex justify-content-center dropdown-toggle active" data-toggle="dropdown" href="#" role="button" aria-haspopup="true" aria-expanded="false">
         <span class="nav-icon"><i class="fas fa-info-circle icon-nm"></i></span>
         <span class="nav-text"><?php print t('Informations', [], ['context' => 'gofast']); ?></span>
@@ -46,7 +46,7 @@ if (count(module_implements("extra_metadata")) >= 1) {
       </div>
     </li>
   <?php } else { ?>
-    <li class="nav-item ">
+    <li class="nav-item " data-title="<?= t('Informations', [], ['context' => 'gofast']); ?>" data-animation="true" data-trigger="hover" data-placement="top" data-boundary="window">
       <a class="nav-link px-2 d-flex justify-content-center active" data-toggle="tab" href="#document__infotab">
         <span class="nav-icon"><i class="fas fa-info-circle icon-nm"></i></span>
         <span class="nav-text"><?php print t('Informations', [], ['context' => 'gofast']); ?></span>
@@ -55,7 +55,7 @@ if (count(module_implements("extra_metadata")) >= 1) {
   <?php } ?>
 
 
-  <li class="nav-item ">
+  <li class="nav-item " data-title="<?= t('Comments', [], ['context' => 'gofast']); ?>" data-animation="true" data-trigger="hover" data-placement="top" data-boundary="window">
     <a class="nav-link px-2 d-flex justify-content-center" data-toggle="tab" href="#document__commentstab">
       <span class="nav-icon"><i class="fas fa-comments icon-nm"></i></span>
       <span class="nav-text"><?php print t('Comments', [], ['context' => 'gofast']); ?></span>
@@ -65,7 +65,7 @@ if (count(module_implements("extra_metadata")) >= 1) {
     </a>
   </li>
   <?php if (gofast_audit_access("node", $node->nid)) { ?>
-    <li class="nav-item ">
+    <li class="nav-item " data-title="<?= t('Audit', [], ['context' => 'gofast']); ?>" data-animation="true" data-trigger="hover" data-placement="top" data-boundary="window">
       <a class="nav-link px-2 d-flex justify-content-center h-100" data-toggle="tab" href="#document__audittab">
         <span class="nav-icon"><i class="flaticon2-paperplane"></i></span>
         <span class="nav-text"><?php print t('Audit', [], ['context' => 'gofast']); ?></span>
@@ -73,10 +73,11 @@ if (count(module_implements("extra_metadata")) >= 1) {
     </li>
     <?php } ?>
 </ul>
-<?php if (isset($count_notif['count_comment_notif']) && $count_notif['count_comment_notif'] > 0) { ?>
-  <script>
-    jQuery(document).ready(function() {
+<script>
+  jQuery(document).ready(function() {
+    jQuery("#node-tabsHeader > ul > li").tooltip()
+    if($("#gofast-comment-notifiation").length){
       Gofast.removeCommentsBadge();
-    });
-  </script>
-<?php } ?>
+    }
+  });
+</script>

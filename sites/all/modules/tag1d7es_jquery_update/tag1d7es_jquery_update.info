@@ -1,0 +1,10 @@
+name = Tag1 D7ES jQuery Update
+description = Update jQuery and jQuery UI to a more recent version.
+package = User interface
+core = 7.x
+files[] = tests/tag1d7es_jquery_update.test
+configure = admin/config/development/tag1d7es_jquery_update
+
+version = 7.x-4.5
+project = tag1d7es_jquery_update
+datestamp = 1768423185

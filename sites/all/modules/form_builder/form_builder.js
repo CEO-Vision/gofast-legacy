@@ -60,7 +60,9 @@ Drupal.behaviors.formBuilderElement.attach = function(context) {
 /**
  * Behavior to disable preview fields and instead open up the configuration.
  */
-Drupal.behaviors.formBuilderFields = {};
+Drupal.behaviors.formBuilderFields = {
+  tableDragAttached: false,
+};
 Drupal.behaviors.formBuilderFields.attach = function(context) {
   // Bind a function to all elements to update the preview on change.
   var $forms = $('.form-builder-field-configure', context)
@@ -75,7 +77,29 @@ Drupal.behaviors.formBuilderFields.attach = function(context) {
     .not('.form-builder-field-keyup')
     .addClass('form-builder-field-keyup')
     .bind('keyup', Drupal.formBuilder.elementPendingChange);
+
+  this.attachTableDrag();
 };
+/**
+ * Register a tableDrag onDrop callback - so we catch weight changes.
+ */
+Drupal.behaviors.formBuilderFields.attachTableDrag = function() {
+  if (this.tableDragAttached) {
+    return;
+  }
+  if (Drupal.tableDrag.prototype) {
+    var oldOnDrop = Drupal.tableDrag.prototype.onDrop;
+    Drupal.tableDrag.prototype.onDrop = function() {
+      oldOnDrop();
+      if ($(this.table).parents('.form-builder-field-configure').length) {
+        Drupal.formBuilder.elementPendingChange.apply(this.table, [{
+          type: 'change',
+        }]);
+      }
+    };
+    this.tableDragAttached = true;
+  }
+}
 
 /**
  * Behavior for the entire form builder. Add drag and drop to elements.
@@ -792,9 +816,17 @@ Drupal.formBuilder.dropElement = function (event, ui) {
     var name = Drupal.formBuilder.newFieldName($element);
 
     var $ajaxPlaceholder = Drupal.formBuilder.ajaxPlaceholder(name);
+    var url = $element.find('a').attr('href');
+
+    // Validate url to make sure it's a valid form-builder field.
+    var url_object = new URL(Drupal.absoluteUrl(url));
+    var url_query = url_object.searchParams.has('q') ? '/' + url_object.searchParams.get('q') : url_object.pathname;
+    if (!Drupal.urlIsLocal(url) || !url_query.startsWith(Drupal.settings.basePath + Drupal.settings.pathPrefix + 'admin/structure/form-builder/add/')) {
+      return;
+    }
 
     $.ajax({
-      url: $element.find('a').attr('href'),
+      url: url,
       type: 'GET',
       dataType: 'json',
       data: 'js=1&element_id=' + name,

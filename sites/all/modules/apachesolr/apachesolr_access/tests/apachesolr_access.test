@@ -6,6 +6,9 @@
  */
 class DrupalApacheSolrNodeAccess extends DrupalWebTestCase {
 
+  protected $basic_user;
+  protected $admin_user;
+
   /**
    * Gets Information about the DrupalApacheSolrNodeAccess test
    *

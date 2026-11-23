@@ -7,6 +7,27 @@
  */
 
 (function ($, Gofast, Drupal) {
+  /**
+   * keys that do not modify the text/search of the tag input
+   * (at least not by themselves, or by using a combination of them)
+   * `Enter` and `ArrowRight` confirm selection so we do not list them here
+   */
+  const nonEditingKeys = new Set([
+    "Tab",
+    "ArrowUp",
+    "ArrowDown",
+    "ArrowLeft",
+    "Home",
+    "End",
+    "Shift",
+    "Control",
+    "Alt",
+    "AltGraph",
+    "ContextMenu",
+    "OS",
+    "Escape",
+  ]);
+
   Drupal.behaviors.initTagify = {
     attach: function (context) {
       if (typeof Tagify == "undefined") {
@@ -50,10 +71,18 @@
             enabled: 3,            // show suggestion after 3 typed character
             fuzzySearch: true,    // Do not match only suggestions that starts with the typed characters
             caseSensitive: true,   // allow adding duplicate items if their case is different
-            maxItems: 50,           // mixumum allowed rendered suggestions
+            maxItems: Infinity,           // maximum allowed rendered suggestions
             enabled: 1,             // show suggestions on focus 1 to set True 0 for false
             closeOnSelect: true,    // hide the suggestions dropdown once an item has been selected
             searchKeys: ['name', 'email', 'request']// very important to set by which keys to search for suggestions when typing
+          },
+          autoComplete: {
+            // Allow confirming the choice of an autocomplete option (dropdown)
+            // with the right arrow and tab keys by making it create a full tag
+            // immediately instead of just completing the whitelist item's
+            // "value" property.
+            rightKey: true,
+            tabKey: true,
           },
           templates: {
             tag: tagTemplate,
@@ -66,7 +95,31 @@
           //Element is already tagified
           return;
         }
-        
+        // If tagify field has max tags, prevent input and show tooltip
+        let popoverTimeout;
+        $(tagify.DOM.input).on("keydown", (e) => {
+          if(tagify && tagify.hasMaxTags()){
+            // Clear timeout if keydown is called multiple time
+            clearTimeout(popoverTimeout)
+            // Prevent user input in input field
+            e.preventDefault();
+            $(e.currentTarget).parent().attr("data-toggle", "popover");
+            // Trigger modal on top of the field to warn the user
+            $(e.currentTarget).parent().popover({
+              placement: "top",
+              trigger: "manual",
+              html: true,
+              content: Drupal.formatPlural(max_tags, "This field can only have one tag", "This field allows up to @count tags only", {}, {context: "gofast:gofast_ac"}),
+              template: '<div class="popover w-auto" role="tooltip"><div class="arrow"></div><h3 class="popover-header"></h3><div class="popover-body py-2 px-4"></div></div>'	
+            });
+            $(e.currentTarget).parent().popover("show");
+            
+            // Auto hide the popover after 2sec
+            popoverTimeout = setTimeout(() => {
+              $(e.currentTarget).parent().popover("hide");
+            }, 2000)
+          }
+        })
         // listen to any keystrokes which modify tagify's input
         tagify.on('keydown', onInput);
 
@@ -88,6 +141,12 @@
         // prevent value from being undefined on paste events on "free tags" inputs
         if (!enforce) {
           tagify.on('add', async function(e) {
+            // Update fake tag data if some properties are missing
+            if(!e.detail.data.name && e.detail.data.value){
+              e.detail.data.name = e.detail.data.value;
+              e.detail.data.exists = false;
+              tagify.replaceTag(e.detail.tag, {...e.detail.data, __isValid: true});
+            }
             if (e.detail.tag.value != "undefined") {
               return;
             }
@@ -305,7 +364,11 @@
           tagify.settings.whitelist.length = 0; // reset current whitelist
           // show loader & hide suggestions dropdown (if opened)
           tagify.loading(true).dropdown.hide.call(tagify);
-          var url = Drupal.settings.gofast.baseUrl + '/gofast/gofast_ac_config';
+          var autocompleteEndpoint = '/gofast/gofast_ac_config';
+          if(inputElm.hasAttribute('data-tagify-url')){
+            autocompleteEndpoint = inputElm.getAttribute('data-tagify-url');
+          }
+          var url = Drupal.settings.gofast.baseUrl + autocompleteEndpoint;
           var formData = new FormData();
           formData.append('str', value);
           formData.append('get_spaces', inputElm.hasAttribute("data-get-spaces"));
@@ -316,6 +379,7 @@
           formData.append('get_node', inputElm.hasAttribute("data-node") == true ? true : false);
           formData.append("space_type", inputElm.hasAttribute("data-space-type") ? inputElm.getAttribute("data-space-type") : false)
           formData.append("filter_extranet", inputElm.hasAttribute("extranet-users-form") ? true : false)
+          formData.append("filter_confidential", inputElm.hasAttribute("data-filter-confidential") ? !['0','false'].includes(inputElm.getAttribute("data-filter-confidential")) : false);
           formData.append('vid', inputElm.hasAttribute("data-vid") == true ? inputElm.getAttribute("data-vid") : false);
           formData.append('enforce', inputElm.hasAttribute("data-enforce") == true ? true : false);
           formData.append('broadcast', inputElm.hasAttribute("data-broadcast") == true ? true : false);
@@ -398,6 +462,12 @@
           if(oninput_callback){
             eval(oninput_callback)(e);
           }
+
+          // prevent keys that don't modify the input from resetting the suggestion list
+          if (e.type == "keydown" && nonEditingKeys.has(e.detail.originalEvent.key)) {
+            return;
+          }
+
           clearTimeout(Gofast.tagifyInterval);
           Gofast.tagifyInterval = setTimeout(function(){
             var value = "";
@@ -430,8 +500,15 @@
         // Template of element show on the input
         function suggestionItemTemplate(tagData) {
           var imageData;
-          var tempate;
-          tempate = "<div " + this.getAttributes(tagData) + " class='tagify__dropdown__item " + (tagData.class ? tagData.class : "") + "' tabindex=\"0\" role = \"option\" >";
+          var template;
+          const isDisabled = !!tagData.disabled;
+          if (isDisabled) {
+            tagData.style = "pointer-events: none;"
+          }
+          template = "<div " + this.getAttributes(tagData) + " class='tagify__dropdown__item " + (tagData.class ? tagData.class : "") + "' tabindex=\"0\" role = \"option\" >";
+          if (isDisabled) {
+            template = "<div style=\"cursor: not-allowed;\">" + template;
+          }
 
           if (tagData.type == 'user') {
             imageData = "" + (tagData.avatar ? " <div class='tagify__dropdown__item__avatar-wrap'> <img onerror=\"this.style.visibility='hidden'\" src=\"" + tagData.avatar + "\"> </div>" : "");
@@ -454,23 +531,29 @@
             imageData = "<div><i class=\"fa fa-envelope text-info mr-2\"></i></div>";
           } else {
             let tagClass = "flaticon2-tag";
-            // if (tagData.taxonomy_type && tagData.taxonomy_type == "category") {
-            //   tagClass = "flaticon2-setup";
-            // }
             imageData = "<div class='tagify__tag__avatar-wrap'><i class=\"" + tagClass + " icon-2x text-info\"></i></div>";
           }
 
-          const existenceTemplate = tagData.exists === false ? "&nbsp;<span class='label label-inline label-rounded label-success ml-2'>" + Drupal.t("Add") + "</span>" : "";
+          const existenceTemplate = tagData.exists === false
+            ? "&nbsp;<span class='label label-inline label-rounded label-success ml-2'>" + Drupal.t("Add") + "</span>"
+            : "";
 
-          tempate += imageData + " <strong>" + tagData.name + existenceTemplate + "</strong> ";
+          const disabledTemplate = isDisabled
+            ? "&nbsp;<span class='label label-inline label-rounded label-warning ml-2'>" + tagData.disabled + "</span>"
+            : "";
+
+          template += imageData + " <strong>" + tagData.name + existenceTemplate + disabledTemplate + "</strong> ";
 
           if (typeof tagData.email !== 'undefined') {
-            tempate += "<span>" + tagData.email + "</span>";
+            template += "<span>" + tagData.email + "</span>";
           }
 
-          tempate += "</div>";
+          template += "</div>";
+          if (isDisabled) { // We must also close the additional wrapper responsible for displaying the not-allowed cursor
+            template += "</div>";
+          }
 
-          return tempate;
+          return template;
         }
 
          // Template of element show on the Dropdown list

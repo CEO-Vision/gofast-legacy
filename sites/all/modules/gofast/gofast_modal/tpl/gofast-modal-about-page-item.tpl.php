@@ -1,18 +1,17 @@
 <?php
 // normal case: we're displaying a list item
-if (strlen($item[1]) > 0) : ?>
-    <span><?= $item[0] ?></span>
-    <div class="d-flex align-items-center">
+if (!empty($item['version'])) : ?>
+    <span><?= $item['name'] ?></span>
+    <div class="d-flex align-items-center gap-2">
     <?php // data labels
-    if (isset($item[2])) : ?>
-            <span class="label label-inline label-light font-weight-bold"><?= $item[2] ?></span>
-            <?php if($is_admin) : ?>
-            <span class="label label-inline label-dark font-weight-bold"><?= $item[1] ?></span>
-            <?php endif; ?>
-    <?php else : ?>
-        <?php if($is_admin || isset($item["subitem"])) : ?>
-        <span class="label label-inline label-light font-weight-bold"><?= $item[1] ?></span>
-        <?php endif; ?>
+    if (isset($item['licence'])) : ?>
+        <span class="label label-inline label-light font-weight-bold"><?= $item['licence'] ?></span>
+    <?php endif; ?>
+    <?php if ($is_admin) : /* Display versions only to (business) admin users */ ?>
+        <?php if (!empty($item['version']['complement'])) { ?>
+            <span class="label label-inline label-light font-weight-bold"><?= $item['version']['complement'] ?></span>
+        <?php } ?>
+        <span class="label label-inline label-dark font-weight-bold"><?= $item['version']['number'] ?></span>
     <?php endif; ?>
     <?php // eventual subitem
     if (isset($item["subitem"]) && $is_admin) : ?>
@@ -27,5 +26,5 @@ if (strlen($item[1]) > 0) : ?>
     </div>
 <?php // special case: we're displaying a subtitle
 else : ?>
-    <span class="mx-auto font-weight-bold font-size-h3"><?= t($item[0], ["@site_name" => variable_get("site_name", "GoFAST")], ["context" => "gofast"]) . ":" ?></span>
+    <span class="mx-auto font-weight-bold font-size-h3"><?= t($item['name'], ["@site_name" => variable_get("site_name", "GoFAST")], ["context" => "gofast"]) . ":" ?></span>
 <?php endif; ?>

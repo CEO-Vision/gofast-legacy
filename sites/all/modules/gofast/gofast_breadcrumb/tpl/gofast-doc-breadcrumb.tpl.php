@@ -42,8 +42,12 @@
     </div>
     <script type="text/javascript">
       jQuery(document).ready(function() {
-          <?php if ($options["editable"] === TRUE): ?> window.initBreadCrumb(); <?php endif; ?>
-          window.initTitleInput();
+        <?php if ($options["editable"] === TRUE): ?>
+            window.initBreadCrumb();
+        <?php endif; ?>
+        <?php if ($options["metadata_editable"]) { ?>
+            window.initTitleInput();
+        <?php } ?>
           $('[data-toggle="tooltip"]').tooltip();
       });
   </script>

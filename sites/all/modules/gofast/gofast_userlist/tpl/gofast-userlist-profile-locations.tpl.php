@@ -17,7 +17,7 @@
            <ul style="margin-left: 0;padding-left:0;list-style: none;">
            <?php
            foreach ($path_groups as $gid => $webdav_path) {
-             print gofast_breadcrumb_get_simplified_breadcrumb($gid, $ulid, $webdav_path, FALSE);
+             print "<li>" . gofast_breadcrumb_get_simplified_breadcrumb($gid, $ulid, $webdav_path, "userlist") . "</li>";
            }
            ?>
          </ul>
@@ -42,7 +42,7 @@
            <ul style="margin-left: 0;padding-left:0;list-style: none;">
            <?php
            foreach ($path_orga as $gid => $webdav_path) {
-             print gofast_breadcrumb_get_simplified_breadcrumb($gid, $ulid, $webdav_path, FALSE);
+            print "<li>" . gofast_breadcrumb_get_simplified_breadcrumb($gid, $ulid, $webdav_path, "userlist") . "</li>";
            }
            ?>
          </ul>
@@ -67,7 +67,7 @@
            <ul style="margin-left: 0;padding-left:0;list-style: none;">
            <?php
            foreach ($path_public as $gid => $webdav_path) {
-             print gofast_breadcrumb_get_simplified_breadcrumb($gid, $ulid, $webdav_path, FALSE);
+             print "<li>" . gofast_breadcrumb_get_simplified_breadcrumb($gid, $ulid, $webdav_path, "userlist") . "</li>";
            }
            ?>
          </ul>
@@ -92,7 +92,7 @@
            <ul style="margin-left: 0;padding-left:0;list-style: none;">
            <?php
            foreach ($path_extranet as $gid => $webdav_path) {
-             print gofast_breadcrumb_get_simplified_breadcrumb($gid, $ulid, $webdav_path, FALSE);
+            print "<li>" . gofast_breadcrumb_get_simplified_breadcrumb($gid, $ulid, $webdav_path, "userlist") . "</li>";
            }
            ?>
          </ul>

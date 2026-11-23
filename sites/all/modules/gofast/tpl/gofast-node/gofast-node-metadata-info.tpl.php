@@ -5,7 +5,8 @@
     </div>
   <?php endif; ?>
 
-  <div class="row font-size-sm gofast_metadata_infotab" id="<?= gofast_og_is_space($node_obj) ? "space__infotab" : "document__infotab" ?>">
+<?php if (!$node_infos["no_metadata"]) : ?>
+<div class="row font-size-sm gofast_metadata_infotab" id="<?= gofast_og_is_space($node_obj) ? "space__infotab" : "document__infotab" ?>">
     <?php foreach ($node_infos as $key => $node) : ?>
       <?php if (!empty($node['title'])) : ?>
         <?php if ($node['order'] != '') : ?>
@@ -18,7 +19,7 @@
               <div class="spinner document__editable--spinner d-none"></div>            
               <?php if ($node['type'] == 'rating') : ?>
                 <a class=" p-2 document__editable--label text-truncate" id="" title="<?php print $node['info'] ?>"><?php echo $node['info']; ?></a>
-              <?php elseif ($node['type'] != 'language') : ?>
+              <?php elseif (!in_array($node['type'], ['language', 'userselect'])) : ?>
                 <a data-toggle="tooltip" data-placement="top" class="btn btn-hover-light btn-sm p-2 document__editable--label text-truncate<?= isset($node['disabled']) ? " disabled" : "" ?>" id="" title="<?php print $node['tooltip'] ?: "" ?>"><?php echo $node['info']; ?></a>
               <?php endif ?>
               <?php if ($node['type'] == 'select') : ?>
@@ -33,14 +34,14 @@
                             if ($groupe["text"] == "") continue;
                           ?>
                             <?php $select = $node['value'] == $groupe["text"] ? 'selected' : ''; ?>
-                            <option value="<?php echo $groupe["database_name"] ?>" <?php if ($select != '') : ?> selected="selected" <?php endif ?>><?php print $groupe["text"] == "" ? t('None') : $groupe["text"]  ?></option>
+                            <option <?= drupal_attributes($groupe['option_attributes'] ?? []) ?> value="<?php echo $groupe["database_name"] ?>" <?php if ($select != '') : ?> selected="selected" <?php endif ?>><?php print $groupe["text"] == "" ? t('None') : $groupe["text"]  ?></option>
                           <?php endforeach ?>
                         </optgroup>
                       <?php else :
                         if ($value["text"] == "") continue;
                       ?>
                         <?php $select = $node['value'] == $value["text"] ? 'selected' : ''; ?>
-                        <option value="<?php echo $value["database_name"] ?>" <?php if ($select != '') : ?> selected="selected" <?php endif ?>><?php print $value["text"] == "" ? t('None') : $value["text"]  ?></option>
+                        <option <?= drupal_attributes($value['option_attributes'] ?? []) ?> value="<?php echo $value["database_name"] ?>" <?php if ($select != '') : ?> selected="selected" <?php endif ?>><?php print $value["text"] == "" ? t('None') : $value["text"]  ?></option>
                       <?php endif ?>
                     <?php endforeach  ?>
                   </select>
@@ -80,6 +81,9 @@
                 </div>
                 <!-- End auth type  -->
               <?php endif ?>
+              <?php if ($node['type'] == 'userselect') : ?>
+                <div class="EditableInput document__editable--processe document__editable--divfiel document__editable--userselect w-100 pl-2" name="<?php print $node["name"] ?>" data-id="<?php print $node["node_pk"] ?>" data-user="<?php print $node["data-user"] ?>"></div>
+              <?php endif; ?>
             </div>
           <?php else : ?>
             <div class="p-2 d-flex flex-row-fluid justify-content-end align-items-center text-truncate" id="">
@@ -105,7 +109,22 @@
         <?php endif ?>
       <?php endif ?>
     <?php endforeach ?>
+
+    <?php if (gofast_og_is_space($node_obj)) : ?>
+      <?php if (count(module_implements("extra_metadata")) >= 1) : ?>
+          <?php foreach (module_implements("extra_metadata") as $module) :
+              $extra_metadata = call_user_func($module . "_extra_metadata", $node_obj);
+              if (!is_array($extra_metadata) || empty($extra_metadata)) {
+                continue;
+              }
+          ?>
+          <?= $extra_metadata["theme"] ?>
+          <?php endforeach;?>
+      <?php endif; ?>
+    <?php endif; ?>
 </div>
+<?php endif; ?>
+
 <?php if(gofast_essential_is_essential()):?>
 <script type='text/javascript'>
     setTimeout(function(){

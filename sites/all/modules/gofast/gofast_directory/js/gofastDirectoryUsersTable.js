@@ -2,6 +2,36 @@
 
     'use strict';
 
+    let _is_business_admin;
+
+    const disableDeleteAction = function() {
+        const selectedLoginValues = Array.from(document.querySelectorAll("tr.datatable-row.datatable-row-active td[data-field='login'] span span"))
+            .map(span => span.textContent);
+
+        const gofastDeleteUserAction = $("#container-selected-items #gofastDeleteUserAction");
+
+        if (!_is_business_admin) {
+            // If the user is not a business admin, disable the action
+            gofastDeleteUserAction.addClass("disabled")
+                .removeClass("ctools-use-modal")
+                .attr("title", Drupal.t("You don't have permission to do this action", {}, {context: "gofast"}));
+            return; 
+        }
+
+        // If the user is a business admin, check the login values
+        const allNeverLoggedIn = selectedLoginValues.every(value => value === Drupal.t("Never logged in"));
+
+        if (allNeverLoggedIn) {
+            gofastDeleteUserAction.removeClass("disabled")
+                .attr("title", "")
+                .addClass("ctools-use-modal");
+        } else {
+            gofastDeleteUserAction.addClass("disabled")
+                .removeClass("ctools-use-modal")
+                .attr("title", Drupal.t("You don't have permission to do this action", {}, {context: "gofast"}));
+        }
+    };
+
     // 8 columns in main header means array length must be of 8
     const DirectoryUsersTableSubheaderElements = [
         "",
@@ -104,6 +134,7 @@
 
         var _crateTable = function(table){
             _selection = "";
+            _is_business_admin = false
             _table = $(table).KTDatatable({
                 data: {
                     type: 'remote',
@@ -120,6 +151,9 @@
                                 var dataSet = raw;
                                 if (typeof raw.data !== 'undefined') {
                                     dataSet = raw.data;
+                                }
+                                if (typeof raw.is_business_admin !== 'undefined') {
+                                    _is_business_admin = raw.is_business_admin;
                                 }
                                 return dataSet;
                             },
@@ -424,30 +458,34 @@
                 });
                 _selection = "";
                 selected_records.each(function( index ) {
-                   var uid = $(this).find(".uid_span").html();                
-                   _selection += uid+"-";  
+                var uid = $(this).find(".uid_span").html();                
+                _selection += uid+"-";  
                 });
                 _selection = _selection.slice(0, -1); // remove trailing "-";
-               
-                $("#container-selected-items .navi-item .ctools-use-modal").each(function(index){
-                      var href = $(this).attr("href");
-                      var array_href = href.split("/");
-                      array_href[array_href.length - 1] = _selection;
-                      var new_href = array_href.join("/");
-                      $(this).attr("href", new_href);
-                      $(this).removeClass("ctools-use-modal-processed");
-                      $(this).off( "click");
-                });
-
                 GofastTriggerKDataTableMegaDropdown(selected_records,"gofastDirectoryUsersTable");
                 if (selected_records.length) {
-                    // disable delete action if one among checked user(s) never logged in
-                    const selectedLoginValues = _table.getRecord(selected_records[0].dataset.row).getColumn("login").getValue();
-                    if (!selectedLoginValues.includes(Drupal.t("Never logged in"))) {
-                        $("#gofastDeleteUserAction").addClass("disabled");
-                    }
+                    disableDeleteAction();                                
                 }
-           });
+                $("#container-selected-items .navi-item .ctools-use-modal").each(function(index) {
+                    var href = $(this).attr("href");
+                    var array_href;
+                    var new_href;
+                    if (href.includes("/modal/nojs/user/")) {
+                        array_href = href.split("/modal/nojs/user/");
+                        array_href[1] = _selection;
+                        new_href = "/modal/nojs/user" + array_href.join("/") + "/delete";
+                    } else {
+                        array_href = href.split("/");
+                        array_href[array_href.length - 1] = _selection;
+                        new_href = array_href.join("/");
+                    }
+                    $(this).attr("href", new_href);
+                    $(this).removeClass("ctools-use-modal-processed");
+                    $(this).off( "click");
+                    Drupal.behaviors.ZZCToolsModal.attach();
+                });
+            
+            });
                   
            $("#gofastDirectoryUsersTable").on("datatable-on-uncheck", function(event,args){
                 var selected_records = _table.getSelectedRecords();
@@ -456,18 +494,29 @@
                    var uid = $(this).find(".uid_span").html();                
                    _selection += uid+"-";  
                 });
-               
-                $("#container-selected-items .navi-item .ctools-use-modal").each(function(index){
-                      var href = $(this).attr("href");
-                      var array_href = href.split("/");
-                      array_href[array_href.length - 1] = _selection;
-                      var new_href = array_href.join("/");
-                      $(this).attr("href", new_href);
-                      $(this).removeClass("ctools-use-modal-processed"); 
-                      $(this).off( "click");
-                });
-
+                _selection = _selection.slice(0, -1);
                 GofastTriggerKDataTableMegaDropdown(selected_records,"gofastDirectoryUsersTable");
+                if (selected_records.length) {
+                    disableDeleteAction();                                
+                }
+
+                $("#container-selected-items .navi-item .ctools-use-modal").each(function(index){
+                    var href = $(this).attr("href");
+                    var array_href;
+                    var new_href;
+                    if (href.includes("/modal/nojs/user/")) {
+                        array_href = href.split("/modal/nojs/user/");
+                        array_href[1] = _selection;
+                        new_href = "/modal/nojs/user" + array_href.join("/") + "/delete";
+                    } else {
+                        array_href = href.split("/");
+                        array_href[array_href.length - 1] = _selection;
+                        new_href = array_href.join("/");
+                    }
+                    $(this).attr("href", new_href);
+                    $(this).removeClass("ctools-use-modal-processed"); 
+                    $(this).off( "click");
+                });
            });
 
            const interferringEvents = ["datatable-on-ajax-done", "datatable-on-goto-page", "datatable-on-update-perpage"];

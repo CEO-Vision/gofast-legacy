@@ -6,6 +6,9 @@ abstract class AbstractDrupalSolrOnlineWebTestCase extends DrupalWebTestCase {
 
   protected $solr_available = FALSE; // workaround for drupal.org test bot
 
+  protected $base_solr_url;
+  protected $core_admin_url;
+
   /**
    * Implementation of setUp().
    */

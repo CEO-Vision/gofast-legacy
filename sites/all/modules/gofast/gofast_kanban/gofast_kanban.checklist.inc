@@ -278,6 +278,7 @@ function gofast_kanban_checklistItem_create($cid, $label, $attrs = array()) {
           'label' => $label,
           'deadline' => (isset($attrs['deadline']) && $attrs['deadline'] !== '' ? $attrs['deadline'] : NULL),
           'uid' => (isset($attrs['uid']) && $attrs['uid'] !== '' ? $attrs['uid'] : NULL),
+          'status' => (isset($attrs['status']) && $attrs['status'] !== '' ? $attrs['status'] : 0),
         ));
         
   $id = $query->execute();

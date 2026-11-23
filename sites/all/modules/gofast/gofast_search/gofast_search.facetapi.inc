@@ -44,41 +44,45 @@ function gofast_search_facetapi_facet_info($searcher_info) {
     )
   );
 
-  $facets['document_reference_unrestricted'] = array(
-    'field' => 'sm_unr_document_reference',
-    'label' => t(variable_get("document_reference_label", "Document reference"), array(), array('context' => 'gofast')),
-    'description' => t('Filter by', array(), array('context' => 'gofast:gofast_search')) . " " . t('Document reference', array(), array('context' => 'gofast')),
-    'facet mincount allowed' => TRUE,
-    'dependency plugins' => array('bundle', 'role'),
-    'allowed operators' => array(FACETAPI_OPERATOR_AND => TRUE),
-    'default sorts' => array(
-      array('display', SORT_ASC)
-    )
-  );
+  if (strlen(trim(GOFAST_METADATA_DOCUMENT_REFERENCE_LABEL))) {
+    $facets['document_reference_unrestricted'] = array(
+      'field' => 'sm_unr_document_reference',
+      'label' => GOFAST_METADATA_DOCUMENT_REFERENCE_LABEL,
+      'description' => t('Filter by', array(), array('context' => 'gofast:gofast_search')) . " " . t('Document reference', array(), array('context' => 'gofast')),
+      'facet mincount allowed' => TRUE,
+      'dependency plugins' => array('bundle', 'role'),
+      'allowed operators' => array(FACETAPI_OPERATOR_AND => TRUE),
+      'default sorts' => array(
+        array('display', SORT_ASC)
+      )
+    );
+  }
 
-  $facets['field_custom_date'] = array(
-    'field' => 'ds_custom_date', // ends up in a single-valued index field.
-    'field api name' => 'field_custom_date',
-    'label' => GOFAST_METADATA_CUSTOM_DATE_LABEL,
-    'description' => t('Filter by %label', array("%label" => GOFAST_METADATA_CUSTOM_DATE_LABEL), array('context' => 'gofast:gofast_search')),
-    'query types' => array('date_queries'),
-    'map callback' => 'gofast_facet_date_map',
-    'map options' => array('format callback' => 'facetapi_format_timestamp'),
-    'range types' => array('future'),
-    'min callback' => 'gofast_facet_get_min_date',
-    'max callback' => 'gofast_facet_get_max_date',
-    'facet mincount allowed' => TRUE,
-    'hierarchy callback' => 'gofast_facet_date_hierarchy',
-    'allowed operators' => array(FACETAPI_OPERATOR_AND => TRUE),
-    'dependency plugins' => array('bundle', 'role'),
-    'default sorts' => array(
-      array('date', SORT_ASC)
-    )
-  );
+  if (strlen(trim(GOFAST_METADATA_CUSTOM_DATE_LABEL))) {
+    $facets['field_custom_date'] = array(
+      'field' => 'ds_custom_date', // ends up in a single-valued index field.
+      'field api name' => 'field_custom_date',
+      'label' => GOFAST_METADATA_CUSTOM_DATE_LABEL,
+      'description' => t('Filter by %label', array("%label" => GOFAST_METADATA_CUSTOM_DATE_LABEL), array('context' => 'gofast:gofast_search')),
+      'query types' => array('date_queries'),
+      'map callback' => 'gofast_facet_date_map',
+      'map options' => array('format callback' => 'facetapi_format_timestamp'),
+      'range types' => array('future'),
+      'min callback' => 'gofast_facet_get_min_date',
+      'max callback' => 'gofast_facet_get_max_date',
+      'facet mincount allowed' => TRUE,
+      'hierarchy callback' => 'gofast_facet_date_hierarchy',
+      'allowed operators' => array(FACETAPI_OPERATOR_AND => TRUE),
+      'dependency plugins' => array('bundle', 'role'),
+      'default sorts' => array(
+        array('date', SORT_ASC)
+      )
+    );
+  }
 
   $facets['classification'] = array(
     'field' => 'im_field_classification',
-    'label' => t('Classification', array(), array('context' => 'gofast')),
+    'label' => GOFAST_METADATA_CLASSIFICATION_LABEL,
     'description' => t('Filter by Classification', array(), array('context' => 'gofast:gofast_search')),
     'facet mincount allowed' => TRUE,
     'map callback' => 'facetapi_map_taxonomy_terms',

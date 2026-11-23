@@ -28,6 +28,10 @@ foreach($nodes_description as $description) {
 }
 
 if($should_display_file_warning) {
+    $is_any_linked = gofast_iterable_any(
+        $nodes_description,
+        fn($desc) => !empty($desc->linked_contents['target_links']) || !empty($desc->linked_contents['source_links'])
+    );
 ?>
 <div class='alert alert-custom alert-notice alert-light-warning fade show' role='alert'>
     <div class='alert-icon'><i class='flaticon-warning'></i></div>
@@ -35,6 +39,9 @@ if($should_display_file_warning) {
         <ul class="m-0">
             <li class="font-weight-bold"><?= t("Files will also be removed from all their locations", [], ["context" => 'gofast' ]) ?></li>
             <li><?= t("Files with ", [], ["context" => 'gofast']) ?> <i class="fa fa-question-circle"></i> <?= t(" have more than one emplacements", [], ["context" => 'gofast']) ?></li>
+            <?php if ($is_any_linked): ?>
+                <li><?= t('The files listed below as linked files will NOT be deleted, but their links will be deleted.', [], ['context' => 'gofast']) ?></li>
+            <?php endif ?>
         </ul>
     </div>
 </div>
@@ -76,6 +83,8 @@ if($should_display_file_warning) {
                 </div>
                 <?php foreach($node_description->linked_contents['target_links'] as $target_link) : ?>
                     <div>
+                        <i class="fas fa-unlink"></i>
+                        &nbsp;
                         <i class="<?= $target_link['icon'] ?>"></i>
                         &nbsp;<span><?= $target_link['title'] ?></span>
                     </div>
@@ -89,6 +98,8 @@ if($should_display_file_warning) {
                 </div>
                 <?php foreach($node_description->linked_contents['source_links'] as $source_link) : ?>
                     <div>
+                        <i class="fas fa-unlink"></i>
+                        &nbsp;
                         <i class="<?= $source_link['icon'] ?>"></i>
                         &nbsp;<span><?= $source_link['title'] ?></span>
                     </div>

@@ -89,7 +89,7 @@ function gofast_message_ext_split_node($node){
   if(isset($node->field_classification['und']['0']['tid'])){ $classification = $node->field_classification['und']['0']['tid']; }
   else{ $classification = NULL; }
   
-  if(isset($node->field_custom_date['und']['0']['value'])){ $custom_date = strtotime($node->field_custom_date['und']['0']['value']); }
+  if(isset($node->field_custom_date['und']['0']['value'])){ $custom_date = $node->field_custom_date['und']['0']['value']; }
   else{ $custom_date = NULL; }
 
   //_______________________________________________________________________________________________________________________
@@ -101,7 +101,7 @@ function gofast_message_ext_split_node($node){
   $URL = gofast_message_ext_api_format_array($URL_array, 'value');
   $target = gofast_message_ext_api_format_array($target_array, 'target_id');
 
-  $document_reference_label = strtolower(t(variable_get("document_reference_label", "Document reference"), array(), array('context' => 'gofast')));
+  $document_reference_label = strtolower(GOFAST_METADATA_DOCUMENT_REFERENCE_LABEL);
 
   $params = array(
       'nid'                     => $nid,      // Node ID
@@ -119,7 +119,7 @@ function gofast_message_ext_split_node($node){
       'URLs'                    => $URL,      // Externals links
       'targets'                 => $target,   // Targets to other contents
       'criticity'               => $criticity,// Criticity
-      'deadline'                => $deadline, // Deadline, formated date
+      'deadline'                => $deadline, // Deadline, formatted date
       'lang'                    => $lang,     // Lang
       'summary'                 => $summary,  // Summary
       'ruid'                    => $ruid,     // Revision user ID
@@ -128,8 +128,14 @@ function gofast_message_ext_split_node($node){
       $document_reference_label => $document_reference,   // Custom field author
       'version'                 => $version,   // Version of the document
       'classification'          => $classification,   // Classification
-      'custom_date'             => $custom_date, // Custom date
+      GOFAST_METADATA_CUSTOM_DATE_LABEL => $custom_date, // Custom date
   );
+
+  if ($node->type === 'webform') {
+    $params['webform'] = $node->webform ?? NULL; // Webform data
+    // Webform custom properties (like SurveyJS theme IIRC)
+    $params['webform_custom_properties'] = $node->field_custom_properties[LANGUAGE_NONE][0]['value'] ?? NULL;
+  }
 
 
     //Kanban specific
@@ -617,48 +623,39 @@ function gofast_message_ext_api_get_last_event2($nid, $enforced_timestamp = FALS
     //*********Trying to load the user that relates the most to the event***********
     $user_loaded = FALSE;
     if(isset($message_data['ruid']['value'])){
-      if($message_data['ruid']['value'] != 0){
-        $user_loaded = user_load($message_data['ruid']['value']);
-        if(gofast_user_view_access($user_loaded) === FALSE){
-            $user_loaded_displayname = "";
-        }else{
-            $user_loaded_displayname = gofast_user_display_name($user_loaded);
-        }
+      $user_loaded = user_load($message_data['ruid']['value']);
+      if(gofast_user_view_access($user_loaded) === FALSE){
+          $user_loaded_displayname = $user_loaded->uid > 1 ? "" : gofast_user_display_name($user_loaded);
+      }else{
+          $user_loaded_displayname = gofast_user_display_name($user_loaded);
       }
     }
     if(isset($message_data['ruid']['to']) && empty($user_loaded_displayname)){
-      if($message_data['ruid']['to'] != 0){
         $user_loaded = user_load($message_data['ruid']['to']);
         if(gofast_user_view_access($user_loaded) === FALSE){
-            $user_loaded_displayname = "";
+            $user_loaded_displayname = $user_loaded->uid > 1 ? "" : gofast_user_display_name($user_loaded);
         }else{
             $user_loaded_displayname = gofast_user_display_name($user_loaded);
         }
-      }
     }
     if(isset($message_data['uid']['value']) && empty($user_loaded_displayname)){
-      if($message_data['uid']['value'] != 0){
         $user_loaded = user_load($message_data['uid']['value']);
         if(gofast_user_view_access($user_loaded) === FALSE){
-            $user_loaded_displayname = "";
+            $user_loaded_displayname = $user_loaded->uid > 1 ? "" : gofast_user_display_name($user_loaded);
         }else{
             $user_loaded_displayname = gofast_user_display_name($user_loaded);
         }
-      }
     }
-    if(isset($message_data['uid']['to']) && empty($user_loaded_displayname)){
-      if($message_data['uid']['to'] != 0){
-        $user_loaded = user_load($message_data['uid']['to']);
+    if(isset($message_data['uid']['to']) && empty($user_loaded_displayname)){        $user_loaded = user_load($message_data['uid']['to']);
          if(gofast_user_view_access($user_loaded) === FALSE){
-            $user_loaded_displayname = "";
+            $user_loaded_displayname = $user_loaded->uid > 1 ? "" : gofast_user_display_name($user_loaded);
         }else{
             $user_loaded_displayname = gofast_user_display_name($user_loaded);
         }
-      }
     }
     if(empty($user_loaded_displayname)){
-       if(gofast_user_view_access(user_load(1)) === FALSE){
-            $user_loaded_displayname = "";
+        if(gofast_user_view_access(user_load(1)) === FALSE){
+            $user_loaded_displayname = $user_loaded?->uid > 1 ? "" : gofast_user_display_name($user_loaded);
         }else{
             $user_loaded_displayname = gofast_user_display_name($user_loaded);
         }
@@ -709,7 +706,7 @@ function gofast_message_ext_api_get_last_event2($nid, $enforced_timestamp = FALS
         $result['event'] = $event;
         $result['title'] = $message_data['title']['value'];
         $result['body'] = $message_data['body']['value'];
-        $result['message'] = "<span class='font-weight-bolder text-primary'>".t("New comment. ", array(), array('contexy' => 'gofast'))."</span>".t(" added by @user @date.", array('@user' => $user_name, '@date' => $date), array('context' => 'gofast'));
+        $result['message'] = "<span class='font-weight-bolder text-primary'>".t("New comment. ", array(), array('context' => 'gofast'))."</span>".t(" added by @user @date.", array('@user' => $user_name, '@date' => $date), array('context' => 'gofast'));
         break;
       case 'ECOM':
         $result['event'] = $event;
@@ -927,7 +924,7 @@ function gofast_message_ext_api_get_last_event($nid){
         $result['event'] = $event;
         $result['title'] = $message_data['title']['value'];
         $result['body'] = $message_data['body']['value'];
-        $result['message'] = "<span style='color:red'>".t("New comment. ", array(), array('contexy' => 'gofast'))."</span>".t(" added by @user @date.", array('@user' => $user_name, '@date' => $date), array('context' => 'gofast'));
+        $result['message'] = "<span style='color:red'>".t("New comment. ")."</span>".t(" added by @user @date.", array('@user' => $user_name, '@date' => $date), array('context' => 'gofast'));
         break;
       case 'ECOM':
         $result['event'] = $event;
@@ -1294,6 +1291,15 @@ function gofast_message_ext_api_render_event($event){
                     $content_card  =  theme('user_picture', array('popup' => TRUE, 'dimensions' => array('width' => '25px', 'height' => '25px'))) . $user_delete_name . '</br>';
                     $edit .= theme('gofast_card_template', ['class' => 'bg-danger', 'title' => t('Deleted user : '), 'content' => $content_card]);
                     break;
+                case 'update_user':
+                    $title_card = gofast_message_ext_api_get_title(t('User updated', array(), array("context" => "gofast:gofast_audit")));
+                    $content_card = "<div class='card card-custom p-3 mb-1 w-100 d-flex flex-row justify-content-center align-items-center bg-danger'>";
+                    $content_card .= "<span class='text-white font-size-h5 text-center card-label mr-3'>".t($edition['label_changed_old'], array(), array('context' => 'gofast:gofast_audit'))." :  ".t($edition['old'], array(), array('context' => 'gofast:gofast_audit'))."</span></div>";
+                    $content_card .= "<div class='card card-custom p-3 mb-1 w-100 d-flex flex-row justify-content-center align-items-center bg-success'>";
+                    $content_card .= "<span class='text-white font-size-h5 text-center card-label mr-3'>".t($edition['label_changed_new'], array(), array('context' => 'gofast:gofast_audit'))." :  ".t($edition['new'], array(), array('context' => 'gofast:gofast_audit'))."</span></div>";
+                    $content_card .= "</div>";
+                    $edit .= theme('gofast_card_template', ['class' => 'bg-success '.$class, 'title' => $title_card, 'content' => $content_card]);
+                    break;
                 case 'add_member':
                     if (isset($edition['user_name'])) {
                       $user_name = $edition['user_name'];
@@ -1613,4 +1619,15 @@ function gofast_message_ext_api_get_info_field($edition, $myformat, $l) {
     $to = $edition['to'];
   }
   return array('from' => $from, 'to' => $to);
+}
+
+/**
+ * Retrieves title for detail
+ *
+ * @param string $title
+ *
+ * @return html 
+ */
+function gofast_message_ext_api_get_title($title){
+ return "<span class='d-block text-truncate max-w-250px w-250px'>" . $title . "</span>";
 }

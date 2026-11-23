@@ -1,5 +1,9 @@
     <?php if ($node->field_riot_identifier[LANGUAGE_NONE][0]['value'] != '') : ?>
-      <iframe src="/sites/all/libraries/riot/index.html#/room/<?php echo $node->field_riot_identifier[LANGUAGE_NONE][0]['value']; ?>" id="gf_conversation" style="width:100%;height: calc(100vh - 180px);border:none;"></iframe>
+      <?php if (variable_get("gofast_configuration_hide_element_chat", false) == false) : ?>
+        <iframe src="" id="gf_conversation" style="width:100%;height: calc(100vh - 180px);border:none;"></iframe>
+      <?php else : ?>
+        <div style="width:90%;padding-left:70px;padding-top:20px;"><h4><?php echo t("This feature has been disabled on your server", [], array("context" => "gofast:gofast_riot")); ?></h4></div>
+      <?php endif; ?>
     <?php else : ?>
       <span class="RiotMessageRoom"> <?php print t('This collaboratif space does not have any chatroom yet.'); ?>
         <?php global $user;
@@ -15,9 +19,17 @@
 <script>
   jQuery(document).ready(function() {
     if(jQuery("#gf_conversation").length){
+      const waitForSessionReadyInterval = setInterval(() => {
+        if (!document.querySelector("#gf_conversation") || !Gofast.Riot?.sessionReady) {
+          return;
+        }
+        clearInterval(waitForSessionReadyInterval);
+        document.querySelector('#gf_conversation').setAttribute('src', "/sites/all/libraries/riot/index.html#/room/<?= $node->field_riot_identifier[LANGUAGE_NONE][0]['value'] ?>");
+        document.querySelector('#gf_conversation').setAttribute("data-room", "<?= $node->field_riot_identifier[LANGUAGE_NONE][0]['value'] ?>");
+      }, 100);
       // Load settings icon and fix to fetch assets from the conversation
       const waitForConversationPageLoadInterval = setInterval(() => {
-        if (!Gofast.Riot || !document.querySelector("#gf_conversation") || !document.querySelector("#gf_conversation").contentWindow.document.querySelector(".mx_MatrixChat")) {
+        if (!document.querySelector("#gf_conversation") || !document.querySelector("#gf_conversation")?.contentWindow?.document?.querySelector(".mx_MatrixChat")) {
           return;
         }
         clearInterval(waitForConversationPageLoadInterval);
